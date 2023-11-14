@@ -1,12 +1,14 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Text;
 
 namespace Aemula.Systems.Nes.Tests.Visual2C02;
 
 internal class ChipSim
 {
     private readonly Node[] _nodes;
+    private readonly Transistor[] _transistors;
 
     private readonly ushort _nodeGnd;
     private readonly ushort _nodePwr;
@@ -20,18 +22,18 @@ internal class ChipSim
 
     private GroupState _groupState;
 
+    [Flags]
     private enum GroupState
     {
-        ContainsNothing,
-        ContainsHi,
-        ContainsPulldown,
-        ContainsPullup,
-        ContainsPwr,
-        ContainsGnd,
-        ContainsGndAndPwr,
+        ContainsNothing   = 0,
+        ContainsHi        = 1 << 0,
+        ContainsPulldown  = 1 << 1,
+        ContainsPullup    = 1 << 2,
+        ContainsPwr       = 1 << 3,
+        ContainsGnd       = 1 << 4,
     }
 
-    public ChipSim(string state)
+    public ChipSim()
     {
         _nodeGnd = (int)NodeName.gnd;
         _nodePwr = (int)NodeName.pwr;
@@ -49,6 +51,8 @@ internal class ChipSim
             _nodes[i].Num = ushort.MaxValue;
         }
 
+        _transistors = new Transistor[Configuration.TransistorDefinitions.Length];
+
         SetupNodes();
         SetupTransistors();
 
@@ -58,8 +62,6 @@ internal class ChipSim
         _recalcListOut = new List<ushort>();
 
         _group = new List<ushort>();
-
-        SetState(state);
     }
 
     private void SetupNodes()
@@ -88,8 +90,10 @@ internal class ChipSim
 
     private void SetupTransistors()
     {
-        foreach (var tdef in Configuration.TransistorDefinitions)
+        for (var i = 0; i < Configuration.TransistorDefinitions.Length; i++)
         {
+            var tdef = Configuration.TransistorDefinitions[i];
+
             var gate = tdef.Gate;
             var c1 = tdef.C1;
             var c2 = tdef.C2;
@@ -105,6 +109,7 @@ internal class ChipSim
             _nodes[gate].Gates.Add(trans);
             _nodes[c1].C1C2s.Add(trans);
             _nodes[c2].C1C2s.Add(trans);
+            _transistors[i] = trans;
         }
     }
 
@@ -121,13 +126,13 @@ internal class ChipSim
             _recalcListIn = _recalcListOut;
             _recalcListOut = tmp;
 
+            _recalcListOut.Clear();
+            _recalcListOutBitmap.SetAll(false);
+
             if (_recalcListIn.Count == 0)
             {
                 return;
             }
-
-            _recalcListOut.Clear();
-            _recalcListOutBitmap.SetAll(false);
 
             foreach (var item in _recalcListIn)
             {
@@ -151,6 +156,11 @@ internal class ChipSim
             if (n.State == newState)
             {
                 continue;
+            }
+
+            if (i == 28)
+            {
+
             }
 
             n.State = newState;
@@ -219,17 +229,13 @@ internal class ChipSim
     {
         if (i == _nodeGnd)
         {
-            _groupState = _groupState == GroupState.ContainsPwr || _groupState == GroupState.ContainsGndAndPwr
-                ? GroupState.ContainsGndAndPwr
-                : GroupState.ContainsGnd;
+            _groupState |= GroupState.ContainsGnd;
             return;
         }
 
         if (i == _nodePwr)
         {
-            _groupState = _groupState == GroupState.ContainsGnd || _groupState == GroupState.ContainsGndAndPwr
-                ? GroupState.ContainsGndAndPwr
-                : GroupState.ContainsPwr;
+            _groupState |= GroupState.ContainsPwr;
             return;
         }
 
@@ -242,19 +248,19 @@ internal class ChipSim
 
         ref readonly var node = ref _nodes[i];
 
-        if (_groupState < GroupState.ContainsPullup && node.Pullup)
+        if (node.Pullup)
         {
-            _groupState = GroupState.ContainsPullup;
+            _groupState |= GroupState.ContainsPullup;
         }
 
-        if (_groupState < GroupState.ContainsPulldown && node.Pulldown)
+        if (node.Pulldown)
         {
-            _groupState = GroupState.ContainsPulldown;
+            _groupState |= GroupState.ContainsPulldown;
         }
 
-        if (_groupState < GroupState.ContainsHi && node.State)
+        if (node.State)
         {
-            _groupState = GroupState.ContainsHi;
+            _groupState |= GroupState.ContainsHi;
         }
 
         foreach (var t in node.C1C2s)
@@ -274,77 +280,138 @@ internal class ChipSim
 
     private bool GetNodeValue()
     {
-        switch (_groupState)
+        if ((_groupState & GroupState.ContainsGnd) != 0 && (_groupState & GroupState.ContainsPwr) != 0)
         {
-            case GroupState.ContainsGndAndPwr:
-                // spr_d0 thru spr_d7 sometimes get conflicts,
-                // so suppress them here
-                if (_group.Contains(359) ||
-                    _group.Contains(566) ||
-                    _group.Contains(691) ||
-                    _group.Contains(871) ||
-                    _group.Contains(870) ||
-                    _group.Contains(864) ||
-                    _group.Contains(856) ||
-                    _group.Contains(818))
+            // spr_d0 thru spr_d7 sometimes get conflicts,
+            // so suppress them here
+            if (_group.Contains(359) ||
+                _group.Contains(566) ||
+                _group.Contains(691) ||
+                _group.Contains(871) ||
+                _group.Contains(870) ||
+                _group.Contains(864) ||
+                _group.Contains(856) ||
+                _group.Contains(818))
+            {
+                _groupState &= ~GroupState.ContainsGnd;
+                _groupState &= ~GroupState.ContainsPwr;
+            }
+        }
+
+        if ((_groupState & GroupState.ContainsGnd) != 0)
+        {
+            return false;
+        }
+
+        if ((_groupState & GroupState.ContainsPwr) != 0)
+        {
+            return true;
+        }
+
+        if ((_groupState & GroupState.ContainsPullup) != 0)
+        {
+            return true;
+        }
+
+        if ((_groupState & GroupState.ContainsPulldown) != 0)
+        {
+            return false;
+        }
+
+        if ((_groupState & GroupState.ContainsHi) != 0)
+        {
+            var areaHi = 0;
+            var areaLo = 0;
+            foreach (var nn in _group)
+            {
+                ref readonly var n = ref _nodes[nn];
+
+                // If we get here, we know that none of the nodes
+                // in the group are gnd, pwr, pullup, or pulldown.
+
+                if (n.State)
                 {
-                    goto case GroupState.ContainsHi;
+                    areaHi += n.Area;
                 }
                 else
                 {
-                    return false;
+                    areaLo += n.Area;
                 }
-
-            case GroupState.ContainsNothing:
-            case GroupState.ContainsPulldown:
-            case GroupState.ContainsGnd:
-                return false;
-
-            case GroupState.ContainsPullup:
-            case GroupState.ContainsPwr:
-                return true;
-
-            case GroupState.ContainsHi:
-                var areaHi = 0;
-                var areaLo = 0;
-                foreach (var nn in _group)
-                {
-                    ref readonly var n = ref _nodes[nn];
-
-                    // If we get here, we know that none of the nodes
-                    // in the group are gnd, pwr, pullup, or pulldown.
-
-                    if (n.State)
-                    {
-                        areaHi += n.Area;
-                    }
-                    else
-                    {
-                        areaLo += n.Area;
-                    }
-                }
-                return areaHi > areaLo;
-
-            default:
-                throw new InvalidOperationException();
+            }
+            return areaHi > areaLo;
         }
+
+        return false;
+    }
+
+    public void SetStartupState()
+    {
+        // set all nodes to be floating
+        for (var i = 0; i < _nodes.Length; i++)
+        {
+            ref var node = ref _nodes[i];
+            node.State = false;
+        }
+
+        // set GND and PWR to be driven high/low
+        _nodes[_nodeGnd].State = false;
+        _nodes[_nodePwr].State = true;
+
+        // Turn on all transistors connected to VCC, and turn off the rest
+        foreach (var transistor in _transistors)
+        {
+            transistor.On = transistor.Gate == _nodePwr;
+        }
+
+        // Assert RESET and initialize other inputs
+        SetNode(NodeName.res, false);
+        SetNode(NodeName.clk0, false);
+        SetNode(NodeName.io_ce, true);
+        SetNode(NodeName.@int, true);
+
+        // Recalculate all nodes until the chip stabilizes
+        StabilizeChip();
+
+        // Run for 4 cycles so that RESET fully takes effect
+        for (var i = 0; i < 4; i++)
+        {
+            SetNode(NodeName.clk0, true);
+            SetNode(NodeName.clk0, false);
+        }
+
+        // Deassert RESET so the chip can continue running normally
+        SetNode(NodeName.res, true);
+    }
+
+    private void StabilizeChip()
+    {
+        for (var i = 0; i < _nodes.Length; i++)
+        {
+            if (i == _nodeGnd || i == _nodePwr)
+            {
+                continue;
+            }
+
+            if (_nodes[i].Num == ushort.MaxValue)
+            {
+                continue;
+            }
+
+            _recalcListOut.Add((ushort)i);
+        }
+        RecalcNodeList();
     }
 
     public void SetState(string str)
     {
-        var codes = new Dictionary<char, bool>
-        {
-            { 'g', false },
-            { 'h', true },
-            { 'v', true },
-            { 'l', false },
-        };
-
         for (var i = 0; i < str.Length; i++)
         {
             var c = str[i];
-            if (c == 'x') continue;
-            var state = codes[c];
+
+            if (c == 'x')
+            {
+                continue;
+            }
 
             ref var node = ref _nodes[i];
 
@@ -353,12 +420,51 @@ internal class ChipSim
                 continue;
             }
 
+            var state = c switch
+            {
+                'g' => false,
+                'h' => true,
+                'v' => true,
+                'l' => false,
+                _ => throw new InvalidOperationException(),
+            };
+
             node.State = state;
+
             foreach (var gate in node.Gates)
             {
                 gate.On = state;
             }
         }
+    }
+
+    public string GetState()
+    {
+        var result = new StringBuilder(_nodes.Length);
+
+        for (var i = 0; i < _nodes.Length; i++)
+        {
+            ref readonly var node = ref _nodes[i];
+
+            if (node.Num == ushort.MaxValue)
+            {
+                result.Append('x');
+            }
+            else if (i == _nodeGnd)
+            {
+                result.Append('g');
+            }
+            else if (i == _nodePwr)
+            {
+                result.Append('v');
+            }
+            else
+            {
+                result.Append(node.State ? 'h' : 'l');
+            }
+        }
+
+        return result.ToString();
     }
 
     public void SetNode(NodeName name, bool value)
@@ -370,6 +476,39 @@ internal class ChipSim
         node.Pulldown = !value;
 
         _recalcListOut.Add(nn);
+
+        RecalcNodeList();
+    }
+
+    public void SetNodes(Span<NodeName> names, Span<bool> values)
+    {
+        for (var i = 0; i < names.Length; i++)
+        {
+            var nn = (ushort)names[i];
+            ref var node = ref _nodes[nn];
+
+            var value = values[i];
+            node.Pullup = value;
+            node.Pulldown = !value;
+
+            _recalcListOut.Add(nn);
+        }
+
+        RecalcNodeList();
+    }
+
+    public void SetNodesFloating(Span<NodeName> names)
+    {
+        for (var i = 0; i < names.Length; i++)
+        {
+            var nn = (ushort)names[i];
+            ref var node = ref _nodes[nn];
+
+            node.Pullup = false;
+            node.Pulldown = false;
+
+            _recalcListOut.Add(nn);
+        }
 
         RecalcNodeList();
     }

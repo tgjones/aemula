@@ -34,7 +34,7 @@ partial class Configuration
             }
 
             var area = coordinates[numCoordinates - 2] * coordinates[1] - coordinates[0] * coordinates[numCoordinates - 1];
-            for (var j = 0; j < coordinates.Length - 2; j += 2)
+            for (var j = 0; j < numCoordinates - 2; j += 2)
             {
                 area += coordinates[j] * coordinates[j + 3] - coordinates[j + 2] * coordinates[j + 1];
             }
