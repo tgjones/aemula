@@ -158,11 +158,6 @@ internal class ChipSim
                 continue;
             }
 
-            if (i == 28)
-            {
-
-            }
-
             n.State = newState;
 
             foreach (var t in n.Gates)
