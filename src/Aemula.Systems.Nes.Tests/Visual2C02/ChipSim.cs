@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using System.Text;
 
 namespace Aemula.Systems.Nes.Tests.Visual2C02;
@@ -174,6 +175,7 @@ internal class ChipSim
         }
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void TurnTransistorOn(Transistor t)
     {
         if (t.On)
@@ -186,6 +188,7 @@ internal class ChipSim
         AddRecalcNode(t.C1);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void TurnTransistorOff(Transistor t)
     {
         if (!t.On)
@@ -199,6 +202,7 @@ internal class ChipSim
         AddRecalcNode(t.C2);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void AddRecalcNode(ushort nn)
     {
         if (nn == _nodeGnd) return;
@@ -213,6 +217,7 @@ internal class ChipSim
         _recalcListOutBitmap[nn] = true;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void GetNodeGroup(ushort i)
     {
         _group.Clear();
