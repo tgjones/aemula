@@ -5,8 +5,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Veldrid.ImGui" Version="5.72.0" />
-    <PackageReference Include="Veldrid.StartupUtilities" Version="4.7.0" />
+    <PackageReference Include="Veldrid.ImGui" />
+    <PackageReference Include="Veldrid.StartupUtilities" />
   </ItemGroup>
 
   <ItemGroup>

@@ -5,15 +5,13 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <Content Include="Assets\**\*.*">
-            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-        </Content>
+        <Content Include="Assets\**\*.*" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 
     <ItemGroup>
         <ProjectReference Include="..\Aemula.Systems.Nes\Aemula.Systems.Nes.csproj" />
-        <PackageReference Include="FlawlessChips" Version="0.1.1" />
-        <PackageReference Include="ScottPlot" Version="4.1.68" />
+        <PackageReference Include="FlawlessChips" />
+        <PackageReference Include="ScottPlot" />
     </ItemGroup>
 
 </Project>

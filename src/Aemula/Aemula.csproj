@@ -1,8 +1,8 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   
   <ItemGroup>
-    <PackageReference Include="ImGui.NET" Version="1.78.0" />
-    <PackageReference Include="Veldrid.ImGui" Version="5.72.0" />
+    <PackageReference Include="ImGui.NET" />
+    <PackageReference Include="Veldrid.ImGui" />
   </ItemGroup>
 
 </Project>
