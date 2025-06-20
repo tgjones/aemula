@@ -8,13 +8,11 @@
         <Content Include="Assets\**\*.*">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </Content>
-        <Content Include="Visual2C02\**\*.txt">
-            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-        </Content>
     </ItemGroup>
 
     <ItemGroup>
         <ProjectReference Include="..\Aemula.Systems.Nes\Aemula.Systems.Nes.csproj" />
+        <PackageReference Include="FlawlessChips" Version="0.1.1" />
         <PackageReference Include="ScottPlot" Version="4.1.68" />
     </ItemGroup>
 

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Runtime.CompilerServices;
 
 namespace Aemula.Systems.Nes.Ppu;
 
@@ -10,43 +11,10 @@ public class Ricoh2C02
 
     // Pins
 
-    private bool _clk;
-
-    public bool Clk
-    {
-        set
-        {
-            if (value == _clk)
-            {
-                return;
-            }
-
-            _clk = value;
-
-            if (value)
-            {
-                // Rising edge.
-                _pixelClockCounter++;
-                if (_pixelClockCounter == 3)
-                {
-                    _pixelClockCounter = 1;
-                    PixelClock = !PixelClock;
-                }
-            }
-            else
-            {
-                // Falling edge.
-            }
-
-            UpdateOutput();
-
-            _colorGeneratorClockCounter++;
-            if (_colorGeneratorClockCounter == 12)
-            {
-                _colorGeneratorClockCounter = 0;
-            }
-        }
-    }
+    public readonly WriteOnlyPin Res;
+    public readonly WriteOnlyPin Clk;
+    public readonly WriteOnlyPin Dbe;
+    public readonly ReadOnlyPin Int;
 
     public ushort VOut
     {
@@ -237,19 +205,74 @@ public class Ricoh2C02
     public bool VidSyncH { get; private set; }
     public bool VidSyncL { get; private set; }
 
-    public Ricoh2C02(bool initialClock = false, bool initialPixelClock = false, byte initialPixelClockCounter = 0, ushort initialHPos = 0, ushort initialVPos = 0)
+    public Ricoh2C02(PinValue initialClock = PinValue.Low, bool initialPixelClock = false, byte initialPixelClockCounter = 0, ushort initialHPos = 0, ushort initialVPos = 0)
     {
-        _clk = initialClock;
         _pixelClock = initialPixelClock;
         _pixelClockCounter = initialPixelClockCounter;
         HPos = initialHPos;
         VPos = initialVPos;
 
-        _state = State.RenderBackground;
+        //_state = State.RenderBackground;
+        _state = State.ColorBurst;
 
         _colorGeneratorClockCounter = 8;
 
         _paletteMemory = new byte[32];
+
+        Int = new ReadOnlyPin();
+
+        Res = new WriteOnlyPin(
+            new PinHandler(PinHandlerType.Always, OnResChanged));
+
+        Clk = new WriteOnlyPin(
+            new PinHandler(PinHandlerType.Always, OnClkChanged));
+
+        Clk.Value = initialClock;
+
+        Dbe = new WriteOnlyPin(
+            new PinHandler(PinHandlerType.Always, OnDbeChanged));
+    }
+
+    private void OnResChanged(PinValue value)
+    {
+        Int.Value = PinValue.High;
+        // TODO
+    }
+
+    private void OnClkChanged(PinValue value)
+    {
+        if (Res.Value == PinValue.Low)
+        {
+            return;
+        }
+
+        if (value == PinValue.High)
+        {
+            // Rising edge.
+            _pixelClockCounter++;
+            if (_pixelClockCounter == 3)
+            {
+                _pixelClockCounter = 1;
+                PixelClock = !PixelClock;
+            }
+        }
+        else
+        {
+            // Falling edge.
+        }
+
+        UpdateOutput();
+
+        _colorGeneratorClockCounter++;
+        if (_colorGeneratorClockCounter == 12)
+        {
+            _colorGeneratorClockCounter = 0;
+        }
+    }
+
+    private void OnDbeChanged(PinValue value)
+    {
+        // TODO
     }
 
     public void SetPaletteMemory(byte offset, byte value)
@@ -348,4 +371,88 @@ public class Ricoh2C02
         _vidLuma3H = false;
         _vidLuma3L = false;
     }
+}
+
+public enum PinValue
+{
+    Low,
+    High,
+}
+
+public interface IPin
+{
+
+}
+
+public interface IWriteablePin : IPin
+{
+    void Set(PinValue value);
+}
+
+public interface IReadablePin : IPin
+{
+    PinValue Get();
+}
+
+public sealed record PinHandler(PinHandlerType Type, Action<PinValue> Callback);
+
+public enum PinHandlerType
+{
+    Always,
+    TransitionLowToHigh,
+    TransitionHighToLow,
+}
+
+public sealed class WriteOnlyPin(params PinHandler[] handlers)
+    : IWriteablePin
+{
+    internal PinValue Value;
+
+    public void Set(PinValue value)
+    {
+        CallHandlers(PinHandlerType.Always, value);
+
+        if (value == Value)
+        {
+            return;
+        }
+
+        Value = value;
+
+        if (value == PinValue.High)
+        {
+            CallHandlers(PinHandlerType.TransitionLowToHigh, value);
+        }
+        else
+        {
+            CallHandlers(PinHandlerType.TransitionHighToLow, value);
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void CallHandlers(PinHandlerType type, PinValue value)
+    {
+        foreach (var handler in handlers)
+        {
+            if (handler.Type == type)
+            {
+                handler.Callback(value);
+            }
+        }
+    }
+}
+
+public sealed class ReadOnlyPin
+    : IReadablePin
+{
+    internal PinValue Value;
+
+    public PinValue Get() => Value;
+}
+
+public readonly struct ReadWritePin(Func<PinValue> getValue, Action<PinValue> setValue) 
+    : IWriteablePin, IReadablePin
+{
+    public PinValue Get() => getValue();
+    public void Set(PinValue value) => setValue(value);
 }
