@@ -2,7 +2,8 @@
 using System.IO;
 using Aemula.Chips.Intel8080;
 using Aemula.Chips.MB14241;
-using Aemula.Debugging;
+using Aemula.Core;
+using Aemula.Core.Debugging;
 using Aemula.Systems.SpaceInvaders.Debugging;
 using Veldrid;
 

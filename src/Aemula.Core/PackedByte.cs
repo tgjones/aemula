@@ -1,4 +1,4 @@
-﻿namespace Aemula;
+﻿namespace Aemula.Core;
 
 public struct PackedByte
 {
@@ -25,22 +25,22 @@ public struct PackedByte
     public byte Get(int start, int count)
     {
         var mask = BitMasks[count];
-        return (byte)((Value >> start) & mask);
+        return (byte)(Value >> start & mask);
     }
 
     public bool GetBit(int bit)
     {
-        return ((Value >> bit) & 1) == 1;
+        return (Value >> bit & 1) == 1;
     }
 
     public void Set(int start, int count, byte data)
     {
         var mask = BitMasks[count];
-        Value = (byte)((Value & (~(mask << start))) | ((mask & data) << start));
+        Value = (byte)(Value & ~(mask << start) | (mask & data) << start);
     }
 
     public void SetBit(int bit, bool value)
     {
-        Value = (byte)((Value & (~(1 << bit))) | ((value ? 1 : 0) << bit));
+        Value = (byte)(Value & ~(1 << bit) | (value ? 1 : 0) << bit);
     }
 }

@@ -27,9 +27,10 @@
 using System;
 using System.Globalization;
 using System.Numerics;
+using Aemula.Core;
 using ImGuiNET;
 
-namespace Aemula.UI;
+namespace Aemula.Core.UI;
 
 public sealed class MemoryEditor : DebuggerWindow
 {
@@ -74,23 +75,23 @@ public sealed class MemoryEditor : DebuggerWindow
 
     private static bool TryHexParse(byte[] bytes, out int result)
     {
-        string input = System.Text.Encoding.UTF8.GetString(bytes).ToString();
+        var input = System.Text.Encoding.UTF8.GetString(bytes).ToString();
         return int.TryParse(input, NumberStyles.AllowHexSpecifier, CultureInfo.CurrentCulture, out result);
     }
 
     private static void ReplaceChars(byte[] bytes, string input)
     {
         var address = System.Text.Encoding.ASCII.GetBytes(input);
-        for (int i = 0; i < bytes.Length; i++)
+        for (var i = 0; i < bytes.Length; i++)
         {
-            bytes[i] = (i < address.Length) ? address[i] : (byte)0;
+            bytes[i] = i < address.Length ? address[i] : (byte)0;
         }
     }
 
     protected unsafe override void DrawOverride(EmulatorTime time)
     {
-        float line_height = ImGuiNative.igGetTextLineHeight();
-        int line_total_count = (MemorySize + Rows - 1) / Rows;
+        var line_height = ImGuiNative.igGetTextLineHeight();
+        var line_total_count = (MemorySize + Rows - 1) / Rows;
 
         ImGuiNative.igSetNextWindowContentSize(new Vector2(0.0f, line_total_count * line_height));
         ImGui.BeginChild("##scrolling", new Vector2(0, -ImGuiNative.igGetFrameHeightWithSpacing()), false, 0);
@@ -98,23 +99,23 @@ public sealed class MemoryEditor : DebuggerWindow
         ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(0, 0));
         ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(0, 0));
 
-        int addr_digits_count = 0;
-        for (int n = base_display_addr + MemorySize - 1; n > 0; n >>= 4)
+        var addr_digits_count = 0;
+        for (var n = base_display_addr + MemorySize - 1; n > 0; n >>= 4)
             addr_digits_count++;
 
-        float glyph_width = ImGui.CalcTextSize("F").X;
-        float cell_width = glyph_width * 3; // "FF " we include trailing space in the width to easily catch clicks everywhere
+        var glyph_width = ImGui.CalcTextSize("F").X;
+        var cell_width = glyph_width * 3; // "FF " we include trailing space in the width to easily catch clicks everywhere
 
         var clipper = new ImGuiListClipper2(line_total_count, line_height);
-        int visible_start_addr = clipper.DisplayStart * Rows;
-        int visible_end_addr = clipper.DisplayEnd * Rows;
+        var visible_start_addr = clipper.DisplayStart * Rows;
+        var visible_end_addr = clipper.DisplayEnd * Rows;
 
-        bool data_next = false;
+        var data_next = false;
 
         if (!AllowEdits || DataEditingAddr >= MemorySize)
             DataEditingAddr = -1;
 
-        int data_editing_addr_backup = DataEditingAddr;
+        var data_editing_addr_backup = DataEditingAddr;
 
         if (DataEditingAddr != -1)
         {
@@ -123,24 +124,24 @@ public sealed class MemoryEditor : DebuggerWindow
             else if (ImGui.IsKeyPressed(ImGui.GetKeyIndex(ImGuiKey.LeftArrow)) && DataEditingAddr > 0) { DataEditingAddr -= 1; DataEditingTakeFocus = true; }
             else if (ImGui.IsKeyPressed(ImGui.GetKeyIndex(ImGuiKey.RightArrow)) && DataEditingAddr < MemorySize - 1) { DataEditingAddr += 1; DataEditingTakeFocus = true; }
         }
-        if ((DataEditingAddr / Rows) != (data_editing_addr_backup / Rows))
+        if (DataEditingAddr / Rows != data_editing_addr_backup / Rows)
         {
             // Track cursor movements
-            float scroll_offset = ((DataEditingAddr / Rows) - (data_editing_addr_backup / Rows)) * line_height;
-            bool scroll_desired = (scroll_offset < 0.0f && DataEditingAddr < visible_start_addr + Rows * 2) || (scroll_offset > 0.0f && DataEditingAddr > visible_end_addr - Rows * 2);
+            var scroll_offset = (DataEditingAddr / Rows - data_editing_addr_backup / Rows) * line_height;
+            var scroll_desired = scroll_offset < 0.0f && DataEditingAddr < visible_start_addr + Rows * 2 || scroll_offset > 0.0f && DataEditingAddr > visible_end_addr - Rows * 2;
             if (scroll_desired)
                 ImGuiNative.igSetScrollYFloat(ImGuiNative.igGetScrollY() + scroll_offset);
         }
 
-        for (int line_i = clipper.DisplayStart; line_i < clipper.DisplayEnd; line_i++) // display only visible items
+        for (var line_i = clipper.DisplayStart; line_i < clipper.DisplayEnd; line_i++) // display only visible items
         {
             var addr = line_i * Rows;
             ImGui.Text(FixedHex(base_display_addr + addr, addr_digits_count) + ": ");
             ImGui.SameLine();
 
             // Draw Hexadecimal
-            float line_start_x = ImGuiNative.igGetCursorPosX();
-            for (int n = 0; n < Rows && addr < MemorySize; n++, addr++)
+            var line_start_x = ImGuiNative.igGetCursorPosX();
+            for (var n = 0; n < Rows && addr < MemorySize; n++, addr++)
             {
                 ImGui.SameLine(line_start_x + cell_width * n);
 
@@ -152,14 +153,14 @@ public sealed class MemoryEditor : DebuggerWindow
                     // FIXME: We should have a way to retrieve the text edit cursor position more easily in the API, this is rather tedious.
                     ImGuiInputTextCallback callback = (data) =>
                     {
-                        int* p_cursor_pos = (int*)data->UserData;
+                        var p_cursor_pos = (int*)data->UserData;
 
                         if (ImGuiNative.ImGuiInputTextCallbackData_HasSelection(data) == 0)
                             *p_cursor_pos = data->CursorPos;
                         return 0;
                     };
-                    int cursor_pos = -1;
-                    bool data_write = false;
+                    var cursor_pos = -1;
+                    var data_write = false;
                     if (DataEditingTakeFocus)
                     {
                         ImGui.SetKeyboardFocusHere();
@@ -170,7 +171,7 @@ public sealed class MemoryEditor : DebuggerWindow
 
                     var flags = ImGuiInputTextFlags.CharsHexadecimal | ImGuiInputTextFlags.EnterReturnsTrue | ImGuiInputTextFlags.AutoSelectAll | ImGuiInputTextFlags.NoHorizontalScroll | ImGuiInputTextFlags.CallbackAlways;
 
-                    if (ImGui.InputText("##data", DataInput, 32, flags, callback, (IntPtr)(&cursor_pos)))
+                    if (ImGui.InputText("##data", DataInput, 32, flags, callback, (nint)(&cursor_pos)))
                         data_write = data_next = true;
                     else if (!DataEditingTakeFocus && !ImGui.IsItemActive())
                         DataEditingAddr = -1;
@@ -205,10 +206,10 @@ public sealed class MemoryEditor : DebuggerWindow
             addr = line_i * Rows;
             var asciiVal = new System.Text.StringBuilder(2 + Rows);
             asciiVal.Append("| ");
-            for (int n = 0; n < Rows && addr < MemorySize; n++, addr++)
+            for (var n = 0; n < Rows && addr < MemorySize; n++, addr++)
             {
                 int c = _readMemoryCallback((ushort)addr);
-                asciiVal.Append((c >= 32 && c < 128) ? Convert.ToChar(c) : '.');
+                asciiVal.Append(c >= 32 && c < 128 ? Convert.ToChar(c) : '.');
             }
             ImGui.TextUnformatted(asciiVal.ToString());  //use unformatted, so string can contain the '%' character
         }
@@ -228,11 +229,11 @@ public sealed class MemoryEditor : DebuggerWindow
         ImGuiNative.igAlignTextToFramePadding();
         ImGui.PushItemWidth(50);
         ImGui.PushAllowKeyboardFocus(true);
-        int rows_backup = Rows;
+        var rows_backup = Rows;
         if (ImGui.DragInt("##rows", ref Rows, 0.2f, 4, 32, "%.0f rows"))
         {
             if (Rows <= 0) Rows = 4;
-            Vector2 new_window_size = ImGui.GetWindowSize();
+            var new_window_size = ImGui.GetWindowSize();
             new_window_size.X += (Rows - rows_backup) * (cell_width + glyph_width);
             ImGui.SetWindowSize(new_window_size);
         }
@@ -252,7 +253,7 @@ public sealed class MemoryEditor : DebuggerWindow
                 if (goto_addr >= 0 && goto_addr < MemorySize)
                 {
                     ImGui.BeginChild("##scrolling");
-                    ImGui.SetScrollFromPosY(ImGui.GetCursorStartPos().Y + (goto_addr / Rows) * ImGuiNative.igGetTextLineHeight());
+                    ImGui.SetScrollFromPosY(ImGui.GetCursorStartPos().Y + goto_addr / Rows * ImGuiNative.igGetTextLineHeight());
                     ImGui.EndChild();
                     DataEditingAddr = goto_addr;
                     DataEditingTakeFocus = true;

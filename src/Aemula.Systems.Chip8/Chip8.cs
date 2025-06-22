@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO;
-using Aemula.Debugging;
+using Aemula.Core;
+using Aemula.Core.Debugging;
 using Aemula.Systems.Chip8.Debugging;
 
 namespace Aemula.Systems.Chip8;

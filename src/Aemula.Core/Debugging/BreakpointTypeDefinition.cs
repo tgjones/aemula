@@ -1,4 +1,4 @@
-﻿namespace Aemula.Debugging;
+﻿namespace Aemula.Core.Debugging;
 
 public readonly record struct BreakpointTypeDefinition(
     string Label,

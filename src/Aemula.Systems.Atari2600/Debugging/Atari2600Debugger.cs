@@ -1,7 +1,7 @@
-﻿using Aemula.Chips.Mos6502.Debugging;
-using Aemula.Debugging;
-using Aemula.UI;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
+using Aemula.Chips.Mos6502.Debugging;
+using Aemula.Core.Debugging;
+using Aemula.Core.UI;
 
 namespace Aemula.Systems.Atari2600.Debugging;
 

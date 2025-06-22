@@ -1,8 +1,8 @@
 ﻿using System.Collections.Generic;
 using Aemula.Chips.Intel8080;
 using Aemula.Chips.Intel8080.Debugging;
-using Aemula.Debugging;
-using Aemula.UI;
+using Aemula.Core.Debugging;
+using Aemula.Core.UI;
 
 namespace Aemula.Systems.SpaceInvaders.Debugging;
 

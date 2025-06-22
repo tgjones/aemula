@@ -1,5 +1,5 @@
 ﻿using System.Collections.Generic;
-using Aemula.Debugging;
+using Aemula.Core.Debugging;
 
 namespace Aemula.Systems.Chip8.Debugging;
 

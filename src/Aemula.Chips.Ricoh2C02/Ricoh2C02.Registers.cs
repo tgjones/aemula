@@ -1,4 +1,6 @@
-﻿namespace Aemula.Chips.Ricoh2C02;
+﻿using Aemula.Core;
+
+namespace Aemula.Chips.Ricoh2C02;
 
 partial class Ricoh2C02
 {

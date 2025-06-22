@@ -1,4 +1,6 @@
-﻿namespace Aemula.Systems.Nes;
+﻿using Aemula.Core;
+
+namespace Aemula.Systems.Nes;
 
 partial class Cartridge
 {

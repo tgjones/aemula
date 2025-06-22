@@ -1,10 +1,10 @@
-﻿namespace Aemula;
+﻿namespace Aemula.Core;
 
 public static class BitUtility
 {
     public static byte GetBit(byte value, int position)
     {
-        return (byte)((value >> position) & 1);
+        return (byte)(value >> position & 1);
     }
 
     public static bool GetBitAsBoolean(byte value, int position)
@@ -14,7 +14,7 @@ public static class BitUtility
 
     public static byte GetBit(ushort value, int position)
     {
-        return (byte)((value >> position) & 1);
+        return (byte)(value >> position & 1);
     }
 
     public static bool GetBitAsBoolean(ushort value, int position)

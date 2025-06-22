@@ -3,10 +3,11 @@ using System.Collections.Generic;
 using System.IO;
 using Aemula.Chips.Mos6532;
 using Aemula.Chips.Tia;
-using Aemula.Debugging;
+using Aemula.Core;
+using Aemula.Core.Debugging;
+using Aemula.Core.UI;
 using Aemula.Systems.Atari2600.Debugging;
-using Aemula.UI;
-using static Aemula.BitUtility;
+using static Aemula.Core.BitUtility;
 
 namespace Aemula.Systems.Atari2600;
 

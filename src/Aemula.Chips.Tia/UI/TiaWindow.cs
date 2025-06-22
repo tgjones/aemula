@@ -1,7 +1,8 @@
 ﻿using System;
 using System.Numerics;
 using System.Reflection;
-using Aemula.UI;
+using Aemula.Core;
+using Aemula.Core.UI;
 using ImGuiNET;
 
 namespace Aemula.Chips.Tia.UI;

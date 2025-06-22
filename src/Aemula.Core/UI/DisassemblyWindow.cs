@@ -1,10 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
-using Aemula.Debugging;
+using Aemula.Core;
+using Aemula.Core.Debugging;
 using ImGuiNET;
 
-namespace Aemula.UI;
+namespace Aemula.Core.UI;
 
 public sealed class DisassemblyWindow : DebuggerWindow
 {
@@ -88,7 +89,7 @@ public sealed class DisassemblyWindow : DebuggerWindow
                 _debugger.Stopped = false;
             }
 
-            for (int i = 0; i < _debugger.StepModes.Count; i++)
+            for (var i = 0; i < _debugger.StepModes.Count; i++)
             {
                 var stepMode = _debugger.StepModes[i];
 
@@ -114,7 +115,7 @@ public sealed class DisassemblyWindow : DebuggerWindow
 
             int displayStart, displayEnd;
             ImGuiNative.igCalcListClipping(_disassembly.Count, lineHeight, &displayStart, &displayEnd);
-            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + (displayStart * lineHeight));
+            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + displayStart * lineHeight);
 
             var lastPC = _debugger.LastPC;
             if (lastPC != _previousPC)
@@ -124,7 +125,7 @@ public sealed class DisassemblyWindow : DebuggerWindow
 
                 if (index < displayStart || index > displayEnd)
                 {
-                    ImGui.SetScrollFromPosY(ImGui.GetCursorStartPos().Y + (index * lineHeight));
+                    ImGui.SetScrollFromPosY(ImGui.GetCursorStartPos().Y + index * lineHeight);
                 }
 
                 _previousPC = lastPC;
@@ -205,7 +206,7 @@ public sealed class DisassemblyWindow : DebuggerWindow
                 }
             }
 
-            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + ((_disassembly.Count - displayEnd) * lineHeight));
+            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + (_disassembly.Count - displayEnd) * lineHeight);
 
             ImGui.PopStyleVar();
         }

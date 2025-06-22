@@ -1,4 +1,4 @@
-﻿using Aemula.Debugging;
+﻿using Aemula.Core.Debugging;
 
 namespace Aemula.Chips.Mos6502.Debugging;
 

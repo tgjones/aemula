@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Aemula.Debugging;
+namespace Aemula.Core.Debugging;
 
 public readonly struct DebuggerStepMode
 {

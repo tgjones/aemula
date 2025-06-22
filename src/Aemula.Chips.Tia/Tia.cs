@@ -1,8 +1,8 @@
 ﻿using System.Collections.Generic;
 using Aemula.Chips.Tia.UI;
-using Aemula.UI;
-using static Aemula.BitUtility;
+using static Aemula.Core.BitUtility;
 using static Aemula.Chips.Tia.TiaUtility;
+using Aemula.Core.UI;
 
 namespace Aemula.Chips.Tia;
 

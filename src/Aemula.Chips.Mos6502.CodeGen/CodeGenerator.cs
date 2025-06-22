@@ -87,7 +87,7 @@ public class CodeGenerator : IIncrementalGenerator
 
         sb.AppendLine("using System;");
         sb.AppendLine("using System.Collections.Generic;");
-        sb.AppendLine("using Aemula.Debugging;");
+        sb.AppendLine("using Aemula.Core.Debugging;");
         sb.AppendLine("");
         sb.AppendLine("namespace Aemula.Chips.Mos6502");
         sb.AppendLine("{");

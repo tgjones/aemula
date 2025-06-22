@@ -1,4 +1,4 @@
-﻿namespace Aemula;
+﻿namespace Aemula.Core;
 
 internal static class TelevisionPalette
 {

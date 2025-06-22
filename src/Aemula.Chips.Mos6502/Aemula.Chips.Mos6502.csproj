@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\Aemula\Aemula.csproj" />
+    <ProjectReference Include="..\Aemula.Core\Aemula.Core.csproj" />
     <ProjectReference Include="..\Aemula.Chips.Mos6502.CodeGen\Aemula.Chips.Mos6502.CodeGen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 

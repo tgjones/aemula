@@ -1,5 +1,6 @@
 ﻿using System.Numerics;
-using Aemula.UI;
+using Aemula.Core;
+using Aemula.Core.UI;
 using ImGuiNET;
 
 namespace Aemula.Chips.Ricoh2C02.UI;

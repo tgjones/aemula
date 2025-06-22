@@ -7,7 +7,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using ImGuiNET;
 
-namespace Aemula.UI;
+namespace Aemula.Core.UI;
 
 public static unsafe class ImGuiUtility
 {
@@ -63,7 +63,7 @@ public static unsafe class ImGuiUtility
             }
         }
 
-        size.Y = ImGui.GetFontSize() + (ImGui.GetStyle().FramePadding.Y * 2.5f);
+        size.Y = ImGui.GetFontSize() + ImGui.GetStyle().FramePadding.Y * 2.5f;
 
         size.X += ImGui.GetStyle().FramePadding.X * 2.5f;
 
@@ -106,7 +106,7 @@ public static unsafe class ImGuiUtility
     public static bool Combo(string label, ref int current_item, IReadOnlyList<string> items)
     {
         byte* native_label;
-        int label_byteCount = 0;
+        var label_byteCount = 0;
         if (label != null)
         {
             label_byteCount = Encoding.UTF8.GetByteCount(label);
@@ -116,26 +116,26 @@ public static unsafe class ImGuiUtility
             }
             else
             {
-                byte* native_label_stackBytes = stackalloc byte[label_byteCount + 1];
+                var native_label_stackBytes = stackalloc byte[label_byteCount + 1];
                 native_label = native_label_stackBytes;
             }
-            int native_label_offset = GetUtf8(label, native_label, label_byteCount);
+            var native_label_offset = GetUtf8(label, native_label, label_byteCount);
             native_label[native_label_offset] = 0;
         }
         else { native_label = null; }
-        int* items_byteCounts = stackalloc int[items.Count];
-        int items_byteCount = 0;
-        for (int i = 0; i < items.Count; i++)
+        var items_byteCounts = stackalloc int[items.Count];
+        var items_byteCount = 0;
+        for (var i = 0; i < items.Count; i++)
         {
-            string s = items[i];
+            var s = items[i];
             items_byteCounts[i] = Encoding.UTF8.GetByteCount(s);
             items_byteCount += items_byteCounts[i] + 1;
         }
-        byte* native_items_data = stackalloc byte[items_byteCount];
-        int offset = 0;
-        for (int i = 0; i < items.Count; i++)
+        var native_items_data = stackalloc byte[items_byteCount];
+        var offset = 0;
+        for (var i = 0; i < items.Count; i++)
         {
-            string s = items[i];
+            var s = items[i];
             fixed (char* sPtr = s)
             {
                 offset += Encoding.UTF8.GetBytes(sPtr, s.Length, native_items_data + offset, items_byteCounts[i]);
@@ -143,17 +143,17 @@ public static unsafe class ImGuiUtility
                 offset += 1;
             }
         }
-        byte** native_items = stackalloc byte*[items.Count];
+        var native_items = stackalloc byte*[items.Count];
         offset = 0;
-        for (int i = 0; i < items.Count; i++)
+        for (var i = 0; i < items.Count; i++)
         {
             native_items[i] = &native_items_data[offset];
             offset += items_byteCounts[i] + 1;
         }
-        int popup_max_height_in_items = -1;
+        var popup_max_height_in_items = -1;
         fixed (int* native_current_item = &current_item)
         {
-            byte ret = ImGuiNative.igComboStr_arr(native_label, native_current_item, native_items, items.Count, popup_max_height_in_items);
+            var ret = ImGuiNative.igComboStr_arr(native_label, native_current_item, native_items, items.Count, popup_max_height_in_items);
             if (label_byteCount > StackAllocationSizeLimit)
             {
                 Free(native_label);
@@ -164,7 +164,7 @@ public static unsafe class ImGuiUtility
 
     private static byte* Allocate(int numBytes) => (byte*)Marshal.AllocHGlobal(numBytes);
 
-    private static void Free(byte* ptr) => Marshal.FreeHGlobal((IntPtr)ptr);
+    private static void Free(byte* ptr) => Marshal.FreeHGlobal((nint)ptr);
 
     private static int GetUtf8(string s, byte* utf8Bytes, int utf8ByteCount)
     {

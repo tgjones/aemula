@@ -1,4 +1,4 @@
-﻿using static Aemula.BitUtility;
+﻿using static Aemula.Core.BitUtility;
 using static Aemula.Chips.Tia.TiaUtility;
 
 namespace Aemula.Chips.Tia;

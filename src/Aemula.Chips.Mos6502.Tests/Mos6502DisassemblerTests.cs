@@ -4,7 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using Aemula.Chips.Mos6502.Debugging;
-using Aemula.Debugging;
+using Aemula.Core.Debugging;
 using NUnit.Framework;
 
 namespace Aemula.Chips.Mos6502.Tests;

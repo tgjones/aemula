@@ -1,8 +1,8 @@
 ﻿using System;
-using Aemula.Debugging;
+using Aemula.Core.Debugging;
 using Veldrid;
 
-namespace Aemula;
+namespace Aemula.Core;
 
 public abstract class EmulatedSystem : IDisposable
 {

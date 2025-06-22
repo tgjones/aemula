@@ -19,7 +19,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Aemula.Chips.Ricoh2A03", "A
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Aemula.Chips.Ricoh2C02", "Aemula.Chips.Ricoh2C02\Aemula.Chips.Ricoh2C02.csproj", "{E47D9CFC-7E00-4A27-A955-6C9781A02E40}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Aemula", "Aemula\Aemula.csproj", "{07226769-0C6E-4D1A-9B06-F64E6F9587D8}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Aemula.Core", "Aemula.Core\Aemula.Core.csproj", "{07226769-0C6E-4D1A-9B06-F64E6F9587D8}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Aemula.Systems.Nes", "Aemula.Systems.Nes\Aemula.Systems.Nes.csproj", "{34A133F9-1AFB-4538-8D0C-8962C71B293E}"
 EndProject

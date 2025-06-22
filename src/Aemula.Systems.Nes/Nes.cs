@@ -1,7 +1,8 @@
 ﻿using Aemula.Chips.Ricoh2A03;
 using Aemula.Chips.Ricoh2C02;
 using Aemula.Systems.Nes.Debugging;
-using Aemula.Debugging;
+using Aemula.Core;
+using Aemula.Core.Debugging;
 
 namespace Aemula.Systems.Nes;
 

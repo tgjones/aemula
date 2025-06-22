@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 
-namespace Aemula.Debugging;
+namespace Aemula.Core.Debugging;
 
 public abstract class Disassembler
 {

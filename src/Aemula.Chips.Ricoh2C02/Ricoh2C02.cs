@@ -1,7 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using Aemula.Chips.Ricoh2C02.UI;
-using Aemula.UI;
+using Aemula.Core;
+using Aemula.Core.UI;
 
 namespace Aemula.Chips.Ricoh2C02;
 

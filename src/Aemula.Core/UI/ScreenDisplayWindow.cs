@@ -3,7 +3,7 @@ using System.Numerics;
 using ImGuiNET;
 using Veldrid;
 
-namespace Aemula.UI;
+namespace Aemula.Core.UI;
 
 public sealed class ScreenDisplayWindow : DebuggerWindow
 {
@@ -13,7 +13,7 @@ public sealed class ScreenDisplayWindow : DebuggerWindow
     private GraphicsDevice _graphicsDevice;
     private ImGuiRenderer _renderer;
     private Texture _texture;
-    private IntPtr _textureBinding;
+    private nint _textureBinding;
 
     public override string DisplayName => "Display";
 
@@ -100,8 +100,8 @@ public sealed class ScreenDisplayWindow : DebuggerWindow
         var p4 = new Vector2(cursorPos.X, cursorPos.Y + size.Y);
 
         ImGui.GetWindowDrawList().AddImageQuad(
-            _textureBinding, 
-            p1, p2, p3, p4, 
+            _textureBinding,
+            p1, p2, p3, p4,
             uv0, uv1, uv2, uv3);
     }
 

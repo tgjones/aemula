@@ -1,4 +1,4 @@
-﻿namespace Aemula.UI;
+﻿namespace Aemula.Core.UI;
 
 public enum Pane
 {

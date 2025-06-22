@@ -1,6 +1,6 @@
 ﻿using System.Collections.Generic;
 using Aemula.Chips.Mos6502;
-using Aemula.UI;
+using Aemula.Core.UI;
 
 namespace Aemula.Chips.Ricoh2A03;
 

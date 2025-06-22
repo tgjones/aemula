@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\Aemula\Aemula.csproj" />
+    <ProjectReference Include="..\Aemula.Core\Aemula.Core.csproj" />
   </ItemGroup>
 
 </Project>

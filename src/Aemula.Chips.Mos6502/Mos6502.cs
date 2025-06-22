@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using Aemula.Chips.Mos6502.UI;
-using Aemula.UI;
+using Aemula.Core.UI;
 
 namespace Aemula.Chips.Mos6502;
 

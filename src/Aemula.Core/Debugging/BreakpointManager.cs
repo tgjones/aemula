@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 
-namespace Aemula.Debugging;
+namespace Aemula.Core.Debugging;
 
 public sealed class BreakpointManager
 {
@@ -123,7 +123,7 @@ public sealed class BreakpointManager
     {
         var typeIndex = GetBreakpointTypeIndex(label);
 
-        for (int i = 0; i < NumBreakpoints; i++)
+        for (var i = 0; i < NumBreakpoints; i++)
         {
             ref readonly var breakpoint = ref _breakpoints[i];
             if (breakpoint.Type == typeIndex && breakpoint.Address == address)
@@ -150,7 +150,7 @@ public sealed class BreakpointManager
 
     public void DisableAll()
     {
-        for (int i = 0; i < NumBreakpoints; i++)
+        for (var i = 0; i < NumBreakpoints; i++)
         {
             _breakpoints[i].Enabled = false;
         }
@@ -158,7 +158,7 @@ public sealed class BreakpointManager
 
     public void EnableAll()
     {
-        for (int i = 0; i < NumBreakpoints; i++)
+        for (var i = 0; i < NumBreakpoints; i++)
         {
             _breakpoints[i].Enabled = true;
         }
@@ -171,7 +171,7 @@ public sealed class BreakpointManager
 
     public bool ShouldBreak(ushort pc)
     {
-        for (int i = 0; i < NumBreakpoints; i++)
+        for (var i = 0; i < NumBreakpoints; i++)
         {
             ref readonly var breakpoint = ref _breakpoints[i];
 

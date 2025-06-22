@@ -1,8 +1,9 @@
 ﻿using System.Numerics;
-using Aemula.Debugging;
+using Aemula.Core;
+using Aemula.Core.Debugging;
 using ImGuiNET;
 
-namespace Aemula.UI;
+namespace Aemula.Core.UI;
 
 public sealed class BreakpointsWindow : DebuggerWindow
 {

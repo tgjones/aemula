@@ -1,7 +1,7 @@
 ﻿using System;
 using Veldrid;
 
-namespace Aemula;
+namespace Aemula.Core;
 
 public sealed class Television
 {
@@ -83,15 +83,15 @@ public sealed class Television
 
         var color = TelevisionPalette.NtscPalette[signal.Color];
 
-        var positionY = (int)Math.Round(_currentVisibleScanlines - ((_numVisibleScanlines - _viewportHeight) / 2.0f));
+        var positionY = (int)Math.Round(_currentVisibleScanlines - (_numVisibleScanlines - _viewportHeight) / 2.0f);
 
-        var videoDataIndex = ((positionY * Width) + (_currentPos));
-        if (videoDataIndex > 0 && videoDataIndex < (Width * _viewportHeight))
+        var videoDataIndex = positionY * Width + _currentPos;
+        if (videoDataIndex > 0 && videoDataIndex < Width * _viewportHeight)
         {
             DisplayBuffer.Data[videoDataIndex] = new RgbaByte(
-                (byte)((color >> 16) & 0xFF), // R
-                (byte)((color >> 8) & 0xFF),  // G
-                (byte)((color >> 0) & 0xFF),  // B
+                (byte)(color >> 16 & 0xFF), // R
+                (byte)(color >> 8 & 0xFF),  // G
+                (byte)(color >> 0 & 0xFF),  // B
                 0xFF);                        // A
         }
 

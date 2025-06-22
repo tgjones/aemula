@@ -1,9 +1,10 @@
 ﻿using System;
 using System.Numerics;
+using Aemula.Core;
 using ImGuiNET;
 using Veldrid;
 
-namespace Aemula.UI;
+namespace Aemula.Core.UI;
 
 public abstract class DebuggerWindow : IDisposable
 {

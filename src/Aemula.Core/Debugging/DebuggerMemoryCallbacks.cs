@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Aemula.Debugging;
+namespace Aemula.Core.Debugging;
 
 public readonly struct DebuggerMemoryCallbacks
 {
@@ -19,6 +19,6 @@ public readonly struct DebuggerMemoryCallbacks
     {
         var lo = Read(address);
         var hi = Read((ushort)(address + 1));
-        return (ushort)((hi << 8) | lo);
+        return (ushort)(hi << 8 | lo);
     }
 }

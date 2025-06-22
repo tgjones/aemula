@@ -1,5 +1,6 @@
 ﻿using System;
 using Aemula.Chips.Tia;
+using Aemula.Core;
 
 namespace Aemula.Systems.Atari2600;
 

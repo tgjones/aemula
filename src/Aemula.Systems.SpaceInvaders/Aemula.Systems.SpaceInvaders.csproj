@@ -3,7 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Aemula.Chips.Intel8080\Aemula.Chips.Intel8080.csproj" />
     <ProjectReference Include="..\Aemula.Chips.MB14241\Aemula.Chips.MB14241.csproj" />
-    <ProjectReference Include="..\Aemula\Aemula.csproj" />
+    <ProjectReference Include="..\Aemula.Core\Aemula.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>
