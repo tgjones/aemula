@@ -10,10 +10,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Aemula.Systems.Nes\Aemula.Systems.Nes.csproj" />
-    <ProjectReference Include="..\Aemula.Systems.Atari2600\Aemula.Systems.Atari2600.csproj" />
-    <ProjectReference Include="..\Aemula.Systems.Chip8\Aemula.Systems.Chip8.csproj" />
-    <ProjectReference Include="..\Aemula.Systems.SpaceInvaders\Aemula.Systems.SpaceInvaders.csproj" />
+    <ProjectReference Include="..\Aemula\Aemula.csproj" />
   </ItemGroup>
 
 </Project>

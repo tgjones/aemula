@@ -1,8 +1,0 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
-  <ItemGroup>
-    <ProjectReference Include="..\Aemula.Core\Aemula.Core.csproj" />
-    <ProjectReference Include="..\Aemula.Chips.Mos6502\Aemula.Chips.Mos6502.csproj" />
-    <ProjectReference Include="..\Aemula.Chips.Mos6532\Aemula.Chips.Mos6532.csproj" />
-    <ProjectReference Include="..\Aemula.Chips.Tia\Aemula.Chips.Tia.csproj" />
-  </ItemGroup>
-</Project>

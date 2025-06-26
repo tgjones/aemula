@@ -1,7 +1,0 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
-
-  <ItemGroup>
-    <ProjectReference Include="..\Aemula.Chips.Mos6502\Aemula.Chips.Mos6502.csproj" />
-  </ItemGroup>
-
-</Project>

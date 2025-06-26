@@ -1,0 +1,12 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\Aemula.CodeGen\Aemula.CodeGen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+
+    <PackageReference Include="ImGui.NET" />
+    <PackageReference Include="Veldrid.ImGui" />
+
+    <Content Include="Emulation\**\Roms\*.*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+</Project>

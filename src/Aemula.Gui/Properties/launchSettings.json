@@ -2,7 +2,7 @@
   "profiles": {
     "Aemula.Gui": {
       "commandName": "Project",
-      "commandLineArgs": "nes C:\\Code\\aemula-csharp\\src\\Aemula.Chips.Mos6502.Tests\\Assets\\nestest.nes"
+      "commandLineArgs": "nes C:\\Code\\aemula\\src\\Aemula.Tests\\Emulation\\Chips\\Mos6502\\Assets\\nestest.nes"
     }
   }
 }
