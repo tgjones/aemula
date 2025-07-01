@@ -1,8 +1,8 @@
-﻿using Aemula.Chips.Mos6502;
+﻿using Aemula.Emulation.Chips.Mos6502;
 
-namespace Aemula.Chips.Ricoh2A03;
+namespace Aemula.Emulation.Chips.Ricoh2A03;
 
-partial class Ricoh2A03
+partial class Ricoh2A03Chip
 {
     // When 4014 is written to, pause CPU and do 256 * read/write cycles from specified page to 2004
     // https://forums.nesdev.com/viewtopic.php?f=3&t=14120

@@ -3,7 +3,7 @@ using System.Numerics;
 using ImGuiNET;
 using Veldrid;
 
-namespace Aemula.Core.UI;
+namespace Aemula.UI;
 
 public sealed class ScreenDisplayWindow : DebuggerWindow
 {

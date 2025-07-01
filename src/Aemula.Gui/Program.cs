@@ -5,12 +5,11 @@ using System.Linq;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Text;
-using Aemula.Core;
-using Aemula.Core.UI;
-using Aemula.Systems.Atari2600;
-using Aemula.Systems.Chip8;
-using Aemula.Systems.Nes;
-using Aemula.Systems.SpaceInvaders;
+using Aemula.Emulation.Systems.Atari2600;
+using Aemula.Emulation.Systems.Chip8;
+using Aemula.Emulation.Systems.Nes;
+using Aemula.Emulation.Systems.SpaceInvaders;
+using Aemula.UI;
 using ImGuiNET;
 using Veldrid;
 using Veldrid.StartupUtilities;
@@ -21,9 +20,9 @@ public static class Program
 {
     private static readonly Dictionary<string, Func<EmulatedSystem>> Systems = new()
     {
-        { "atari2600", () => new Atari2600() },
-        { "chip8", () => new Chip8() },
-        { "nes", () => new Nes() },
+        { "atari2600", () => new Atari2600System() },
+        { "chip8", () => new Chip8System() },
+        { "nes", () => new NesSystem() },
         { "spaceinvaders", () => new SpaceInvadersSystem() },
     };
 

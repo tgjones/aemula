@@ -1,12 +1,11 @@
 ﻿using System;
 using System.IO;
-using Aemula.Core;
-using Aemula.Core.Debugging;
-using Aemula.Systems.Chip8.Debugging;
+using Aemula.Debugging;
+using Aemula.Emulation.Systems.Chip8.Debugging;
 
-namespace Aemula.Systems.Chip8;
+namespace Aemula.Emulation.Systems.Chip8;
 
-public sealed partial class Chip8 : EmulatedSystem
+public sealed partial class Chip8System : EmulatedSystem
 {
     private readonly byte[] _memory; // 4KB
     private readonly byte[] _v; // V registers
@@ -32,7 +31,7 @@ public sealed partial class Chip8 : EmulatedSystem
 
     public override ulong CyclesPerSecond => 600;
 
-    public Chip8()
+    public Chip8System()
     {
         _memory = new byte[0x1000];
         _v = new byte[16];

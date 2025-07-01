@@ -1,4 +1,4 @@
-﻿namespace Aemula.Systems.Atari2600;
+﻿namespace Aemula.Emulation.Systems.Atari2600;
 
 internal static class Palette
 {

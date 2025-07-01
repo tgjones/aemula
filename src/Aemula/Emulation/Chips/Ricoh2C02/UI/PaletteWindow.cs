@@ -1,21 +1,20 @@
 ﻿using System.Numerics;
-using Aemula.Core;
-using Aemula.Core.UI;
+using Aemula.UI;
 using ImGuiNET;
 
-namespace Aemula.Chips.Ricoh2C02.UI;
+namespace Aemula.Emulation.Chips.Ricoh2C02.UI;
 
 internal sealed class PaletteWindow : DebuggerWindow
 {
     private const int PaletteEntries = 16;
 
-    private readonly Ricoh2C02 _ricoh2C02;
+    private readonly Ricoh2C02Chip _ricoh2C02;
 
     public override string DisplayName => "NES PPU Palette";
 
     public override Pane PreferredPane => Pane.Bottom;
 
-    public PaletteWindow(Ricoh2C02 ricoh2C02)
+    public PaletteWindow(Ricoh2C02Chip ricoh2C02)
     {
         _ricoh2C02 = ricoh2C02;
     }

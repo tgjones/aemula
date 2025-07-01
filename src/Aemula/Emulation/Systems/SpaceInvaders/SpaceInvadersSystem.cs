@@ -1,22 +1,21 @@
 ﻿using System;
 using System.IO;
-using Aemula.Chips.Intel8080;
-using Aemula.Chips.MB14241;
-using Aemula.Core;
-using Aemula.Core.Debugging;
-using Aemula.Systems.SpaceInvaders.Debugging;
+using Aemula.Emulation.Chips.Intel8080;
+using Aemula.Debugging;
+using Aemula.Emulation.Chips.MB14241;
+using Aemula.Emulation.Systems.SpaceInvaders.Debugging;
 using Veldrid;
 
-namespace Aemula.Systems.SpaceInvaders;
+namespace Aemula.Emulation.Systems.SpaceInvaders;
 
 public sealed class SpaceInvadersSystem : EmulatedSystem
 {
-    private readonly Intel8080 _cpu;
+    private readonly Intel8080Chip _cpu;
 
     private readonly byte[] _rom;
     private readonly byte[] _ram;
 
-    private readonly MB14241 _shifter;
+    private readonly MB14241Chip _shifter;
 
     private byte _lastStatusWord;
     private ulong _masterClock;
@@ -27,17 +26,17 @@ public sealed class SpaceInvadersSystem : EmulatedSystem
 
     public readonly DisplayBuffer Display;
 
-    public Intel8080 Cpu => _cpu;
+    public Intel8080Chip Cpu => _cpu;
 
     public SpaceInvadersSystem()
     {
-        _cpu = new Intel8080();
+        _cpu = new Intel8080Chip();
 
         _rom = new byte[0x2000];
 
         _ram = new byte[0x2000];
 
-        _shifter = new MB14241();
+        _shifter = new MB14241Chip();
 
         Display = new DisplayBuffer(256, 256);
     }
@@ -108,9 +107,9 @@ public sealed class SpaceInvadersSystem : EmulatedSystem
             // Read data.
             switch (_lastStatusWord)
             {
-                case Intel8080.StatusWordFetch:
-                case Intel8080.StatusWordMemoryRead:
-                case Intel8080.StatusWordStackRead:
+                case Intel8080Chip.StatusWordFetch:
+                case Intel8080Chip.StatusWordMemoryRead:
+                case Intel8080Chip.StatusWordStackRead:
                     if (pins.Address > 0x3FFF)
                     {
                         // TODO: Actually this should be a mirror of RAM?
@@ -126,7 +125,7 @@ public sealed class SpaceInvadersSystem : EmulatedSystem
                     }
                     break;
 
-                case Intel8080.StatusWordInputRead:
+                case Intel8080Chip.StatusWordInputRead:
                     pins.Data = (pins.Address & 0xFF) switch
                     {
                         1 => GetIOPort1Value(),
@@ -136,7 +135,7 @@ public sealed class SpaceInvadersSystem : EmulatedSystem
                     };
                     break;
 
-                case Intel8080.StatusWordInterruptAcknowledge:
+                case Intel8080Chip.StatusWordInterruptAcknowledge:
                     pins.Data = _nextInterrupt;
                     pins.Int = false;
                     break;
@@ -148,15 +147,15 @@ public sealed class SpaceInvadersSystem : EmulatedSystem
             // Write data.
             switch (_lastStatusWord)
             {
-                case Intel8080.StatusWordMemoryWrite:
-                case Intel8080.StatusWordStackWrite:
+                case Intel8080Chip.StatusWordMemoryWrite:
+                case Intel8080Chip.StatusWordStackWrite:
                     if ((pins.Address & 0x2000) == 0x2000)
                     {
                         _ram[pins.Address & 0x1FFF] = pins.Data;
                     }
                     break;
 
-                case Intel8080.StatusWordOutputWrite:
+                case Intel8080Chip.StatusWordOutputWrite:
                     switch (pins.Address & 0xFF)
                     {
                         case 2:
@@ -231,16 +230,16 @@ public sealed class SpaceInvadersSystem : EmulatedSystem
         {
             for (var x = 0; x < 32; x++)
             {
-                var videoRamValue = _ram[(y * 32) + x];
+                var videoRamValue = _ram[y * 32 + x];
 
                 byte mask = 1;
                 for (var b = 0; b < 8; b++)
                 {
-                    var outputValue = ((videoRamValue & mask) != 0)
+                    var outputValue = (videoRamValue & mask) != 0
                         ? (byte)0xFF
                         : (byte)0;
 
-                    var outputAddress = (y * 256) + (x * 8) + b;
+                    var outputAddress = y * 256 + x * 8 + b;
 
                     Display.Data[outputAddress] = new RgbaByte(
                         outputValue,

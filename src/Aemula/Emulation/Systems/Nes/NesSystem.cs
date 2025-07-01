@@ -1,12 +1,11 @@
-﻿using Aemula.Chips.Ricoh2A03;
-using Aemula.Chips.Ricoh2C02;
-using Aemula.Systems.Nes.Debugging;
-using Aemula.Core;
-using Aemula.Core.Debugging;
+﻿using Aemula.Emulation.Chips.Ricoh2A03;
+using Aemula.Emulation.Chips.Ricoh2C02;
+using Aemula.Emulation.Systems.Nes.Debugging;
+using Aemula.Debugging;
 
-namespace Aemula.Systems.Nes;
+namespace Aemula.Emulation.Systems.Nes;
 
-public sealed class Nes : EmulatedSystem
+public sealed class NesSystem : EmulatedSystem
 {
     public override ulong CyclesPerSecond => 5369318;
 
@@ -18,15 +17,15 @@ public sealed class Nes : EmulatedSystem
     private byte _ppuCycle;
     private byte _vramLowAddressLatch;
 
-    public readonly Ricoh2A03 Cpu;
+    public readonly Ricoh2A03Chip Cpu;
 
-    public readonly Ricoh2C02 Ppu;
+    public readonly Ricoh2C02Chip Ppu;
 
-    public Nes()
+    public NesSystem()
     {
-        Cpu = new Ricoh2A03();
+        Cpu = new Ricoh2A03Chip();
 
-        Ppu = new Ricoh2C02();
+        Ppu = new Ricoh2C02Chip();
 
         _ram = new byte[0x0800];
         _vram = new byte[0x0800];
@@ -120,8 +119,8 @@ public sealed class Nes : EmulatedSystem
             _vramLowAddressLatch = ppuPins.PpuAddressData.Data;
         }
 
-        var pa13 = (ppuPins.PpuAddressData.Address >> 13) & 1;
-        var ppuAddress = (ppuPins.PpuAddressData.AddressHi << 8) | _vramLowAddressLatch;
+        var pa13 = ppuPins.PpuAddressData.Address >> 13 & 1;
+        var ppuAddress = ppuPins.PpuAddressData.AddressHi << 8 | _vramLowAddressLatch;
 
         if (!ppuPins.PpuRD)
         {

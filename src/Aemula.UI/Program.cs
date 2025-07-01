@@ -3,7 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.ReactiveUI;
 
-namespace Aemula;
+namespace Aemula.UI;
 
 internal class Program
 {

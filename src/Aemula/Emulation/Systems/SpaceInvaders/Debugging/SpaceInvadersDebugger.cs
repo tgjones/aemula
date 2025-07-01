@@ -1,10 +1,10 @@
 ﻿using System.Collections.Generic;
-using Aemula.Chips.Intel8080;
-using Aemula.Chips.Intel8080.Debugging;
-using Aemula.Core.Debugging;
-using Aemula.Core.UI;
+using Aemula.Debugging;
+using Aemula.Emulation.Chips.Intel8080;
+using Aemula.Emulation.Chips.Intel8080.Debugging;
+using Aemula.UI;
 
-namespace Aemula.Systems.SpaceInvaders.Debugging;
+namespace Aemula.Emulation.Systems.SpaceInvaders.Debugging;
 
 public sealed class SpaceInvadersDebugger : Debugger
 {
@@ -31,7 +31,7 @@ public sealed class SpaceInvadersDebugger : Debugger
     {
         base.TickSystem();
 
-        if (_system.Cpu.Pins.Sync && _system.Cpu.Pins.Data == Intel8080.StatusWordFetch)
+        if (_system.Cpu.Pins.Sync && _system.Cpu.Pins.Data == Intel8080Chip.StatusWordFetch)
         {
             OnAddressExecuting(_system.Cpu.Pins.Address);
         }

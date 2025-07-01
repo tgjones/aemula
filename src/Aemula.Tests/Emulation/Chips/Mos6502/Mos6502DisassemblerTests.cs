@@ -3,11 +3,11 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
-using Aemula.Chips.Mos6502.Debugging;
-using Aemula.Core.Debugging;
+using Aemula.Debugging;
+using Aemula.Emulation.Chips.Mos6502.Debugging;
 using NUnit.Framework;
 
-namespace Aemula.Chips.Mos6502.Tests;
+namespace Aemula.Tests.Emulation.Chips.Mos6502;
 
 public class Mos6502DisassemblerTests
 {

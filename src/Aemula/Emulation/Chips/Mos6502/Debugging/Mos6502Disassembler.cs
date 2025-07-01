@@ -1,7 +1,7 @@
 ﻿using System.Collections.Generic;
-using Aemula.Core.Debugging;
+using Aemula.Debugging;
 
-namespace Aemula.Chips.Mos6502.Debugging;
+namespace Aemula.Emulation.Chips.Mos6502.Debugging;
 
 public class Mos6502Disassembler : Disassembler
 {
@@ -9,7 +9,7 @@ public class Mos6502Disassembler : Disassembler
     private readonly Dictionary<ushort, string> _equates;
 
     public Mos6502Disassembler(
-        DebuggerMemoryCallbacks memoryCallbacks, 
+        DebuggerMemoryCallbacks memoryCallbacks,
         Dictionary<ushort, string> equates,
         bool hasNmi = true,
         bool hasIrq = true)
@@ -59,7 +59,7 @@ public class Mos6502Disassembler : Disassembler
 
     protected override DisassembledInstruction DisassembleInstruction(ushort address)
     {
-        return Mos6502.DisassembleInstruction(
+        return Mos6502Chip.DisassembleInstruction(
             address,
             MemoryCallbacks.Read,
             _equates);

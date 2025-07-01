@@ -1,8 +1,7 @@
 ﻿using System;
-using Aemula.Chips.Tia;
-using Aemula.Core;
+using Aemula.Emulation.Chips.Tia;
 
-namespace Aemula.Systems.Atari2600;
+namespace Aemula.Emulation.Systems.Atari2600;
 
 // This doesn't correlate to actual hardware in the Atari 2600.
 // This is the way we gather video output from the TIA
@@ -87,18 +86,18 @@ internal sealed class VideoOutput
                 return;
             }
 
-            var paletteIndex = (tiaPins.Lum & 0b111) | ((tiaPins.Col & 0xF) << 3);
+            var paletteIndex = tiaPins.Lum & 0b111 | (tiaPins.Col & 0xF) << 3;
             var color = Palette.NtscPalette[paletteIndex];
 
-            var positionY = (int)Math.Round(_currentVisibleScanlines - ((_numVisibleScanlines - _viewportHeight) / 2.0f));
+            var positionY = (int)Math.Round(_currentVisibleScanlines - (_numVisibleScanlines - _viewportHeight) / 2.0f);
 
-            var videoDataIndex = ((positionY * Width) + (_currentPos));
-            if (videoDataIndex > 0 && videoDataIndex < (Width * _viewportHeight))
+            var videoDataIndex = positionY * Width + _currentPos;
+            if (videoDataIndex > 0 && videoDataIndex < Width * _viewportHeight)
             {
                 DisplayBuffer.Data[videoDataIndex] = new Veldrid.RgbaByte(
-                    (byte)((color >> 16) & 0xFF), // R
-                    (byte)((color >> 8) & 0xFF),  // G
-                    (byte)((color >> 0) & 0xFF),  // B
+                    (byte)(color >> 16 & 0xFF), // R
+                    (byte)(color >> 8 & 0xFF),  // G
+                    (byte)(color >> 0 & 0xFF),  // B
                     0xFF);                        // A
             }
 

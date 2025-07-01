@@ -2,11 +2,11 @@
 using System.Globalization;
 using System.IO;
 using System.Numerics;
-using Aemula.Systems.Nes.Ppu;
+using Aemula.Emulation.Systems.Nes.Ppu;
 using FlawlessChips;
 using NUnit.Framework;
 
-namespace Aemula.Systems.Nes.Tests;
+namespace Aemula.Tests.Emulation.Systems.Nes;
 
 internal class Ricoh2C02Tests
 {
@@ -46,7 +46,7 @@ internal class Ricoh2C02Tests
             {
                 Assert.AreEqual(
                     int.Parse(expectedLineEntries[index], NumberStyles.HexNumber),
-                    value, 
+                    value,
                     "{0} {1}",
                     name,
                     messageSuffix);

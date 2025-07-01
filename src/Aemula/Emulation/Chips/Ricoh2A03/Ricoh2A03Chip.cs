@@ -1,19 +1,19 @@
 ﻿using System.Collections.Generic;
-using Aemula.Chips.Mos6502;
-using Aemula.Core.UI;
+using Aemula.Emulation.Chips.Mos6502;
+using Aemula.UI;
 
-namespace Aemula.Chips.Ricoh2A03;
+namespace Aemula.Emulation.Chips.Ricoh2A03;
 
-public sealed partial class Ricoh2A03
+public sealed partial class Ricoh2A03Chip
 {
     private const ushort OamDmaAddress = 0x4014;
     private readonly DmaUnit _dmaUnit;
 
-    public readonly Mos6502.Mos6502 CpuCore;
+    public readonly Mos6502Chip CpuCore;
 
-    public Ricoh2A03()
+    public Ricoh2A03Chip()
     {
-        CpuCore = new Mos6502.Mos6502(Mos6502Options.Default);
+        CpuCore = new Mos6502Chip(Mos6502Options.Default);
 
         _dmaUnit = new DmaUnit();
     }

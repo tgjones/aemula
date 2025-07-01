@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Aemula.Chips.Mos6532;
+namespace Aemula.Emulation.Chips.Mos6532;
 
 /// <summary>
 /// 6532 chip, originally manufactured by MOS Technologies.
@@ -11,7 +11,7 @@ namespace Aemula.Chips.Mos6532;
 /// - Programmable interval timer
 /// - Programmable edge detect circuit
 /// </summary>
-public sealed class Mos6532
+public sealed class Mos6532Chip
 {
     private const byte TimerFlag = 0x80;
     private const byte PA7Flag = 0x40;
@@ -71,7 +71,7 @@ public sealed class Mos6532
 
     public Mos6532Pins Pins;
 
-    public Mos6532()
+    public Mos6532Chip()
     {
         _ram = new byte[128];
         _timer = new Timer();
@@ -217,9 +217,9 @@ public sealed class Mos6532
     {
         return register switch
         {
-            0b00 => (byte)((Pins.PA & ~_ddra) | (_ora & _ddra)),
+            0b00 => (byte)(Pins.PA & ~_ddra | _ora & _ddra),
             0b01 => _ddra,
-            0b10 => (byte)((Pins.PB & ~_ddrb) | (_orb & _ddrb)),
+            0b10 => (byte)(Pins.PB & ~_ddrb | _orb & _ddrb),
             0b11 => _ddrb,
             _ => throw new InvalidOperationException()
         };

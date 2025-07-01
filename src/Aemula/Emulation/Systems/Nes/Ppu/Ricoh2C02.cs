@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Runtime.CompilerServices;
 
-namespace Aemula.Systems.Nes.Ppu;
+namespace Aemula.Emulation.Systems.Nes.Ppu;
 
 public class Ricoh2C02
 {
@@ -105,7 +105,7 @@ public class Ricoh2C02
                         break;
 
                     case 305:
-                        if (VPos <= 243 || (VPos >= 247 && VPos <= 261))
+                        if (VPos <= 243 || VPos >= 247 && VPos <= 261)
                         {
                             _state = State.SyncHigh;
                             VidSyncL = false;
@@ -114,7 +114,7 @@ public class Ricoh2C02
                         break;
 
                     case 309:
-                        if (VPos <= 243 || (VPos >= 247 && VPos <= 261))
+                        if (VPos <= 243 || VPos >= 247 && VPos <= 261)
                         {
                             _state = State.ColorBurst;
                             VidSyncH = false;
@@ -122,7 +122,7 @@ public class Ricoh2C02
                         break;
 
                     case 324:
-                        if (VPos <= 243 || (VPos >= 247 && VPos <= 261))
+                        if (VPos <= 243 || VPos >= 247 && VPos <= 261)
                         {
                             _state = State.SyncHigh;
                             _vidBurstH = false;
@@ -182,7 +182,7 @@ public class Ricoh2C02
     private byte _pixelClockCounter;
 
     private byte _colorGeneratorClockCounter;
-    
+
     private bool _vidLuma0H, _vidLuma0L;
     private bool _vidLuma1H, _vidLuma1L;
     private bool _vidLuma2H, _vidLuma2L;
@@ -353,7 +353,7 @@ public class Ricoh2C02
                 var x = _colorGeneratorClockCounter - nibbleLo;
                 var x_min = 0;
                 var x_max = 12;
-                var shiftedPhase = (((x - x_min) % (x_max - x_min)) + (x_max - x_min)) % (x_max - x_min) + x_min;
+                var shiftedPhase = ((x - x_min) % (x_max - x_min) + (x_max - x_min)) % (x_max - x_min) + x_min;
                 lumaH = shiftedPhase < 6;
                 lumaL = !lumaH;
                 break;
@@ -450,7 +450,7 @@ public sealed class ReadOnlyPin
     public PinValue Get() => Value;
 }
 
-public readonly struct ReadWritePin(Func<PinValue> getValue, Action<PinValue> setValue) 
+public readonly struct ReadWritePin(Func<PinValue> getValue, Action<PinValue> setValue)
     : IWriteablePin, IReadablePin
 {
     public PinValue Get() => getValue();

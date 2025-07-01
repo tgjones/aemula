@@ -1,7 +1,7 @@
-﻿using static Aemula.Core.BitUtility;
-using static Aemula.Chips.Tia.TiaUtility;
+﻿using static Aemula.BitUtility;
+using static Aemula.Emulation.Chips.Tia.TiaUtility;
 
-namespace Aemula.Chips.Tia;
+namespace Aemula.Emulation.Chips.Tia;
 
 internal sealed class PlayerAndMissile
 {
@@ -60,7 +60,7 @@ internal sealed class PlayerAndMissile
         }
     }
 
-    public void DoPlayer(Tia tia)
+    public void DoPlayer(TiaChip tia)
     {
         if (_graphicsDelay == 1)
         {
@@ -81,8 +81,8 @@ internal sealed class PlayerAndMissile
             }
 
             // Handle reflection.
-            var graphicsIndex = Reflect 
-                ? (_scanCounter ^ 0b111)
+            var graphicsIndex = Reflect
+                ? _scanCounter ^ 0b111
                 : _scanCounter;
 
             _graphicsDelay = GetBit(Graphics, graphicsIndex);

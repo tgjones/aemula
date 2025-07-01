@@ -1,9 +1,8 @@
-﻿using Aemula.Core;
-using Aemula.Core.UI;
+﻿using Aemula.UI;
 using ImGuiNET;
-using static Aemula.Chips.Ricoh2C02.Ricoh2C02;
+using static Aemula.Emulation.Chips.Ricoh2C02.Ricoh2C02Chip;
 
-namespace Aemula.Chips.Ricoh2C02.UI;
+namespace Aemula.Emulation.Chips.Ricoh2C02.UI;
 
 public sealed class PpuStateWindow : DebuggerWindow
 {
@@ -37,11 +36,11 @@ public sealed class PpuStateWindow : DebuggerWindow
         "8x16",
     };
 
-    private readonly Ricoh2C02 _ppu;
+    private readonly Ricoh2C02Chip _ppu;
 
     public override string DisplayName => "PPU State";
 
-    public PpuStateWindow(Ricoh2C02 ppu)
+    public PpuStateWindow(Ricoh2C02Chip ppu)
     {
         _ppu = ppu;
     }
@@ -108,7 +107,7 @@ public sealed class PpuStateWindow : DebuggerWindow
             _ppu.CtrlRegister.BackgroundPatternTableAddress = (byte)backgroundPatternTableAddress;
         }
 
-        int spriteSize = (int)_ppu.CtrlRegister.SpriteSize;
+        var spriteSize = (int)_ppu.CtrlRegister.SpriteSize;
         ImGui.SetNextItemWidth(comboWidth);
         if (ImGui.Combo("Sprite Size", ref spriteSize, SpriteSizeOptions, SpriteSizeOptions.Length))
         {

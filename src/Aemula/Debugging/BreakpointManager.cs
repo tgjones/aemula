@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 
-namespace Aemula.Core.Debugging;
+namespace Aemula.Debugging;
 
 public sealed class BreakpointManager
 {

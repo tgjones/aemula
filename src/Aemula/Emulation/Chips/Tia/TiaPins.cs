@@ -1,4 +1,4 @@
-﻿namespace Aemula.Chips.Tia;
+﻿namespace Aemula.Emulation.Chips.Tia;
 
 public struct TiaPins
 {

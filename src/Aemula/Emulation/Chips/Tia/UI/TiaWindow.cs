@@ -1,19 +1,17 @@
 ﻿using System;
 using System.Numerics;
-using System.Reflection;
-using Aemula.Core;
-using Aemula.Core.UI;
+using Aemula.UI;
 using ImGuiNET;
 
-namespace Aemula.Chips.Tia.UI;
+namespace Aemula.Emulation.Chips.Tia.UI;
 
 internal sealed class TiaWindow : DebuggerWindow
 {
-    private readonly Tia _tia;
+    private readonly TiaChip _tia;
 
     public override string DisplayName => "TIA";
 
-    public TiaWindow(Tia tia)
+    public TiaWindow(TiaChip tia)
     {
         _tia = tia;
     }
@@ -164,7 +162,7 @@ internal sealed class TiaWindow : DebuggerWindow
 
         for (var i = 0; i < graphicsColors.Length; i++)
         {
-            var color = (((graphics << i) & 0x080) == 0x80)
+            var color = (graphics << i & 0x080) == 0x80
                 ? player.Color
                 : 0;
 

@@ -1,10 +1,10 @@
-﻿using Aemula.Core.Debugging;
+﻿using Aemula.Debugging;
 
-namespace Aemula.Systems.Chip8.Debugging;
+namespace Aemula.Emulation.Systems.Chip8.Debugging;
 
 internal sealed class Chip8Debugger : Debugger
 {
-    public Chip8Debugger(Chip8 system, DebuggerMemoryCallbacks memoryCallbacks)
+    public Chip8Debugger(Chip8System system, DebuggerMemoryCallbacks memoryCallbacks)
         : base(system, memoryCallbacks)
     {
     }

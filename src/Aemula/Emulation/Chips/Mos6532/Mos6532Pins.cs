@@ -1,4 +1,4 @@
-﻿namespace Aemula.Chips.Mos6532;
+﻿namespace Aemula.Emulation.Chips.Mos6532;
 
 public struct Mos6532Pins
 {

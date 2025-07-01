@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Aemula.Core.Debugging;
+namespace Aemula.Debugging;
 
 public readonly struct DebuggerMemoryCallbacks
 {

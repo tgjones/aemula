@@ -1,16 +1,16 @@
 ﻿using System.IO;
 using NUnit.Framework;
 
-namespace Aemula.Systems.Chip8.Tests;
+namespace Aemula.Tests.Emulation.Systems.Chip8;
 
-public class Chip8Tests
+public class Chip8SystemTests
 {
     private static readonly string AssetsPath = Path.Combine("Emulation", "Systems", "Chip8", "Assets");
 
     [Test]
     public void TestBCTest()
     {
-        var system = new Chip8();
+        var system = new Aemula.Emulation.Systems.Chip8.Chip8System();
         system.LoadProgram(Path.Combine(AssetsPath, "bc_test.ch8"));
 
         var maxCycles = 1000000;
@@ -36,7 +36,7 @@ public class Chip8Tests
     [Test]
     public void TestChip8TestRom()
     {
-        var system = new Chip8();
+        var system = new Aemula.Emulation.Systems.Chip8.Chip8System();
         system.LoadProgram(Path.Combine(AssetsPath, "test_opcode.ch8"));
 
         var maxCycles = 1000000;

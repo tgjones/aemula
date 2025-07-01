@@ -1,9 +1,9 @@
 ﻿using System.Collections.Generic;
-using Aemula.Chips.Mos6502.Debugging;
-using Aemula.Core.Debugging;
-using Aemula.Core.UI;
+using Aemula.Debugging;
+using Aemula.Emulation.Chips.Mos6502.Debugging;
+using Aemula.UI;
 
-namespace Aemula.Systems.Atari2600.Debugging;
+namespace Aemula.Emulation.Systems.Atari2600.Debugging;
 
 internal sealed class Atari2600Debugger : Debugger
 {
@@ -57,10 +57,10 @@ internal sealed class Atari2600Debugger : Debugger
         { 0x002C, "CXCLR" },
     };
 
-    private readonly Atari2600 _system;
+    private readonly Atari2600System _system;
     private readonly Mos6502Debugger _mos6502Debugger;
 
-    public Atari2600Debugger(Atari2600 system)
+    public Atari2600Debugger(Atari2600System system)
         : base(system, CreateMemoryCallbacks(system))
     {
         _system = system;
@@ -71,7 +71,7 @@ internal sealed class Atari2600Debugger : Debugger
         StepModes.Add(new DebuggerStepMode("Step Color Cycle", () => true));
     }
 
-    private static DebuggerMemoryCallbacks CreateMemoryCallbacks(Atari2600 system)
+    private static DebuggerMemoryCallbacks CreateMemoryCallbacks(Atari2600System system)
     {
         return new DebuggerMemoryCallbacks(system.ReadByteDebug, system.WriteByteDebug);
     }

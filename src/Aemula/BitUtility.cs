@@ -1,4 +1,4 @@
-﻿namespace Aemula.Core;
+﻿namespace Aemula;
 
 public static class BitUtility
 {

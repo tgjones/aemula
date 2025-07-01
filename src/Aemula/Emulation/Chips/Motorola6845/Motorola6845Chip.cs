@@ -1,8 +1,8 @@
 ﻿using System;
 
-namespace Aemula.Chips.Motorola6845;
+namespace Aemula.Emulation.Chips.Motorola6845;
 
-public sealed class Motorola6845
+public sealed class Motorola6845Chip
 {
     public byte AddressRegister;
 

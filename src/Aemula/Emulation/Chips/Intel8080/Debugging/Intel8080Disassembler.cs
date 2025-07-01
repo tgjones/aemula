@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
-using Aemula.Core.Debugging;
+using Aemula.Debugging;
 
-namespace Aemula.Chips.Intel8080.Debugging;
+namespace Aemula.Emulation.Chips.Intel8080.Debugging;
 
 public class Intel8080Disassembler : Disassembler
 {
@@ -328,9 +328,9 @@ public class Intel8080Disassembler : Disassembler
         {
             var operandLo = MemoryCallbacks.Read((ushort)(address + 1));
             var operandHi = MemoryCallbacks.Read((ushort)(address + 2));
-            var operand = (ushort)((operandHi << 8) | operandLo);
+            var operand = (ushort)(operandHi << 8 | operandLo);
 
-            JumpTarget? jumpTarget = (jumpType != null)
+            JumpTarget? jumpTarget = jumpType != null
                 ? new JumpTarget(JumpType.Jump, operand)
                 : null;
 

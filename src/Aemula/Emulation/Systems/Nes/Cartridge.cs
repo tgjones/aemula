@@ -1,8 +1,8 @@
 ﻿using System.IO;
 using System.Runtime.CompilerServices;
-using Aemula.Systems.Nes.Mappers;
+using Aemula.Emulation.Systems.Nes.Mappers;
 
-namespace Aemula.Systems.Nes;
+namespace Aemula.Emulation.Systems.Nes;
 
 public sealed partial class Cartridge
 {

@@ -2,11 +2,12 @@
 using System.Diagnostics;
 using System.IO;
 using System.Text;
+using Aemula.Emulation.Chips.Mos6502;
 using NUnit.Framework;
 
-namespace Aemula.Chips.Mos6502.Tests;
+namespace Aemula.Tests.Emulation.Chips.Mos6502;
 
-public class Mos6502Tests
+public class Mos6502ChipTests
 {
     private static readonly string AssetsPath = Path.Combine("Emulation", "Chips", "Mos6502", "Assets");
 
@@ -16,7 +17,7 @@ public class Mos6502Tests
         var rom = File.ReadAllBytes(Path.Combine(AssetsPath, "AllSuiteA.bin"));
         var ram = new byte[0x4000];
 
-        var cpu = new Mos6502(Mos6502Options.Default);
+        var cpu = new Aemula.Emulation.Chips.Mos6502.Mos6502Chip(Mos6502Options.Default);
 
         ref var pins = ref cpu.Pins;
 
@@ -56,7 +57,7 @@ public class Mos6502Tests
         ram[0xFFFC] = 0x00;
         ram[0xFFFD] = 0x04;
 
-        var cpu = new Mos6502(Mos6502Options.Default);
+        var cpu = new Aemula.Emulation.Chips.Mos6502.Mos6502Chip(Mos6502Options.Default);
 
         ref var pins = ref cpu.Pins;
 
@@ -98,7 +99,7 @@ public class Mos6502Tests
         // APU and I/O registers - for the purposes of this test, treat them as RAM.
         var apu = new byte[0x18];
 
-        var cpu = new Mos6502(new Mos6502Options(bcdEnabled: false));
+        var cpu = new Aemula.Emulation.Chips.Mos6502.Mos6502Chip(new Mos6502Options(bcdEnabled: false));
         ref var pins = ref cpu.Pins;
 
         using (var streamWriter = new StreamWriter("nestest_aemula.log"))
@@ -130,7 +131,7 @@ public class Mos6502Tests
                     {
                         _ when address <= 0x1FFF => ram[address & 0x07FF],
                         _ when address >= 0x4000 && address <= 0x4017 => apu[address - 0x4000],
-                        _ when address >= 0x8000 && address <= 0xFFFF => rom[(address - 0x8000) & 0x3FFF],
+                        _ when address >= 0x8000 && address <= 0xFFFF => rom[address - 0x8000 & 0x3FFF],
                         _ => rom[address - 0x4000]
                     };
 
@@ -185,9 +186,9 @@ public class Mos6502Tests
 
         var ram = new byte[0x10000];
 
-        unsafe void SetupTest(string fileName, out Mos6502 cpu)
+        unsafe void SetupTest(string fileName, out Aemula.Emulation.Chips.Mos6502.Mos6502Chip cpu)
         {
-            cpu = new Mos6502(Mos6502Options.Default);
+            cpu = new Aemula.Emulation.Chips.Mos6502.Mos6502Chip(Mos6502Options.Default);
 
             // Note that we don't clear the RAM.
             // The tests always (?) write to RAM before reading.
@@ -196,7 +197,7 @@ public class Mos6502Tests
             // First two bytes contain starting address.
             var path = Path.Combine(AssetsPath, "C64TestSuite", "bin", fileName);
             var testData = File.ReadAllBytes(path);
-            var startAddress = testData[0] | (testData[1] << 8);
+            var startAddress = testData[0] | testData[1] << 8;
             for (var i = 2; i < testData.Length; i++)
             {
                 ram[startAddress + i - 2] = testData[i];
@@ -293,7 +294,7 @@ public class Mos6502Tests
                             break;
 
                         case 0xE16F: // Load
-                            var fileNameAddress = ram[0xBB] | (ram[0xBC] << 8);
+                            var fileNameAddress = ram[0xBB] | ram[0xBC] << 8;
                             var fileNameLength = ram[0xB7];
                             testFileName = string.Empty;
                             for (var i = 0; i < fileNameLength; i++)

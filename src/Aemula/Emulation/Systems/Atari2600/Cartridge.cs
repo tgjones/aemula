@@ -1,7 +1,7 @@
 ﻿using System;
-using static Aemula.Core.BitUtility;
+using static Aemula.BitUtility;
 
-namespace Aemula.Systems.Atari2600;
+namespace Aemula.Emulation.Systems.Atari2600;
 
 internal struct CartridgePins
 {

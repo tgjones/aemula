@@ -1,6 +1,6 @@
-﻿using static Aemula.Core.BitUtility;
+﻿using static Aemula.BitUtility;
 
-namespace Aemula.Chips.Tia;
+namespace Aemula.Emulation.Chips.Tia;
 
 /// <summary>
 /// 6-bit counter value.
@@ -12,12 +12,12 @@ internal struct PolynomialCounter
     public void Increment()
     {
         // Put high 5 bits from old value into low 5 bits in new value.
-        var newLoBits = (Value >> 1) & 0b11111;
+        var newLoBits = Value >> 1 & 0b11111;
 
         // New high bit is 1 if the low 2 bits are the same, and 0 if they are different.
-        var newHiBit = (GetBit(Value, 0) == GetBit(Value, 1)) ? 1 : 0;
+        var newHiBit = GetBit(Value, 0) == GetBit(Value, 1) ? 1 : 0;
 
-        Value = (byte)((newHiBit << 5) | newLoBits);
+        Value = (byte)(newHiBit << 5 | newLoBits);
     }
 
     public void Reset()

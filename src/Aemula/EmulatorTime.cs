@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Aemula.Core;
+namespace Aemula;
 
 public readonly struct EmulatorTime
 {

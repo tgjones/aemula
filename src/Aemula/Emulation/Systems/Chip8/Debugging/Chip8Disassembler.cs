@@ -1,7 +1,7 @@
 ﻿using System.Collections.Generic;
-using Aemula.Core.Debugging;
+using Aemula.Debugging;
 
-namespace Aemula.Systems.Chip8.Debugging;
+namespace Aemula.Emulation.Systems.Chip8.Debugging;
 
 internal sealed class Chip8Disassembler : Disassembler
 {
@@ -12,13 +12,13 @@ internal sealed class Chip8Disassembler : Disassembler
 
     protected override DisassembledInstruction DisassembleInstruction(ushort address)
     {
-        return Chip8.Disassemble(address, MemoryCallbacks);
+        return Chip8System.Disassemble(address, MemoryCallbacks);
     }
 
     protected override void OnReset(List<ushort> startAddresses, Dictionary<ushort, string> labels)
     {
-        labels[Chip8.ProgramStart] = "Program Start";
+        labels[Chip8System.ProgramStart] = "Program Start";
 
-        startAddresses.Add(Chip8.ProgramStart);
+        startAddresses.Add(Chip8System.ProgramStart);
     }
 }

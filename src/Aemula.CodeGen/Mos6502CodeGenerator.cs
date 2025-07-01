@@ -25,9 +25,9 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
         sb.AppendLine("using System;");
         sb.AppendLine("using System.Diagnostics;");
         sb.AppendLine("");
-        sb.AppendLine("namespace Aemula.Chips.Mos6502");
+        sb.AppendLine("namespace Aemula.Emulation.Chips.Mos6502");
         sb.AppendLine("{");
-        sb.AppendLine("    partial class Mos6502");
+        sb.AppendLine("    partial class Mos6502Chip");
         sb.AppendLine("    {");
         sb.AppendLine("        private void ExecuteInstruction(ref Mos6502Pins pins)");
         sb.AppendLine("        {");
@@ -87,11 +87,11 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
 
         sb.AppendLine("using System;");
         sb.AppendLine("using System.Collections.Generic;");
-        sb.AppendLine("using Aemula.Core.Debugging;");
+        sb.AppendLine("using Aemula.Debugging;");
         sb.AppendLine("");
-        sb.AppendLine("namespace Aemula.Chips.Mos6502");
+        sb.AppendLine("namespace Aemula.Emulation.Chips.Mos6502");
         sb.AppendLine("{");
-        sb.AppendLine("    partial class Mos6502");
+        sb.AppendLine("    partial class Mos6502Chip");
         sb.AppendLine("    {");
         sb.AppendLine("        public static DisassembledInstruction DisassembleInstruction(ushort address, Func<ushort, byte> readMemory, Dictionary<ushort, string> equates)");
         sb.AppendLine("        {");

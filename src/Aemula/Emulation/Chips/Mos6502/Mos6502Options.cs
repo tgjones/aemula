@@ -1,4 +1,4 @@
-﻿namespace Aemula.Chips.Mos6502;
+﻿namespace Aemula.Emulation.Chips.Mos6502;
 
 public readonly struct Mos6502Options
 {

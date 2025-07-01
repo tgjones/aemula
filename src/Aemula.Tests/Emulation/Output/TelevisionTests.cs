@@ -1,7 +1,7 @@
 ﻿using System.IO;
 using NUnit.Framework;
 
-namespace Aemula.Output.Tests;
+namespace Aemula.Tests.Emulation.Output;
 
 internal class TelevisionTests
 {

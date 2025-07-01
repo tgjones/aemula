@@ -1,8 +1,8 @@
-﻿using Aemula.Core.Debugging;
+﻿using Aemula.Debugging;
 
-namespace Aemula.Systems.Chip8;
+namespace Aemula.Emulation.Systems.Chip8;
 
-partial class Chip8
+partial class Chip8System
 {
     internal static DisassembledInstruction Disassemble(
         ushort address,

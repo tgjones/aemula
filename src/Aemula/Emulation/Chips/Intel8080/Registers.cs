@@ -1,6 +1,6 @@
 ﻿using System.Runtime.InteropServices;
 
-namespace Aemula.Chips.Intel8080;
+namespace Aemula.Emulation.Chips.Intel8080;
 
 [StructLayout(LayoutKind.Explicit)]
 public struct BCRegister

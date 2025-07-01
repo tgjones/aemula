@@ -1,17 +1,15 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.IO;
-using Aemula.Chips.Mos6532;
-using Aemula.Chips.Tia;
-using Aemula.Core;
-using Aemula.Core.Debugging;
-using Aemula.Core.UI;
-using Aemula.Systems.Atari2600.Debugging;
-using static Aemula.Core.BitUtility;
+using Aemula.Debugging;
+using Aemula.Emulation.Chips.Mos6532;
+using Aemula.Emulation.Chips.Tia;
+using Aemula.Emulation.Systems.Atari2600.Debugging;
+using Aemula.UI;
+using static Aemula.BitUtility;
 
-namespace Aemula.Systems.Atari2600;
+namespace Aemula.Emulation.Systems.Atari2600;
 
-public sealed class Atari2600 : EmulatedSystem
+public sealed class Atari2600System : EmulatedSystem
 {
     // 3.58 MHZ
     public override ulong CyclesPerSecond => 3580000;
@@ -19,8 +17,8 @@ public sealed class Atari2600 : EmulatedSystem
     private readonly BinaryWriter _ntscWriter;
 
     private readonly Mos6507 _cpu;
-    private readonly Mos6532 _riot;
-    private readonly Tia _tia;
+    private readonly Mos6532Chip _riot;
+    private readonly TiaChip _tia;
     private readonly Television _television;
 
     private byte _tiaCycle;
@@ -32,11 +30,11 @@ public sealed class Atari2600 : EmulatedSystem
     internal Mos6507 Cpu => _cpu;
     //internal VideoOutput VideoOutput => _videoOutput;
 
-    public Atari2600()
+    public Atari2600System()
     {
         _cpu = new Mos6507();
-        _riot = new Mos6532();
-        _tia = new Tia();
+        _riot = new Mos6532Chip();
+        _tia = new TiaChip();
 
         _television = new Television();
 
@@ -108,7 +106,7 @@ public sealed class Atari2600 : EmulatedSystem
                 _tia.Pins.Sync,
                 _tia.Pins.Blk,
                 false,
-                (byte)((_tia.Pins.Lum & 0b111) | ((_tia.Pins.Col & 0xF) << 3))));
+                (byte)(_tia.Pins.Lum & 0b111 | (_tia.Pins.Col & 0xF) << 3)));
 
         _tiaCycle++;
 
@@ -132,7 +130,7 @@ public sealed class Atari2600 : EmulatedSystem
         }
         else
         {
-            ntscSignal = ConvertRange(0, 7, (byte)((45 / 140.0f) * 240.0f), 240, _tia.Pins.Lum);
+            ntscSignal = ConvertRange(0, 7, (byte)(45 / 140.0f * 240.0f), 240, _tia.Pins.Lum);
         }
         for (var i = 0; i < 4; i++)
         {
@@ -146,7 +144,7 @@ public sealed class Atari2600 : EmulatedSystem
         byte value) // value to convert
     {
         var scale = (float)(newEnd - newStart) / (originalEnd - originalStart);
-        return (byte)(newStart + ((value - originalStart) * scale));
+        return (byte)(newStart + (value - originalStart) * scale);
     }
 
     private void DoCpuCycle()
@@ -187,7 +185,7 @@ public sealed class Atari2600 : EmulatedSystem
 
                 // On the TIA data pins, only pins 6 and 7 are bidirectional,
                 // so we combine those with the existing value on the CPU data bus.
-                _cpu.Pins.Data = (byte)((_cpu.Pins.Data & 0x3F) | (_tia.Pins.Data67 << 6));
+                _cpu.Pins.Data = (byte)(_cpu.Pins.Data & 0x3F | _tia.Pins.Data67 << 6);
                 break;
         }
 

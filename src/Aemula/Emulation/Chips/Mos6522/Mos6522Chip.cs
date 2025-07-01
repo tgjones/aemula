@@ -1,8 +1,8 @@
 ﻿using System;
 
-namespace Aemula.Chips.Mos6522;
+namespace Aemula.Emulation.Chips.Mos6522;
 
-public sealed class Mos6522
+public sealed class Mos6522Chip
 {
     private enum Register
     {

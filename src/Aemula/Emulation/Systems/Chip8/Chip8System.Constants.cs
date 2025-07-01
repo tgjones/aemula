@@ -1,6 +1,6 @@
-﻿namespace Aemula.Systems.Chip8;
+﻿namespace Aemula.Emulation.Systems.Chip8;
 
-partial class Chip8
+partial class Chip8System
 {
     public const ushort ProgramStart = 0x200;
 

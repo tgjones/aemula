@@ -1,11 +1,11 @@
 ﻿// This file contains methods for the more complex opcodes.
-// Simpler operations are generated inline in Mos6502.generated.cs.
+// Simpler operations are generated inline in Mos6502Chip.generated.cs.
 
 using System.Runtime.CompilerServices;
 
-namespace Aemula.Chips.Mos6502;
+namespace Aemula.Emulation.Chips.Mos6502;
 
-partial class Mos6502
+partial class Mos6502Chip
 {
     /// <summary>
     /// AND - Logical AND

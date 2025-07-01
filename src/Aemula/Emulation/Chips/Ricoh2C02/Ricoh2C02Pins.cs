@@ -1,6 +1,6 @@
 ﻿using System.Runtime.InteropServices;
 
-namespace Aemula.Chips.Ricoh2C02;
+namespace Aemula.Emulation.Chips.Ricoh2C02;
 
 public struct Ricoh2C02Pins
 {

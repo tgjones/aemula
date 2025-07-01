@@ -1,18 +1,17 @@
-﻿using Aemula.Core;
-using Aemula.Core.UI;
+﻿using Aemula.UI;
 using ImGuiNET;
 
-namespace Aemula.Chips.Intel8080.UI;
+namespace Aemula.Emulation.Chips.Intel8080.UI;
 
 internal sealed class CpuStateWindow : DebuggerWindow
 {
-    private readonly Intel8080 _intel8080;
+    private readonly Intel8080Chip _intel8080;
 
     public override string DisplayName => "Intel 8080 CPU State";
 
     public override Pane PreferredPane => Pane.Left;
 
-    public CpuStateWindow(Intel8080 intel8080)
+    public CpuStateWindow(Intel8080Chip intel8080)
     {
         _intel8080 = intel8080;
     }

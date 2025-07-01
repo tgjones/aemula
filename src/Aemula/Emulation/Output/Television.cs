@@ -1,4 +1,4 @@
-﻿namespace Aemula.Output;
+﻿namespace Aemula.Emulation.Output;
 
 public class Television
 {

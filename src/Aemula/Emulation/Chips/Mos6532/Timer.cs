@@ -1,4 +1,4 @@
-﻿namespace Aemula.Chips.Mos6532;
+﻿namespace Aemula.Emulation.Chips.Mos6532;
 
 internal sealed class Timer
 {

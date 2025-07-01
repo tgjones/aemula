@@ -1,11 +1,10 @@
 ﻿using System;
 using System.Numerics;
-using Aemula.Core;
-using Aemula.Core.UI;
+using Aemula.UI;
 using ImGuiNET;
 using Veldrid;
 
-namespace Aemula.Systems.Nes.UI;
+namespace Aemula.Emulation.Systems.Nes.UI;
 
 internal sealed class PatternTableWindow : DebuggerWindow
 {
@@ -14,7 +13,7 @@ internal sealed class PatternTableWindow : DebuggerWindow
 
     private static readonly TimeSpan TextureUpdateInterval = TimeSpan.FromMilliseconds(200);
 
-    private readonly Nes _nes;
+    private readonly NesSystem _nes;
 
     private readonly RgbaByte[] _pixelData0;
     private readonly RgbaByte[] _pixelData1;
@@ -22,7 +21,7 @@ internal sealed class PatternTableWindow : DebuggerWindow
     private GraphicsDevice _graphicsDevice;
     private Texture _patternTableTexture0, _patternTableTexture1;
 
-    private IntPtr _patternTableTexture0Ptr, _patternTableTexture1Ptr;
+    private nint _patternTableTexture0Ptr, _patternTableTexture1Ptr;
 
     private TimeSpan _nextTextureUpdateTime;
 
@@ -30,7 +29,7 @@ internal sealed class PatternTableWindow : DebuggerWindow
 
     public override Pane PreferredPane => Pane.Bottom;
 
-    public PatternTableWindow(Nes nes)
+    public PatternTableWindow(NesSystem nes)
     {
         _nes = nes;
 
@@ -95,7 +94,7 @@ internal sealed class PatternTableWindow : DebuggerWindow
             {
                 var baseAddress = tileAddress + row;
 
-                var addressPlane0 = (ushort)(baseAddress);
+                var addressPlane0 = (ushort)baseAddress;
                 var addressPlane1 = (ushort)(baseAddress + 8);
 
                 var dataPlane0 = _nes.ReadChrRom(addressPlane0);
@@ -103,10 +102,10 @@ internal sealed class PatternTableWindow : DebuggerWindow
 
                 for (var column = 0; column < 8; column++)
                 {
-                    var pixelPlane0 = (dataPlane0 >> (7 - column)) & 1;
-                    var pixelPlane1 = (dataPlane1 >> (7 - column)) & 1;
+                    var pixelPlane0 = dataPlane0 >> 7 - column & 1;
+                    var pixelPlane1 = dataPlane1 >> 7 - column & 1;
 
-                    var pixel = pixelPlane0 | (pixelPlane1 << 1);
+                    var pixel = pixelPlane0 | pixelPlane1 << 1;
 
                     var gray = (byte)(pixel * 50);
                     var actualY = y + row;

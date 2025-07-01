@@ -1,7 +1,7 @@
 ﻿using System;
 using Veldrid;
 
-namespace Aemula.Core;
+namespace Aemula;
 
 public sealed class Television
 {

@@ -1,10 +1,10 @@
 ﻿using System.Collections.Generic;
-using Aemula.Chips.Mos6502.Debugging;
-using Aemula.Core.Debugging;
-using Aemula.Core.UI;
-using Aemula.Systems.Nes.UI;
+using Aemula.Debugging;
+using Aemula.Emulation.Chips.Mos6502.Debugging;
+using Aemula.Emulation.Systems.Nes.UI;
+using Aemula.UI;
 
-namespace Aemula.Systems.Nes.Debugging;
+namespace Aemula.Emulation.Systems.Nes.Debugging;
 
 public sealed class NesDebugger : Debugger
 {
@@ -20,10 +20,10 @@ public sealed class NesDebugger : Debugger
         { 0x2007, "PPU_DATA" },
     };
 
-    private readonly Nes _nes;
+    private readonly NesSystem _nes;
     private readonly Mos6502Debugger _mos6502Debugger;
 
-    public NesDebugger(Nes nes)
+    public NesDebugger(NesSystem nes)
         : base(nes, CreateMemoryCallbacks(nes))
     {
         _nes = nes;
@@ -34,7 +34,7 @@ public sealed class NesDebugger : Debugger
         StepModes.Add(new DebuggerStepMode("Step PPU Cycle", () => true));
     }
 
-    private static DebuggerMemoryCallbacks CreateMemoryCallbacks(Nes nes)
+    private static DebuggerMemoryCallbacks CreateMemoryCallbacks(NesSystem nes)
     {
         return new DebuggerMemoryCallbacks(nes.ReadByteDebug, nes.WriteByteDebug);
     }

@@ -1,6 +1,6 @@
-﻿namespace Aemula.Chips.MB14241;
+﻿namespace Aemula.Emulation.Chips.MB14241;
 
-public sealed class MB14241
+public sealed class MB14241Chip
 {
     // Only 15 bits are used.
     private ushort _shiftData;
@@ -15,7 +15,7 @@ public sealed class MB14241
 
     public void SetShiftData(byte value)
     {
-        _shiftData = (ushort)((_shiftData >> 8) | (value << 7));
+        _shiftData = (ushort)(_shiftData >> 8 | value << 7);
     }
 
     public byte GetResult()

@@ -7,7 +7,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using ImGuiNET;
 
-namespace Aemula.Core.UI;
+namespace Aemula.UI;
 
 public static unsafe class ImGuiUtility
 {

@@ -1,9 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
-using Aemula.Core;
-using Aemula.Core.UI;
+using Aemula.UI;
 
-namespace Aemula.Core.Debugging;
+namespace Aemula.Debugging;
 
 public abstract class Debugger
 {

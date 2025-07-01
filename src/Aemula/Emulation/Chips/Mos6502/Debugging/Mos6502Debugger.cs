@@ -1,17 +1,17 @@
-﻿using Aemula.Core.Debugging;
+﻿using Aemula.Debugging;
 
-namespace Aemula.Chips.Mos6502.Debugging;
+namespace Aemula.Emulation.Chips.Mos6502.Debugging;
 
 public sealed class Mos6502Debugger
 {
-    public readonly Mos6502 Cpu;
+    public readonly Mos6502Chip Cpu;
 
     // TODO: StepOverPC for "step over" step mode
 
     private ushort _startPC;
     private byte _startTR;
 
-    public Mos6502Debugger(Mos6502 cpu)
+    public Mos6502Debugger(Mos6502Chip cpu)
     {
         Cpu = cpu;
     }

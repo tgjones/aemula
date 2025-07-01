@@ -1,11 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
-using Aemula.Chips.Mos6502.UI;
-using Aemula.Core.UI;
+using Aemula.Emulation.Chips.Mos6502.UI;
+using Aemula.UI;
 
-namespace Aemula.Chips.Mos6502;
+namespace Aemula.Emulation.Chips.Mos6502;
 
-public partial class Mos6502
+public partial class Mos6502Chip
 {
     public Mos6502Pins Pins;
 
@@ -45,7 +45,7 @@ public partial class Mos6502
 
     internal byte TR => _tr;
 
-    public Mos6502(Mos6502Options options)
+    public Mos6502Chip(Mos6502Options options)
     {
         _bcdEnabled = options.BcdEnabled;
 

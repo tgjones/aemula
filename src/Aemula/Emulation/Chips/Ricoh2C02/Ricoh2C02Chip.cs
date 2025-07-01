@@ -1,13 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
-using Aemula.Chips.Ricoh2C02.UI;
-using Aemula.Core;
-using Aemula.Core.UI;
+using Aemula.Emulation.Chips.Ricoh2C02.UI;
+using Aemula.UI;
 
-namespace Aemula.Chips.Ricoh2C02;
+namespace Aemula.Emulation.Chips.Ricoh2C02;
 
 // https://wiki.nesdev.com/w/index.php/PPU_registers
-public sealed partial class Ricoh2C02
+public sealed partial class Ricoh2C02Chip
 {
     private const byte PpuCtrlAddress = 0x0;
     private const byte PpuMaskAddress = 0x1;
@@ -66,7 +65,7 @@ public sealed partial class Ricoh2C02
 
     public Ricoh2C02Pins Pins;
 
-    public Ricoh2C02()
+    public Ricoh2C02Chip()
     {
         _objectAttributeMemory = new byte[256];
 

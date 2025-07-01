@@ -2,10 +2,11 @@
 using System.IO;
 using System.Text;
 using NUnit.Framework;
+using Aemula.Emulation.Chips.Intel8080;
 
-namespace Aemula.Chips.Intel8080.Tests;
+namespace Aemula.Tests.Emulation.Chips.Intel8080;
 
-public class Intel8080Tests
+public class Intel8080ChipTests
 {
     [TestCase("TST8080.COM", 4924ul)]
     [TestCase("CPUTEST.COM", 255653383ul)]
@@ -19,7 +20,7 @@ public class Intel8080Tests
 
         Array.Copy(programBytes, 0, ram, 0x100, programBytes.Length);
 
-        var cpu = new Intel8080();
+        var cpu = new Intel8080Chip();
         cpu.PC.Value = 0x100;
 
         // Patch C/PM "WBOOT" with "OUT 0, A".
@@ -59,9 +60,9 @@ public class Intel8080Tests
             {
                 switch (lastStatusWord)
                 {
-                    case Intel8080.StatusWordFetch:
-                    case Intel8080.StatusWordMemoryRead:
-                    case Intel8080.StatusWordStackRead:
+                    case Intel8080Chip.StatusWordFetch:
+                    case Intel8080Chip.StatusWordMemoryRead:
+                    case Intel8080Chip.StatusWordStackRead:
                         cpu.Pins.Data = ram[cpu.Pins.Address];
                         break;
                 }
@@ -71,12 +72,12 @@ public class Intel8080Tests
             {
                 switch (lastStatusWord)
                 {
-                    case Intel8080.StatusWordMemoryWrite:
-                    case Intel8080.StatusWordStackWrite:
+                    case Intel8080Chip.StatusWordMemoryWrite:
+                    case Intel8080Chip.StatusWordStackWrite:
                         ram[cpu.Pins.Address] = cpu.Pins.Data;
                         break;
 
-                    case Intel8080.StatusWordOutputWrite:
+                    case Intel8080Chip.StatusWordOutputWrite:
                         switch (cpu.Pins.Address & 0xFF)
                         {
                             case 0:

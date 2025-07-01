@@ -27,10 +27,9 @@
 using System;
 using System.Globalization;
 using System.Numerics;
-using Aemula.Core;
 using ImGuiNET;
 
-namespace Aemula.Core.UI;
+namespace Aemula.UI;
 
 public sealed class MemoryEditor : DebuggerWindow
 {

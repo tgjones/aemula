@@ -1,4 +1,4 @@
-﻿namespace Aemula.Core.Debugging;
+﻿namespace Aemula.Debugging;
 
 public struct Breakpoint
 {

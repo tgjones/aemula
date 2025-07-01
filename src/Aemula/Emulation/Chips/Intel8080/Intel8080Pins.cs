@@ -1,4 +1,4 @@
-﻿namespace Aemula.Chips.Intel8080;
+﻿namespace Aemula.Emulation.Chips.Intel8080;
 
 public struct Intel8080Pins
 {

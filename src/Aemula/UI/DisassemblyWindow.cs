@@ -1,11 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
-using Aemula.Core;
-using Aemula.Core.Debugging;
+using Aemula.Debugging;
 using ImGuiNET;
 
-namespace Aemula.Core.UI;
+namespace Aemula.UI;
 
 public sealed class DisassemblyWindow : DebuggerWindow
 {

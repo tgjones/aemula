@@ -1,6 +1,6 @@
 ﻿using System.Runtime.CompilerServices;
 
-namespace Aemula.Chips.Mos6502;
+namespace Aemula.Emulation.Chips.Mos6502;
 
 public struct ProcessorFlags
 {

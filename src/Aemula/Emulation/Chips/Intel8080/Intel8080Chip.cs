@@ -1,11 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
-using Aemula.Chips.Intel8080.UI;
-using Aemula.Core.UI;
+using Aemula.Emulation.Chips.Intel8080.UI;
+using Aemula.UI;
 
-namespace Aemula.Chips.Intel8080;
+namespace Aemula.Emulation.Chips.Intel8080;
 
-public sealed partial class Intel8080
+public sealed partial class Intel8080Chip
 {
     // Internal state
     private MachineCycleType _machineCycleType;
@@ -37,7 +37,7 @@ public sealed partial class Intel8080
     internal int CombinedMachineCycleTypeAndState => CombineMachineCycleTypeAndState(_machineCycleType, _state);
     public bool InterruptLatch => _interruptLatch;
 
-    public Intel8080()
+    public Intel8080Chip()
     {
         SetNextCycle(MachineCycleType.Fetch);
     }

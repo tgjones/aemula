@@ -1,12 +1,12 @@
 ﻿using System.Collections.Generic;
-using Aemula.Chips.Tia.UI;
-using static Aemula.Core.BitUtility;
-using static Aemula.Chips.Tia.TiaUtility;
-using Aemula.Core.UI;
+using Aemula.Emulation.Chips.Tia.UI;
+using static Aemula.BitUtility;
+using static Aemula.Emulation.Chips.Tia.TiaUtility;
+using Aemula.UI;
 
-namespace Aemula.Chips.Tia;
+namespace Aemula.Emulation.Chips.Tia;
 
-public sealed class Tia
+public sealed class TiaChip
 {
     public TiaPins Pins;
 
@@ -60,7 +60,7 @@ public sealed class Tia
     private byte _hmoveComparator;
     private bool _hmoveCounterEnabled;
 
-    public Tia()
+    public TiaChip()
     {
         PlayerAndMissile0 = new PlayerAndMissile();
         PlayerAndMissile1 = new PlayerAndMissile();
@@ -101,7 +101,7 @@ public sealed class Tia
                     _hmp1Latch = false;
                 }
 
-                _hmoveComparator = (byte)((_hmoveComparator - 1) & 0b1111);
+                _hmoveComparator = (byte)(_hmoveComparator - 1 & 0b1111);
                 if (_hmoveComparator == 0b1111)
                 {
                     _hmoveCounterEnabled = false;
@@ -187,7 +187,7 @@ public sealed class Tia
     {
         // TODO: Reflect playfield
 
-        var shouldOutputPlayfield = (_playfieldCanReflect && _playfieldReflect)
+        var shouldOutputPlayfield = _playfieldCanReflect && _playfieldReflect
             ? GetBitAsBoolean(_playfield, _playfieldIndex)
             : GetBitAsBoolean(_playfield, 19 - _playfieldIndex);
 
@@ -296,26 +296,26 @@ public sealed class Tia
 
                 // COLUP0 - Color-luminance player 0
                 case 0x06:
-                    PlayerAndMissile0.Color = (byte)((pins.Data05 >> 4) | (pins.Data67 << 2));
-                    PlayerAndMissile0.Luminance = (byte)((pins.Data05 >> 1) & 0b111);
+                    PlayerAndMissile0.Color = (byte)(pins.Data05 >> 4 | pins.Data67 << 2);
+                    PlayerAndMissile0.Luminance = (byte)(pins.Data05 >> 1 & 0b111);
                     break;
 
                 // COLUP1 - Color-luminance player 1
                 case 0x07:
-                    PlayerAndMissile1.Color = (byte)((pins.Data05 >> 4) | (pins.Data67 << 2));
-                    PlayerAndMissile1.Luminance = (byte)((pins.Data05 >> 1) & 0b111);
+                    PlayerAndMissile1.Color = (byte)(pins.Data05 >> 4 | pins.Data67 << 2);
+                    PlayerAndMissile1.Luminance = (byte)(pins.Data05 >> 1 & 0b111);
                     break;
 
                 // COLUPF - Color-luminance playfield
                 case 0x08:
-                    _playfieldColor = (byte)((pins.Data05 >> 4) | (pins.Data67 << 2));
-                    _playfieldLuminance = (byte)((pins.Data05 >> 1) & 0b111);
+                    _playfieldColor = (byte)(pins.Data05 >> 4 | pins.Data67 << 2);
+                    _playfieldLuminance = (byte)(pins.Data05 >> 1 & 0b111);
                     break;
 
                 // COLUBK - Color-luminance background
                 case 0x09:
-                    _backgroundColor = (byte)((pins.Data05 >> 4) | (pins.Data67 << 2));
-                    _backgroundLuminance = (byte)((pins.Data05 >> 1) & 0b111);
+                    _backgroundColor = (byte)(pins.Data05 >> 4 | pins.Data67 << 2);
+                    _backgroundLuminance = (byte)(pins.Data05 >> 1 & 0b111);
                     break;
 
                 // CTRLPF - Control playfield ball size and collisions
@@ -343,11 +343,11 @@ public sealed class Tia
                 case 0x0D:
                     {
                         var temp =
-                            (GetBit(pins.Data05, 4) << 3) |
-                            (GetBit(pins.Data05, 5) << 2) |
-                            (GetBit(pins.Data67, 0) << 1) |
-                            (GetBit(pins.Data67, 1) << 0);
-                        _playfield = (ushort)((temp << 16) | (_playfield & 0xFFFF));
+                            GetBit(pins.Data05, 4) << 3 |
+                            GetBit(pins.Data05, 5) << 2 |
+                            GetBit(pins.Data67, 0) << 1 |
+                            GetBit(pins.Data67, 1) << 0;
+                        _playfield = (ushort)(temp << 16 | _playfield & 0xFFFF);
                         break;
                     }
 
@@ -362,8 +362,8 @@ public sealed class Tia
                 //   D7 => PF15
                 case 0x0E:
                     {
-                        var temp = (byte)(pins.Data05 | (pins.Data67 << 6));
-                        _playfield = (ushort)((_playfield & 0xF00FF) | (temp << 8));
+                        var temp = (byte)(pins.Data05 | pins.Data67 << 6);
+                        _playfield = (ushort)(_playfield & 0xF00FF | temp << 8);
                         break;
                     }
 
@@ -379,15 +379,15 @@ public sealed class Tia
                 case 0x0F:
                     {
                         var temp =
-                            (GetBit(pins.Data05, 0) << 7) |
-                            (GetBit(pins.Data05, 1) << 6) |
-                            (GetBit(pins.Data05, 2) << 5) |
-                            (GetBit(pins.Data05, 3) << 4) |
-                            (GetBit(pins.Data05, 4) << 3) |
-                            (GetBit(pins.Data05, 5) << 2) |
-                            (GetBit(pins.Data67, 0) << 1) |
-                            (GetBit(pins.Data67, 1) << 0);
-                        _playfield = (ushort)((_playfield & 0xFFF00) | temp);
+                            GetBit(pins.Data05, 0) << 7 |
+                            GetBit(pins.Data05, 1) << 6 |
+                            GetBit(pins.Data05, 2) << 5 |
+                            GetBit(pins.Data05, 3) << 4 |
+                            GetBit(pins.Data05, 4) << 3 |
+                            GetBit(pins.Data05, 5) << 2 |
+                            GetBit(pins.Data67, 0) << 1 |
+                            GetBit(pins.Data67, 1) << 0;
+                        _playfield = (ushort)(_playfield & 0xFFF00 | temp);
                         break;
                     }
 
@@ -441,12 +441,12 @@ public sealed class Tia
 
                 // GRP0 - Graphics player 0
                 case 0x1B:
-                    PlayerAndMissile0.Graphics = (byte)(pins.Data05 | (pins.Data67 << 6));
+                    PlayerAndMissile0.Graphics = (byte)(pins.Data05 | pins.Data67 << 6);
                     break;
 
                 // GRP1 - Graphics player 1
                 case 0x1C:
-                    PlayerAndMissile1.Graphics = (byte)(pins.Data05 | (pins.Data67 << 6));
+                    PlayerAndMissile1.Graphics = (byte)(pins.Data05 | pins.Data67 << 6);
                     break;
 
                 // ENAM0 - Graphics (enable) missile 0
@@ -465,17 +465,17 @@ public sealed class Tia
                 case 0x20:
                     // Invert HM bit 3 to simplify counting
                     PlayerAndMissile0.HorizontalMotionPlayer = (byte)
-                        ((pins.Data05 >> 4) |
-                        ((pins.Data67 & 1) << 2) |
-                        ((pins.Data67 >> 1) == 1 ? 0b0000 : 0b1000));
+                        (pins.Data05 >> 4 |
+                        (pins.Data67 & 1) << 2 |
+                        (pins.Data67 >> 1 == 1 ? 0b0000 : 0b1000));
                     break;
 
                 // HMP1 - Horizontal motion player 1
                 case 0x21:
                     PlayerAndMissile1.HorizontalMotionPlayer = (byte)
-                        ((pins.Data05 >> 4) |
-                        ((pins.Data67 & 1) << 2) |
-                        ((pins.Data67 >> 1) == 1 ? 0b0000 : 0b1000));
+                        (pins.Data05 >> 4 |
+                        (pins.Data67 & 1) << 2 |
+                        (pins.Data67 >> 1 == 1 ? 0b0000 : 0b1000));
                     break;
 
                 // HMM0 - Horizontal motion missile 0

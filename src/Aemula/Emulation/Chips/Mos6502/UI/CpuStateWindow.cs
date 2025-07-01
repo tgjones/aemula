@@ -1,18 +1,17 @@
-﻿using Aemula.Core;
-using Aemula.Core.UI;
+﻿using Aemula.UI;
 using ImGuiNET;
 
-namespace Aemula.Chips.Mos6502.UI;
+namespace Aemula.Emulation.Chips.Mos6502.UI;
 
 internal sealed class CpuStateWindow : DebuggerWindow
 {
-    private readonly Mos6502 _mos6502;
+    private readonly Mos6502Chip _mos6502;
 
     public override string DisplayName => "MOS6502 CPU State";
 
     public override Pane PreferredPane => Pane.Left;
 
-    public CpuStateWindow(Mos6502 mos6502)
+    public CpuStateWindow(Mos6502Chip mos6502)
     {
         _mos6502 = mos6502;
     }

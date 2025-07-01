@@ -1,27 +1,27 @@
 ﻿//using System.IO;
 //using Aemula.Bus;
-//using Aemula.Chips.Mos6502;
-//using Aemula.Chips.Mos6522;
-//using Aemula.Chips.Motorola6845;
+//using Aemula.Chips.Mos6502Chip;
+//using Aemula.Chips.Mos6522Chip;
+//using Aemula.Chips.Motorola6845Chip;
 //using Aemula.Memory;
 
 //namespace Aemula.Systems.BbcMicro
 //{
-//    public sealed class BbcMicroModelB : EmulatedSystem
+//    public sealed class BbcMicroModelBSystem : EmulatedSystem
 //    {
 //        public readonly Bus<ushort, byte> Bus;
-//        public readonly Mos6502 Cpu;
-//        public readonly Motorola6845 Crtc;
-//        public readonly Mos6522 SystemVia;
+//        public readonly Mos6502Chip Cpu;
+//        public readonly Motorola6845Chip Crtc;
+//        public readonly Mos6522Chip SystemVia;
 
 //        public BbcMicroModelB()
 //        {
 //            Bus = new Bus<ushort, byte>();
 
-//            Cpu = new Mos6502(Bus);
+//            Cpu = new Mos6502Chip(Bus);
 
-//            Crtc = new Motorola6845();
-//            SystemVia = new Mos6522();
+//            Crtc = new Motorola6845Chip();
+//            SystemVia = new Mos6522Chip();
 
 //            Bus.Map(0x0000, 0x7FFF, new Ram<ushort, byte>(0x8000));
 //            Bus.Map(0xC000, 0xFFFF, new Rom<ushort, byte>(File.ReadAllBytes(@"Roms\os.rom")));
@@ -36,7 +36,7 @@
 
 //    public sealed class Sheila : MemoryProxy<ushort, byte>
 //    {
-//        public Sheila(Motorola6845 crtc, Mos6522 systemVia)
+//        public Sheila(Motorola6845Chip crtc, Mos6522Chip systemVia)
 //            : base(0x100)
 //        {
 //            // CRTC

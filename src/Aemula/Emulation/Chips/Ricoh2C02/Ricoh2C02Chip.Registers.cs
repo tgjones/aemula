@@ -1,8 +1,6 @@
-﻿using Aemula.Core;
+﻿namespace Aemula.Emulation.Chips.Ricoh2C02;
 
-namespace Aemula.Chips.Ricoh2C02;
-
-partial class Ricoh2C02
+partial class Ricoh2C02Chip
 {
     internal struct PpuCtrlRegister
     {
