@@ -10,9 +10,7 @@
     <PackageVersion Include="ImGui.NET" Version="1.78.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers" Version="3.3.4" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.7.0" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="16.8.3" />
-    <PackageVersion Include="NUnit" Version="3.12.0" />
-    <PackageVersion Include="NUnit3TestAdapter" Version="3.17.0" />
+    <PackageVersion Include="TUnit" Version="0.25.21" />
     <PackageVersion Include="ScottPlot" Version="4.1.68" />
     <PackageVersion Include="Veldrid.ImGui" Version="5.72.0" />
     <PackageVersion Include="Veldrid.StartupUtilities" Version="4.7.0" />

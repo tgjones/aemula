@@ -2,8 +2,8 @@
 using System.Diagnostics;
 using System.IO;
 using System.Text;
+using System.Threading.Tasks;
 using Aemula.Emulation.Chips.Mos6502;
-using NUnit.Framework;
 
 namespace Aemula.Tests.Emulation.Chips.Mos6502;
 
@@ -12,7 +12,7 @@ public class Mos6502ChipTests
     private static readonly string AssetsPath = Path.Combine("Emulation", "Chips", "Mos6502", "Assets");
 
     [Test]
-    public void AllSuiteA()
+    public async Task AllSuiteA()
     {
         var rom = File.ReadAllBytes(Path.Combine(AssetsPath, "AllSuiteA.bin"));
         var ram = new byte[0x4000];
@@ -44,14 +44,14 @@ public class Mos6502ChipTests
             }
         }
 
-        Assert.AreEqual(0xFF, ram[0x0210]);
+        await Assert.That(ram[0x0210]).IsEqualTo((byte)0xFF);
     }
 
     [Test]
-    public void DormannFunctionalTest()
+    public async Task DormannFunctionalTest()
     {
         var ram = File.ReadAllBytes(Path.Combine(AssetsPath, "6502_functional_test.bin"));
-        Assert.AreEqual(0x10000, ram.Length);
+        await Assert.That(ram.Length).IsEqualTo(0x10000);
 
         // Patch the test start address into the RESET vector.
         ram[0xFFFC] = 0x00;
@@ -77,11 +77,11 @@ public class Mos6502ChipTests
             }
         }
 
-        Assert.AreEqual(0x3399, cpu.PC);
+        await Assert.That(cpu.PC).IsEqualTo((ushort)0x3399);
     }
 
     [Test]
-    public void NesTest()
+    public async Task NesTest()
     {
         byte[] rom;
         using (var reader = new BinaryReader(File.OpenRead(Path.Combine(AssetsPath, "nestest.nes"))))
@@ -164,12 +164,12 @@ public class Mos6502ChipTests
             streamWriter.Dispose();
         }
 
-        Assert.AreEqual(0x000, ram[0x0002]);
-        Assert.AreEqual(0x000, ram[0x0003]);
+        await Assert.That(ram[0x0002]).IsEqualTo((byte)0x000);
+        await Assert.That(ram[0x0003]).IsEqualTo((byte)0x000);
 
-        FileAssert.AreEqual(
-            Path.Combine(AssetsPath, "nestest.log"),
-            "nestest_aemula.log");
+        await Assert
+            .That(File.ReadAllText(Path.Combine(AssetsPath, "nestest.log")))
+            .IsEqualTo(File.ReadAllText("nestest_aemula.log"));
     }
 
     [Test]
@@ -188,7 +188,7 @@ public class Mos6502ChipTests
 
         unsafe void SetupTest(string fileName, out Aemula.Emulation.Chips.Mos6502.Mos6502Chip cpu)
         {
-            cpu = new Aemula.Emulation.Chips.Mos6502.Mos6502Chip(Mos6502Options.Default);
+            cpu = new Mos6502Chip(Mos6502Options.Default);
 
             // Note that we don't clear the RAM.
             // The tests always (?) write to RAM before reading.
@@ -311,7 +311,8 @@ public class Mos6502ChipTests
 
                         case 0x8000: // Exit
                         case 0xA474:
-                            throw new InvalidOperationException(log.ToString());
+                            Assert.Fail(log.ToString());
+                            break;
                     }
 
                     pins.Data = ram[address];

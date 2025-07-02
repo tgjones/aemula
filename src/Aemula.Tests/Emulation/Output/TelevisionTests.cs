@@ -1,5 +1,4 @@
 ﻿using System.IO;
-using NUnit.Framework;
 
 namespace Aemula.Tests.Emulation.Output;
 

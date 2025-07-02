@@ -3,16 +3,16 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using Aemula.Debugging;
 using Aemula.Emulation.Chips.Mos6502.Debugging;
-using NUnit.Framework;
 
 namespace Aemula.Tests.Emulation.Chips.Mos6502;
 
 public class Mos6502DisassemblerTests
 {
     [Test]
-    public void CanDisassembleSimpleInstructions()
+    public async Task CanDisassembleSimpleInstructions()
     {
         var bytes = DasmHelper.Assemble(@"
         processor 6502
@@ -30,9 +30,7 @@ Start   nop
             address => bytes[address - 0xF000],
             (address, value) => throw new NotSupportedException());
 
-        var disassembler = new Mos6502Disassembler(
-            memoryCallbacks,
-            new Dictionary<ushort, string>());
+        var disassembler = new Mos6502Disassembler(memoryCallbacks, []);
 
         disassembler.Reset();
 
@@ -40,28 +38,30 @@ Start   nop
         {
             ref readonly var entry = ref disassembler.Cache[i];
 
+            var (label, instruction) = (entry.Label, entry.Instruction);
+
             switch (i)
             {
                 case 0xF000:
-                    Assert.AreEqual("RESET, IRQ / BRK", entry.Label);
-                    Assert.NotNull(entry.Instruction);
+                    await Assert.That(label).IsEqualTo("RESET, IRQ / BRK");
+                    await Assert.That(instruction).IsNotNull();
                     break;
 
                 case 0xF001:
-                    Assert.AreEqual(null, entry.Label);
-                    Assert.NotNull(entry.Instruction);
+                    await Assert.That(label).IsNull();
+                    await Assert.That(instruction).IsNotNull();
                     break;
 
                 default:
-                    Assert.AreEqual(null, entry.Label);
-                    Assert.Null(entry.Instruction);
+                    await Assert.That(label).IsNull();
+                    await Assert.That(instruction).IsNull();
                     break;
             }
         }
     }
 
     [Test]
-    public void CanDisassembleSubroutine()
+    public async Task CanDisassembleSubroutine()
     {
         var bytes = DasmHelper.Assemble(@"
         processor 6502
@@ -94,31 +94,33 @@ MySubroutine
         {
             ref readonly var entry = ref disassembler.Cache[i];
 
+            var (label, instruction) = (entry.Label, entry.Instruction);
+
             switch (i)
             {
                 case 0xF000:
-                    Assert.AreEqual("RESET, IRQ / BRK", entry.Label);
-                    Assert.NotNull(entry.Instruction);
+                    await Assert.That(label).IsEqualTo("RESET, IRQ / BRK");
+                    await Assert.That(instruction).IsNotNull();
                     break;
 
                 case 0xF003:
-                    Assert.AreEqual(null, entry.Label);
-                    Assert.NotNull(entry.Instruction);
+                    await Assert.That(label).IsNull();
+                    await Assert.That(instruction).IsNotNull();
                     break;
 
                 case 0xF006:
-                    Assert.AreEqual("Subroutine", entry.Label);
-                    Assert.NotNull(entry.Instruction);
+                    await Assert.That(label).IsEqualTo("Subroutine");
+                    await Assert.That(instruction).IsNotNull();
                     break;
 
                 case 0xF008:
-                    Assert.AreEqual(null, entry.Label);
-                    Assert.NotNull(entry.Instruction);
+                    await Assert.That(label).IsNull();
+                    await Assert.That(instruction).IsNotNull();
                     break;
 
                 default:
-                    Assert.AreEqual(null, entry.Label);
-                    Assert.Null(entry.Instruction);
+                    await Assert.That(label).IsNull();
+                    await Assert.That(instruction).IsNull();
                     break;
             }
         }

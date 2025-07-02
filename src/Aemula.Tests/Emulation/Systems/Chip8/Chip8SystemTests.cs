@@ -1,5 +1,4 @@
 ﻿using System.IO;
-using NUnit.Framework;
 
 namespace Aemula.Tests.Emulation.Systems.Chip8;
 
@@ -23,14 +22,14 @@ public class Chip8SystemTests
 
             if (lastPC == 0x030E && system.PC == 0x030E)
             {
-                Assert.Pass();
+                // Successful
                 return;
             }
 
             cycles++;
         }
 
-        Assert.Fail();
+        Assert.Fail("Shouldn't be here");
     }
 
     [Test]
@@ -49,13 +48,13 @@ public class Chip8SystemTests
 
             if (lastPC == 0x03DC && system.PC == 0x03DC)
             {
-                Assert.Pass();
+                // Successful
                 return;
             }
 
             cycles++;
         }
 
-        Assert.Fail();
+        Assert.Fail("Shouldn't be here");
     }
 }

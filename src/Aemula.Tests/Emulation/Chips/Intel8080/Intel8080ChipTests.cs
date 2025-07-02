@@ -1,18 +1,19 @@
 ﻿using System;
 using System.IO;
 using System.Text;
-using NUnit.Framework;
+using System.Threading.Tasks;
 using Aemula.Emulation.Chips.Intel8080;
 
 namespace Aemula.Tests.Emulation.Chips.Intel8080;
 
 public class Intel8080ChipTests
 {
-    [TestCase("TST8080.COM", 4924ul)]
-    [TestCase("CPUTEST.COM", 255653383ul)]
-    [TestCase("8080PRE.COM", 7817ul)]
-    [TestCase("8080EXM.COM", 23803381171ul)]
-    public void Test8080(string fileName, ulong expectedCycleCount)
+    [Test]
+    [Arguments("TST8080.COM", 4924ul)]
+    [Arguments("CPUTEST.COM", 255653383ul)]
+    [Arguments("8080PRE.COM", 7817ul)]
+    [Arguments("8080EXM.COM", 23803381171ul)]
+    public async Task Test8080(string fileName, ulong expectedCycleCount)
     {
         var programBytes = File.ReadAllBytes($"Emulation/Chips/Intel8080/Assets/{fileName}");
 
@@ -88,8 +89,11 @@ public class Intel8080ChipTests
                                 }
                                 else
                                 {
-                                    Assert.AreEqual(expectedCycleCount, cycleCount, outputText);
-                                    Assert.Pass(outputText);
+                                    await Assert.That(cycleCount).IsEqualTo(expectedCycleCount).Because(outputText);
+                                    Context.Current.OutputWriter.Write(outputText);
+
+                                    // Successful.
+                                    return;
                                 }
                                 break;
 
