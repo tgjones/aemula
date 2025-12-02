@@ -19,10 +19,23 @@ internal class TelevisionTests
         //   Blanking:        10.9 µs
         //     Front Porch:    1.5 µs at   0 IRE
         //     Sync Tip:       4.7 µs at -40 IRE, 0V
-        //     Back Porch:     4.7 µs at   0 IRE
+        //     Back Porch:     4.7 µs at   0 IRE (or 6.2)
         //       Breezeway:    0.6 µs at   0 IRE
         //       Color Burst:  2.5 µs centred at 0 IRE, with 40 IRE peak-to-peak amplitude, 9 +- 1 cycles
         //   Active Video:    52.6 µs between 7.5 +- 2.5 and 100 IRE
+        //
+        // Vertical Blanking: equivalent to 9 lines in NTSC, 7.5 in PAL
+        //   Equalizing Pulses: 31.8 µs
+        //   Vertical Sync
+        //   Equalizing Pulses
+        //   Horizontal Pulses
+        //
+        // Vertical Serrations?
+        // First serration pulse triggers vertical sync.
+
+        // If VSYNC pulse occurs:
+        // - at the beginning of the scanline, it marks an odd field.
+        // - at the second half of the scanline, it marks an even field.
         //
         // IRE:
         //   -40 IRE = -286mV
