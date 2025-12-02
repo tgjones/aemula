@@ -31,7 +31,7 @@ internal class TelevisionTests
         //
         // Use a low-pass filter to separate the vertical sync.
 
-        // If vsync is not detected, the vertical oscillator should free-run at ~59.94 Hz.
+        // If vsync is not detected, the vertical oscillator should free-run at a slightly lower frequency than ~59.94 Hz.
 
         const float ntscColorCarrierFrequency = 3_579_545f;
         const float ntscSamplesPerSecond = ntscColorCarrierFrequency * 4;
@@ -39,6 +39,8 @@ internal class TelevisionTests
 
         const int syncLevel = 4; // Sync level should be 0, but we allow some leeway.
         const int blankLevel = 40 / 140 * 200;
+
+        // Implement vertical and horizontal oscillator, which will free-run if no sync is detected.
 
         var syncSamples = 0;
         var foundHSync = false;
