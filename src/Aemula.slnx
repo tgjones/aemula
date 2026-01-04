@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="Aemula.CodeGen/Aemula.CodeGen.csproj" />
+  <Project Path="Aemula.Gui/Aemula.Gui.csproj" />
+  <Project Path="Aemula.Tests/Aemula.Tests.csproj" />
+  <Project Path="Aemula.UI/Aemula.UI.csproj" />
+  <Project Path="Aemula/Aemula.csproj" />
+</Solution>
