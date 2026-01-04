@@ -172,7 +172,7 @@ internal static class DasmHelper
         }
         else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
-            return ("osx", "");
+            return ("mac", "");
         }
         else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
