@@ -11,14 +11,14 @@ partial class Mos6502Chip
     /// AND - Logical AND
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void And(in Mos6502Pins pins)
+    private void And(byte data)
     {
-        A = P.SetZeroNegativeFlags((byte)(A & pins.Data));
+        SetAluOut(P.SetZeroNegativeFlags((byte)(A & data)));
     }
 
     private void Arr(in Mos6502Pins pins)
     {
-        And(pins);
+        And(pins.Data);
 
         // http://www.6502.org/users/andre/petindex/local/64doc.txt
         if (_bcdEnabled && P.D)
@@ -77,8 +77,7 @@ partial class Mos6502Chip
         var temp = (ushort)(A + value + (P.C ? 1 : 0));
         P.V = ((A ^ temp) & (value ^ temp) & 0x80) == 0x80;
         P.C = temp > 0xFF;
-        A = (byte)temp;
-        P.SetZeroNegativeFlags(A);
+        SetAluOut(P.SetZeroNegativeFlags((byte)temp));
     }
 
     private void DoAdcDecimal(byte value)
@@ -107,21 +106,21 @@ partial class Mos6502Chip
             ah &= 0xF;
         }
 
-        A = (byte)(((al & 0xF) | (ah << 4)) & 0xFF);
+        SetAluOut((byte)(((al & 0xF) | (ah << 4)) & 0xFF));
     }
 
     /// <summary>
     /// ADC - Add with Carry
     /// </summary>
-    private void Adc(in Mos6502Pins pins)
+    private void Adc(byte data)
     {
         if (!P.D || !_bcdEnabled)
         {
-            DoAdcBinary(pins.Data);
+            DoAdcBinary(data);
         }
         else
         {
-            DoAdcDecimal(pins.Data);
+            DoAdcDecimal(data);
         }
     }
 
@@ -147,21 +146,21 @@ partial class Mos6502Chip
         P.Z = (result & 0xFF) == 0;
         P.V = ((A ^ result) & (value ^ A) & 0x80) == 0x80;
         P.C = (result & 0x100) == 0;
-        A = (byte)(al | (ah << 4));
+        SetAluOut((byte)(al | (ah << 4)));
     }
 
     /// <summary>
     /// SBC - Subtract with Carry
     /// </summary>
-    private void Sbc(in Mos6502Pins pins)
+    private void Sbc(byte data)
     {
         if (!P.D || !_bcdEnabled)
         {
-            DoAdcBinary((byte)~pins.Data);
+            DoAdcBinary((byte)~data);
         }
         else
         {
-            DoSbcDecimal(pins.Data);
+            DoSbcDecimal(data);
         }
     }
 
@@ -196,7 +195,19 @@ partial class Mos6502Chip
     /// </summary>
     private void Rora()
     {
-        A = RorHelper(A);
+        SetAluOut(RorHelper(A));
+    }
+
+    private void SetAluOut(byte value)
+    {
+        if (_compatibilityMode == Mos6502CompatibilityMode.NesTest)
+        {
+            A = value;
+        }
+        else
+        {
+            _aluOut = value;
+        }
     }
 
     /// <summary>

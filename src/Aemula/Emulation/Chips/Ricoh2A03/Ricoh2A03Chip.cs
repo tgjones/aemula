@@ -13,7 +13,7 @@ public sealed partial class Ricoh2A03Chip
 
     public Ricoh2A03Chip()
     {
-        CpuCore = new Mos6502Chip(Mos6502Options.Default);
+        CpuCore = new Mos6502Chip(new Mos6502Options(false, Mos6502CompatibilityMode.Normal));
 
         _dmaUnit = new DmaUnit();
     }

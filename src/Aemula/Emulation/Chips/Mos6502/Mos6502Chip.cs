@@ -34,8 +34,18 @@ public partial class Mos6502Chip
     private byte _tr;
 
     private BrkFlags _brkFlags;
+    private byte _resetTimer;
 
     private ushort _ad;
+    private byte _sp;
+
+    private byte? _dataOutputRegister;
+    private byte? _dataOutputRegisterDelayed;
+
+    private byte? _aluOut;
+    private byte? _deferredX;
+    private byte? _deferredY;
+    private byte? _deferredSP;
 
     private bool _previousNmi;
     private ushort _nmiCounter;
@@ -43,19 +53,194 @@ public partial class Mos6502Chip
 
     private readonly bool _bcdEnabled;
 
+    private readonly Mos6502CompatibilityMode _compatibilityMode;
+
     internal byte TR => _tr;
+
+    private bool _phi0;
+
+    public bool Phi0
+    {
+        set
+        {
+            if (_phi0 == value)
+            {
+                return;
+            }
+
+            _phi0 = value;
+
+            if (!_resetPin)
+            {
+                return;
+            }
+
+            if (value)
+            {
+                // Transitioning from low to high.
+                // Will be reading / writing data bus.
+                // We send the already-calculated values out to the address and data pins.
+
+                if (_dataOutputRegister != null)
+                {
+                    _dataOutputRegisterDelayed = Pins.Data;
+                    Pins.Data = _dataOutputRegister.Value;
+                    _dataOutputRegister = null;
+                }
+            }
+            else
+            {
+                // Transitioning from high to low.
+                // Will be executing instruction.
+
+                if (_aluOut != null)
+                {
+                    A = _aluOut.Value;
+                    _aluOut = null;
+                }
+
+                if (_deferredX != null)
+                {
+                    X = _deferredX.Value;
+                    _deferredX = null;
+                }
+
+                if (_deferredY != null)
+                {
+                    Y = _deferredY.Value;
+                    _deferredY = null;
+                }
+
+                if (_deferredSP != null)
+                {
+                    SP = _deferredSP.Value;
+                    _deferredSP = null;
+                }
+
+                if (Pins.Sync)
+                {
+                    Pins.Sync = false;
+                    _ir = _brkFlags == BrkFlags.Reset 
+                        ? (byte)0 
+                        : Pins.Data;
+                    _tr = 0;
+                    if (_brkFlags == BrkFlags.None)
+                    {
+                        PC++;
+                    }
+                }
+
+                if (_brkFlags == BrkFlags.Reset)
+                {
+                    _resetTimer++;
+
+                    switch (_resetTimer)
+                    {
+                        case 1:
+                            break;
+
+                        case 2:
+                            Pins.Sync = true;
+                            PC = (ushort)((Pins.Data << 8) | (PC & 0xFF));
+                            Pins.Address = PC;
+                            break;
+                    }
+
+                    if (_resetTimer <= 2)
+                    {
+                        return;
+                    }
+                }
+
+                if (_dataOutputRegisterDelayed != null)
+                {
+                    Pins.Data = _dataOutputRegisterDelayed.Value;
+                    _dataOutputRegisterDelayed = null;
+                }
+
+                // Assume we're going to read.
+                Pins.RW = true;
+
+                ExecuteInstruction(ref Pins);
+
+                // Fixup registers for nestest compatibility.
+                if (_compatibilityMode == Mos6502CompatibilityMode.NesTest)
+                {
+                    if (_aluOut != null)
+                    {
+                        A = _aluOut.Value;
+                        _aluOut = null;
+                    }
+                    if (_deferredX != null)
+                    {
+                        X = _deferredX.Value;
+                        _deferredX = null;
+                    }
+                    if (_deferredY != null)
+                    {
+                        Y = _deferredY.Value;
+                        _deferredY = null;
+                    }
+                    if (_deferredSP != null)
+                    {
+                        SP = _deferredSP.Value;
+                        _deferredSP = null;
+                    }
+                }
+
+                _tr++;
+            }
+        }
+    }
+
+    public bool Phi1 => !_phi0;
+
+    public bool Phi2 => _phi0;
+
+    private bool _resetPin;
+
+    public bool Res
+    {
+        get => _resetPin; // Shouldn't be accessible
+        set
+        {
+            var originalValue = _resetPin;
+
+            _resetPin = value;
+
+            if (!value)
+            {
+                _brkFlags = BrkFlags.Reset;
+            }
+            else if (value && !_resetPin)
+            {
+                _resetTimer = 0;
+            }
+        }
+    }
 
     public Mos6502Chip(Mos6502Options options)
     {
         _bcdEnabled = options.BcdEnabled;
+        _compatibilityMode = options.CompatibilityMode;
+
+        _phi0 = true;
+        _resetPin = true;
+        _brkFlags = BrkFlags.Reset;
+
+        // These initial register values are from Visual 6502.
+        PC = 0xFF;
+        X = 0xC0;
+        SP = 0xC0;
 
         Pins = new Mos6502Pins
         {
-            Sync = true,
+            Sync = false,
             Res = true,
             RW = true,
             Nmi = true,
             Irq = true,
+            Address = 0x00FF,
         };
     }
 
@@ -169,4 +354,10 @@ public readonly struct DecodedInstruction
         Disassembly = disassembly;
         InstructionSizeInBytes = instructionSizeInBytes;
     }
+}
+
+public enum Mos6502CompatibilityMode
+{
+    Normal,
+    NesTest,
 }

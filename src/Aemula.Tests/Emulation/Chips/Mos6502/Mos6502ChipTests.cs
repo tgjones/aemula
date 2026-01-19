@@ -17,31 +17,25 @@ public class Mos6502ChipTests
         var rom = File.ReadAllBytes(Path.Combine(AssetsPath, "AllSuiteA.bin"));
         var ram = new byte[0x4000];
 
-        var cpu = new Aemula.Emulation.Chips.Mos6502.Mos6502Chip(Mos6502Options.Default);
-
-        ref var pins = ref cpu.Pins;
-
-        while (cpu.PC != 0x45C2)
-        {
-            cpu.Tick();
-
-            var address = pins.Address;
-
-            if (pins.RW)
+        var testHelper = new Mos6502ChipTestHelper(
+            address => address switch
             {
-                pins.Data = address switch
-                {
-                    _ when address <= 0x3FFF => ram[address],
-                    _ => rom[address - 0x4000]
-                };
-            }
-            else
+                _ when address <= 0x3FFF => ram[address],
+                _ => rom[address - 0x4000]
+            },
+            (address, data) =>
             {
                 if (address <= 0x3FFF)
                 {
-                    ram[address] = pins.Data;
+                    ram[address] = data;
                 }
-            }
+            });
+
+        await testHelper.Startup();
+
+        while (testHelper.PC != 0x45C2)
+        {
+            await testHelper.Tick();
         }
 
         await Assert.That(ram[0x0210]).IsEqualTo((byte)0xFF);
@@ -57,119 +51,18 @@ public class Mos6502ChipTests
         ram[0xFFFC] = 0x00;
         ram[0xFFFD] = 0x04;
 
-        var cpu = new Aemula.Emulation.Chips.Mos6502.Mos6502Chip(Mos6502Options.Default);
+        var testHelper = new Mos6502ChipTestHelper(
+            address => ram[address],
+            (address, data) => ram[address] = data);
 
-        ref var pins = ref cpu.Pins;
+        await testHelper.Startup();
 
-        while (cpu.PC != 0x3399 && cpu.PC != 0xD0FE)
+        while (testHelper.PC != 0x3399 && testHelper.PC != 0xD0FE)
         {
-            cpu.Tick();
-
-            var address = pins.Address;
-
-            if (pins.RW)
-            {
-                pins.Data = ram[address];
-            }
-            else
-            {
-                ram[address] = pins.Data;
-            }
+            await testHelper.Tick();
         }
 
-        await Assert.That(cpu.PC).IsEqualTo((ushort)0x3399);
-    }
-
-    [Test]
-    public async Task NesTest()
-    {
-        byte[] rom;
-        using (var reader = new BinaryReader(File.OpenRead(Path.Combine(AssetsPath, "nestest.nes"))))
-        {
-            reader.BaseStream.Seek(16, SeekOrigin.Current);
-            rom = reader.ReadBytes(16384);
-        }
-
-        // Patch the test start address into the RESET vector.
-        rom[0x3FFC] = 0x00;
-        rom[0x3FFD] = 0xC0;
-
-        var ram = new byte[0x0800];
-
-        // APU and I/O registers - for the purposes of this test, treat them as RAM.
-        var apu = new byte[0x18];
-
-        var cpu = new Aemula.Emulation.Chips.Mos6502.Mos6502Chip(new Mos6502Options(bcdEnabled: false));
-        ref var pins = ref cpu.Pins;
-
-        using (var streamWriter = new StreamWriter("nestest_aemula.log"))
-        {
-            var cycles = 0;
-            var shouldLog = false;
-
-            while (cpu.PC != 0xC66E)
-            {
-                cpu.Tick();
-
-                cycles += 1;
-
-                if (cycles == 7)
-                {
-                    shouldLog = true;
-                }
-
-                if (shouldLog && pins.Sync)
-                {
-                    streamWriter.WriteLine($"{cpu.PC:X4}  A:{cpu.A:X2} X:{cpu.X:X2} Y:{cpu.Y:X2} P:{cpu.P.AsByte(false):X2} SP:{cpu.SP:X2} CPUC:{cycles - 7}");
-                }
-
-                var address = pins.Address;
-
-                if (pins.RW)
-                {
-                    pins.Data = address switch
-                    {
-                        _ when address <= 0x1FFF => ram[address & 0x07FF],
-                        _ when address >= 0x4000 && address <= 0x4017 => apu[address - 0x4000],
-                        _ when address >= 0x8000 && address <= 0xFFFF => rom[address - 0x8000 & 0x3FFF],
-                        _ => rom[address - 0x4000]
-                    };
-
-                    if (shouldLog)
-                    {
-                        streamWriter.WriteLine($"      READ      ${address:X4} => ${pins.Data:X2}");
-                    }
-                }
-                else
-                {
-                    switch (address)
-                    {
-                        case var _ when address <= 0x1FFF:
-                            ram[address & 0x07FF] = pins.Data;
-                            break;
-
-                        case var _ when address >= 0x4000 && address <= 0x4017:
-                            apu[address - 0x4000] = pins.Data;
-                            break;
-                    }
-
-                    if (shouldLog)
-                    {
-                        streamWriter.WriteLine($"      WRITE     ${address:X4} <= ${pins.Data:X2}");
-                    }
-                }
-            }
-
-            streamWriter.Flush();
-            streamWriter.Dispose();
-        }
-
-        await Assert.That(ram[0x0002]).IsEqualTo((byte)0x000);
-        await Assert.That(ram[0x0003]).IsEqualTo((byte)0x000);
-
-        await Assert
-            .That(File.ReadAllText(Path.Combine(AssetsPath, "nestest.log")))
-            .IsEqualTo(File.ReadAllText("nestest_aemula.log"));
+        await Assert.That(testHelper.PC).IsEqualTo((ushort)0x3399);
     }
 
     [Test]

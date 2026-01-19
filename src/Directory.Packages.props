@@ -6,7 +6,7 @@
     <PackageVersion Include="Avalonia" Version="11.3.1" />
     <PackageVersion Include="Avalonia.Desktop" Version="11.3.1" />
     <PackageVersion Include="Avalonia.ReactiveUI" Version="11.3.1" />
-    <PackageVersion Include="FlawlessChips" Version="0.1.1" />
+    <PackageVersion Include="FlawlessChips" Version="0.1.2" />
     <PackageVersion Include="ImGui.NET" Version="1.78.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers" Version="3.3.4" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.7.0" />
