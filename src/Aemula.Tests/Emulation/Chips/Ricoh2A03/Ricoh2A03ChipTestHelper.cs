@@ -262,8 +262,8 @@ internal sealed class Ricoh2A03ChipTestHelper
         public string ToLogEntry()
         {
             return IsRead
-                ? $"READ     ${Address:X4} => ${Data:X2}"
-                : $"WRITE    ${Address:X4} <= ${Data:X2}";
+                ? $"Read      ${Address:X4} => ${Data:X2}"
+                : $"Write     ${Address:X4} <= ${Data:X2}";
         }
     }
 
@@ -280,21 +280,19 @@ internal sealed class Ricoh2A03ChipTestHelper
                 ReadMemory,
                 []);
 
-            return $"-> {disassembledInstruction.Disassembly}";
+            return $"Instruction {disassembledInstruction.Disassembly}";
         }
     }
-
-#error Cleanup this logging prefixes
 
     private sealed record PinsLog(int Cycle, Ricoh2A03PinState Pins)
         : ILoggable
     {
-        public string ToLogEntry() => $"Cycle {Cycle:D6}   {Pins}";
+        public string ToLogEntry() => $"Pins      {Cycle:D6}   {Pins}";
     }
 
     private sealed record RegistersLog(Ricoh2A03RegisterState Registers)
         : ILoggable
     {
-        public string ToLogEntry() => Registers.ToString();
+        public string ToLogEntry() => $"Registers {Registers}";
     }
 }

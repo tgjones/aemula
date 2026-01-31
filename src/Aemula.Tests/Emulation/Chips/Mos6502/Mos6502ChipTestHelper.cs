@@ -240,8 +240,8 @@ internal sealed class Mos6502ChipTestHelper
         public string ToLogEntry()
         {
             return IsRead
-                ? $"READ     ${Address:X4} => ${Data:X2}"
-                : $"WRITE    ${Address:X4} <= ${Data:X2}";
+                ? $"Read      ${Address:X4} => ${Data:X2}"
+                : $"Write     ${Address:X4} <= ${Data:X2}";
         }
     }
 
@@ -258,20 +258,20 @@ internal sealed class Mos6502ChipTestHelper
                 ReadMemory,
                 []);
 
-            return $"-> {disassembledInstruction.Disassembly}";
+            return $"Instruction {disassembledInstruction.Disassembly}";
         }
     }
 
     private sealed record PinsLog(int Cycle, Mos6502PinState Pins)
         : ILoggable
     {
-        public string ToLogEntry() => $"Cycle {Cycle:D6}   {Pins}";
+        public string ToLogEntry() => $"Pins      {Cycle:D6}   {Pins}";
     }
 
     private sealed record RegistersLog(Mos6502RegisterState Registers)
         : ILoggable
     {
-        public string ToLogEntry() => Registers.ToString();
+        public string ToLogEntry() => $"Registers {Registers}";
     }
 }
 
