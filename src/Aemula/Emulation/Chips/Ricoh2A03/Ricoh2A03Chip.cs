@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Net.NetworkInformation;
 using Aemula.Emulation.Chips.Mos6502;
 using Aemula.UI;
 
@@ -14,7 +15,7 @@ public sealed partial class Ricoh2A03Chip
     private bool _clk;
     private int _clockCounter;
     private bool _phi0;
-    private bool _phi2;
+    private bool _m2;
 
     internal Mos6502Chip CpuCore => _cpuCore;
 
@@ -55,24 +56,30 @@ public sealed partial class Ricoh2A03Chip
 
             _clockCounter++;
 
-            if (_clockCounter == 9 && _phi2 == false)
+            if (_clockCounter == 9 && _m2 == false)
             {
                 // Phi2 rises 3 master clock cycles before Phi0 rises.
                 // By this point the address bus is already stable
                 // so it gives slow cartridges longer to respond.
-                _phi2 = true;
+                OnM2Rising();
+                _m2 = true;
             }
             else if (_clockCounter == 12)
             {
                 _clockCounter = 0;
 
                 _phi0 = !_phi0;
-                _cpuCore.Phi0 = _phi0;
+
+                if (_dmaUnit.DmaState == DmaState.Inactive)
+                {
+                    // TODO: Is this right?
+                    _cpuCore.Phi0 = _phi0;
+                }
 
                 // Phi2 falls at the same time as the CPU's Phi0.
                 if (!_phi0)
                 {
-                    _phi2 = false;
+                    _m2 = false;
                 }
             }
         }
@@ -84,7 +91,7 @@ public sealed partial class Ricoh2A03Chip
     // Shouldn't be exposed.
     public bool CpuCoreSync => _cpuCore.Pins.Sync;
 
-    public bool M2 => _phi2;
+    public bool M2 => _m2;
 
     public bool RW => _cpuCore.Pins.RW;
 
@@ -112,61 +119,58 @@ public sealed partial class Ricoh2A03Chip
         _dmaUnit = new DmaUnit();
     }
 
-    public void Cycle()
+    private void OnPhi0Falling()
     {
-        //// TODO: APU stuff.
 
-        //ref var pins = ref CpuCore.Pins;
+    }
 
-        //_dmaUnit.Cycle(ref pins);
+    private void OnM2Rising()
+    {
+        // TODO: APU stuff.
 
-        //if (_dmaUnit.DmaState != DmaState.Inactive)
-        //{
-        //    return;
-        //}
+        // TODO: When to do this?
+        _dmaUnit.Cycle(ref _cpuCore.Pins);
 
-        //CpuCore.Tick();
+        var address = _cpuCore.Pins.Address;
 
-        //var address = pins.Address;
+        if (address >= 0x4000 && address <= 0x401F)
+        {
+            if (_cpuCore.Pins.RW)
+            {
+                _cpuCore.Pins.Data = address switch
+                {
+                    // Write-only
+                    OamDmaAddress => 0,
 
-        //if (address >= 0x4000 && address <= 0x401F)
-        //{
-        //    if (pins.RW)
-        //    {
-        //        pins.Data = address switch
-        //        {
-        //            // Write-only
-        //            OamDmaAddress => 0,
+                    // TODO: sound generation and joystick.
+                    _ => 0
+                };
+            }
+            else
+            {
+                switch (address)
+                {
+                    case OamDmaAddress:
+                        _dmaUnit.SetHiByte(_cpuCore.Pins.Data);
 
-        //            // TODO: sound generation and joystick.
-        //            _ => 0
-        //        };
-        //    }
-        //    else
-        //    {
-        //        switch (address)
-        //        {
-        //            case OamDmaAddress:
-        //                _dmaUnit.SetHiByte(pins.Data);
+                        // Tell CPU we want to pause it at the next read cycle.
+                        _cpuCore.Pins.Rdy = true;
 
-        //                // Tell CPU we want to pause it at the next read cycle.
-        //                pins.Rdy = true;
+                        break;
 
-        //                break;
+                    default:
+                        // TODO: sound generation and joystick.
+                        break;
+                }
+            }
+        }
 
-        //            default:
-        //                // TODO: sound generation and joystick.
-        //                break;
-        //        }
-        //    }
-        //}
-
-        //// Did CPU become paused on this cycle? If so it means we previously requested it
-        //// to pause so that we can start a DMA transfer.
-        //if (pins.RW && pins.Rdy)
-        //{
-        //    _dmaUnit.DmaState = DmaState.Pending;
-        //}
+        // Did CPU become paused on this cycle? If so it means we previously requested it
+        // to pause so that we can start a DMA transfer.
+        if (_cpuCore.Pins.RW && _cpuCore.Pins.Rdy)
+        {
+            _dmaUnit.DmaState = DmaState.Pending;
+        }
     }
 
     public IEnumerable<DebuggerWindow> CreateDebuggerWindows()

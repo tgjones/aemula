@@ -149,7 +149,8 @@ public sealed class Atari2600System : EmulatedSystem
 
     private void DoCpuCycle()
     {
-        _cpu.Tick();
+        _cpu.Phi0 = false;
+        _cpu.Phi0 = true;
 
         var address = _cpu.Pins.Address;
 
