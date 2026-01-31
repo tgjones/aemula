@@ -659,9 +659,9 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
     {
         private readonly List<List<string>> _lines = new List<List<string>>();
 
-        private string[] _next;
+        private string[]? _next;
 
-        public string Description { get; private set; }
+        public string? Description { get; private set; }
         public List<List<string>> Lines => _lines;
 
         public void Add(params string[] text)
@@ -739,11 +739,11 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
                     Add("{",
                         "    SP -= 3;",
                         "}",
-                        "pins.Address = _ad++;", 
-                        "P.I = true;", 
-                        "_brkFlags = BrkFlags.None;");
+                        "pins.Address = _ad++;");
                     Add("pins.Address = _ad;",
-                        "_ad = pins.Data;");
+                        "_ad = pins.Data;",
+                        "_brkFlags = BrkFlags.None;",
+                        "P.I = true;");
                     Add("PC = (ushort)((pins.Data << 8) | _ad);");
                     break;
 
@@ -823,34 +823,34 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
 
                 case "DEX":
                     Description = "Decrement X Register";
-                    Add("_deferredX = P.SetZeroNegativeFlags((byte)(X - 1));");
+                    Add("X = P.SetZeroNegativeFlags((byte)(X - 1));");
                     break;
 
                 case "DEY":
                     Description = "Decrement Y Register";
-                    Add("_deferredY = P.SetZeroNegativeFlags((byte)(Y - 1));");
+                    Add("Y = P.SetZeroNegativeFlags((byte)(Y - 1));");
                     break;
 
                 case "INX":
                     Description = "Increment X Register";
-                    Add("_deferredX = P.SetZeroNegativeFlags((byte)(X + 1));");
+                    Add("X = P.SetZeroNegativeFlags((byte)(X + 1));");
                     break;
 
                 case "INY":
                     Description = "Increment Y Register";
-                    Add("_deferredY = P.SetZeroNegativeFlags((byte)(Y + 1));");
+                    Add("Y = P.SetZeroNegativeFlags((byte)(Y + 1));");
                     break;
 
                 case "PHA":
                     Add("pins.Address = (ushort)(0x0100 | SP);",
-                        "_deferredSP = (byte)(SP - 1);",
+                        "SP = (byte)(SP - 1);",
                         "_dataOutputRegister = A;",
                         "pins.RW = false;");
                     break;
 
                 case "PHP":
                     Add("pins.Address = (ushort)(0x0100 | SP);",
-                        "_deferredSP = (byte)(SP - 1);",
+                        "SP = (byte)(SP - 1);",
                         "_dataOutputRegister = P.AsByte(true);",
                         "pins.RW = false;");
                     break;
@@ -902,7 +902,7 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
 
                 case "SAX":
                     Description = "Store Accumulator and X (undocumented)";
-                    ModifyPrevious("pins.Data = (byte)(A & X);", "pins.RW = false;");
+                    ModifyPrevious("_dataOutputRegister = (byte)(A & X);", "pins.RW = false;");
                     break;
 
                 case "SHA":
@@ -958,8 +958,8 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
 
                 case "BIT":
                     Description = "Bit Test";
-                    Add("P.Z = (A & pins.Data) == 0;",
-                        "P.V = (pins.Data & 0x40) == 0x40;",
+                    Add("P.V = (pins.Data & 0x40) == 0x40;",
+                        "P.Z = (A & pins.Data) == 0;",
                         "P.N = (pins.Data & 0x80) == 0x80;");
                     break;
 
@@ -1027,12 +1027,12 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
 
                 case "ROL" when addressingMode == AddressingMode.Accumulator:
                     Description = "Rotate Left";
-                    Add("SetAluOut(RolHelper(A));");
+                    Add("A = RolHelper(A);");
                     break;
 
                 case "ASL" when addressingMode == AddressingMode.Accumulator:
                     Description = "Arithmetic Shift Left";
-                    Add("SetAluOut(AslHelper(A));");
+                    Add("A = AslHelper(A);");
                     break;
 
                 case "LSR" when addressingMode == AddressingMode.Accumulator:
@@ -1068,7 +1068,8 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
                 case "ISB":
                     Description = "Increment Memory then Subtract (undocumented, also known as ISC)";
                     AddRmwCycle();
-                    Add([..OpsInc, "Sbc(_dataOutputRegister.Value);"]);
+                    Add(OpsInc);
+                    ModifyNext("Sbc(pins.Data);");
                     break;
 
                 case "ROL":
@@ -1092,7 +1093,7 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
                 case "SLO":
                     Description = "ASL + ORA (undocumented)";
                     AddRmwCycle();
-                    Add([..OpsAsl, "SetAluOut(P.SetZeroNegativeFlags((byte)(A | _dataOutputRegister)));"]);
+                    Add([..OpsAsl, "A = P.SetZeroNegativeFlags((byte)(A | _dataOutputRegister));"]);
                     break;
 
                 case "LSR":
@@ -1104,7 +1105,7 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
                 case "SRE":
                     Description = "LSR + EOR (undocumented)";
                     AddRmwCycle();
-                    Add([..OpsLsr, "SetAluOut(P.SetZeroNegativeFlags((byte)(A ^ _dataOutputRegister)));"]);
+                    Add([..OpsLsr, "A = P.SetZeroNegativeFlags((byte)(A ^ _dataOutputRegister));"]);
                     break;
 
                 case "RRA":
@@ -1194,7 +1195,7 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
         private static string[] GetOpsCmp(string register) => new[]
         {
             $"P.SetZeroNegativeFlags((byte)({register} - pins.Data));",
-            $"P.C = {register} >= pins.Data;"
+            $"P.C = {register} >= pins.Data;",
         };
 
         private static readonly string[] OpsAdc =
@@ -1223,7 +1224,7 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
 
         private static readonly string[] OpsEor =
         {
-            "SetAluOut(P.SetZeroNegativeFlags((byte)(A ^ pins.Data)));"
+            "A = P.SetZeroNegativeFlags((byte)(A ^ pins.Data));"
         };
 
         private static readonly string[] OpsInc =
@@ -1240,12 +1241,12 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
 
         private static readonly string[] OpsLsra =
         {
-            "SetAluOut(LsrHelper(A));"
+            "A = LsrHelper(A);"
         };
 
         private static readonly string[] OpsOra =
         {
-            "SetAluOut(P.SetZeroNegativeFlags((byte)(A | pins.Data)));"
+            "A = P.SetZeroNegativeFlags((byte)(A | pins.Data));",
         };
 
         private static readonly string[] OpsRol =

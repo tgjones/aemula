@@ -23,6 +23,8 @@ public partial class Mos6502Chip
     // Processor flags
     public ProcessorFlags P;
 
+    public byte PByte => P.AsByte(_brkFlags == BrkFlags.None);
+
     /// <summary>
     /// Instruction register - stores opcode of instruction being executed.
     /// </summary>
@@ -40,20 +42,12 @@ public partial class Mos6502Chip
     private byte _sp;
 
     private byte? _dataOutputRegister;
-    private byte? _dataOutputRegisterDelayed;
-
-    private byte? _aluOut;
-    private byte? _deferredX;
-    private byte? _deferredY;
-    private byte? _deferredSP;
 
     private bool _previousNmi;
     private ushort _nmiCounter;
     private ushort _irqCounter;
 
     private readonly bool _bcdEnabled;
-
-    private readonly Mos6502CompatibilityMode _compatibilityMode;
 
     internal byte TR => _tr;
 
@@ -83,7 +77,6 @@ public partial class Mos6502Chip
 
                 if (_dataOutputRegister != null)
                 {
-                    _dataOutputRegisterDelayed = Pins.Data;
                     Pins.Data = _dataOutputRegister.Value;
                     _dataOutputRegister = null;
                 }
@@ -92,30 +85,6 @@ public partial class Mos6502Chip
             {
                 // Transitioning from high to low.
                 // Will be executing instruction.
-
-                if (_aluOut != null)
-                {
-                    A = _aluOut.Value;
-                    _aluOut = null;
-                }
-
-                if (_deferredX != null)
-                {
-                    X = _deferredX.Value;
-                    _deferredX = null;
-                }
-
-                if (_deferredY != null)
-                {
-                    Y = _deferredY.Value;
-                    _deferredY = null;
-                }
-
-                if (_deferredSP != null)
-                {
-                    SP = _deferredSP.Value;
-                    _deferredSP = null;
-                }
 
                 if (Pins.Sync)
                 {
@@ -152,41 +121,10 @@ public partial class Mos6502Chip
                     }
                 }
 
-                if (_dataOutputRegisterDelayed != null)
-                {
-                    Pins.Data = _dataOutputRegisterDelayed.Value;
-                    _dataOutputRegisterDelayed = null;
-                }
-
                 // Assume we're going to read.
                 Pins.RW = true;
 
                 ExecuteInstruction(ref Pins);
-
-                // Fixup registers for nestest compatibility.
-                if (_compatibilityMode == Mos6502CompatibilityMode.NesTest)
-                {
-                    if (_aluOut != null)
-                    {
-                        A = _aluOut.Value;
-                        _aluOut = null;
-                    }
-                    if (_deferredX != null)
-                    {
-                        X = _deferredX.Value;
-                        _deferredX = null;
-                    }
-                    if (_deferredY != null)
-                    {
-                        Y = _deferredY.Value;
-                        _deferredY = null;
-                    }
-                    if (_deferredSP != null)
-                    {
-                        SP = _deferredSP.Value;
-                        _deferredSP = null;
-                    }
-                }
 
                 _tr++;
             }
@@ -204,8 +142,6 @@ public partial class Mos6502Chip
         get => _resetPin; // Shouldn't be accessible
         set
         {
-            var originalValue = _resetPin;
-
             _resetPin = value;
 
             if (!value)
@@ -222,7 +158,6 @@ public partial class Mos6502Chip
     public Mos6502Chip(Mos6502Options options)
     {
         _bcdEnabled = options.BcdEnabled;
-        _compatibilityMode = options.CompatibilityMode;
 
         _phi0 = true;
         _resetPin = true;
@@ -232,6 +167,7 @@ public partial class Mos6502Chip
         PC = 0xFF;
         X = 0xC0;
         SP = 0xC0;
+        P.Z = true;
 
         Pins = new Mos6502Pins
         {
@@ -242,6 +178,12 @@ public partial class Mos6502Chip
             Irq = true,
             Address = 0x00FF,
         };
+    }
+
+    public void Startup()
+    {
+        Res = false;
+        Res = true;
     }
 
     public void Tick()
@@ -354,10 +296,4 @@ public readonly struct DecodedInstruction
         Disassembly = disassembly;
         InstructionSizeInBytes = instructionSizeInBytes;
     }
-}
-
-public enum Mos6502CompatibilityMode
-{
-    Normal,
-    NesTest,
 }

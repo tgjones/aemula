@@ -86,7 +86,7 @@ MySubroutine
 
         var disassembler = new Mos6502Disassembler(
             memoryCallbacks,
-            new Dictionary<ushort, string>());
+            []);
 
         disassembler.Reset();
 

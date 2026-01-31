@@ -13,7 +13,7 @@ partial class Mos6502Chip
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void And(byte data)
     {
-        SetAluOut(P.SetZeroNegativeFlags((byte)(A & data)));
+        A = P.SetZeroNegativeFlags((byte)(A & data));
     }
 
     private void Arr(in Mos6502Pins pins)
@@ -77,7 +77,7 @@ partial class Mos6502Chip
         var temp = (ushort)(A + value + (P.C ? 1 : 0));
         P.V = ((A ^ temp) & (value ^ temp) & 0x80) == 0x80;
         P.C = temp > 0xFF;
-        SetAluOut(P.SetZeroNegativeFlags((byte)temp));
+        A = P.SetZeroNegativeFlags((byte)temp);
     }
 
     private void DoAdcDecimal(byte value)
@@ -106,7 +106,7 @@ partial class Mos6502Chip
             ah &= 0xF;
         }
 
-        SetAluOut((byte)(((al & 0xF) | (ah << 4)) & 0xFF));
+        A = (byte)(((al & 0xF) | (ah << 4)) & 0xFF);
     }
 
     /// <summary>
@@ -146,7 +146,7 @@ partial class Mos6502Chip
         P.Z = (result & 0xFF) == 0;
         P.V = ((A ^ result) & (value ^ A) & 0x80) == 0x80;
         P.C = (result & 0x100) == 0;
-        SetAluOut((byte)(al | (ah << 4)));
+        A = (byte)(al | (ah << 4));
     }
 
     /// <summary>
@@ -195,19 +195,7 @@ partial class Mos6502Chip
     /// </summary>
     private void Rora()
     {
-        SetAluOut(RorHelper(A));
-    }
-
-    private void SetAluOut(byte value)
-    {
-        if (_compatibilityMode == Mos6502CompatibilityMode.NesTest)
-        {
-            A = value;
-        }
-        else
-        {
-            _aluOut = value;
-        }
+        A = RorHelper(A);
     }
 
     /// <summary>

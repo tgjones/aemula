@@ -12,7 +12,7 @@ public sealed class NesSystem : EmulatedSystem
     private readonly byte[] _ram;
     private readonly byte[] _vram;
 
-    private Cartridge _cartridge;
+    private Cartridge? _cartridge;
 
     private byte _ppuCycle;
     private byte _vramLowAddressLatch;
@@ -47,7 +47,7 @@ public sealed class NesSystem : EmulatedSystem
             _ppuCycle = 0;
         }
 
-        Cpu.CpuCore.Pins.Nmi = Ppu.Pins.Nmi;
+        Cpu.Nmi = Ppu.Pins.Nmi;
     }
 
     private void TickCpu()
@@ -189,7 +189,8 @@ public sealed class NesSystem : EmulatedSystem
 
     public override void Reset()
     {
-        Cpu.CpuCore.Pins.Res = true;
+        Cpu.Res = false;
+        Cpu.Res = true;
     }
 
     internal byte ReadChrRom(ushort address)
