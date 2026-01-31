@@ -23,8 +23,6 @@ public partial class Mos6502Chip
     // Processor flags
     public ProcessorFlags P;
 
-    public byte PByte => P.AsByte(_brkFlags == BrkFlags.None);
-
     /// <summary>
     /// Instruction register - stores opcode of instruction being executed.
     /// </summary>

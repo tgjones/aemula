@@ -30,8 +30,6 @@ public sealed partial class Ricoh2A03Chip
 
     public ProcessorFlags P => _cpuCore.P;
 
-    public byte PByte => _cpuCore.PByte;
-
     public bool Res
     {
 
