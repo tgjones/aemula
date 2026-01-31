@@ -11,14 +11,14 @@ partial class Mos6502Chip
     /// AND - Logical AND
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void And(in Mos6502Pins pins)
+    private void And(byte data)
     {
-        A = P.SetZeroNegativeFlags((byte)(A & pins.Data));
+        A = P.SetZeroNegativeFlags((byte)(A & data));
     }
 
     private void Arr(in Mos6502Pins pins)
     {
-        And(pins);
+        And(pins.Data);
 
         // http://www.6502.org/users/andre/petindex/local/64doc.txt
         if (_bcdEnabled && P.D)
@@ -77,8 +77,7 @@ partial class Mos6502Chip
         var temp = (ushort)(A + value + (P.C ? 1 : 0));
         P.V = ((A ^ temp) & (value ^ temp) & 0x80) == 0x80;
         P.C = temp > 0xFF;
-        A = (byte)temp;
-        P.SetZeroNegativeFlags(A);
+        A = P.SetZeroNegativeFlags((byte)temp);
     }
 
     private void DoAdcDecimal(byte value)
@@ -113,15 +112,15 @@ partial class Mos6502Chip
     /// <summary>
     /// ADC - Add with Carry
     /// </summary>
-    private void Adc(in Mos6502Pins pins)
+    private void Adc(byte data)
     {
         if (!P.D || !_bcdEnabled)
         {
-            DoAdcBinary(pins.Data);
+            DoAdcBinary(data);
         }
         else
         {
-            DoAdcDecimal(pins.Data);
+            DoAdcDecimal(data);
         }
     }
 
@@ -153,15 +152,15 @@ partial class Mos6502Chip
     /// <summary>
     /// SBC - Subtract with Carry
     /// </summary>
-    private void Sbc(in Mos6502Pins pins)
+    private void Sbc(byte data)
     {
         if (!P.D || !_bcdEnabled)
         {
-            DoAdcBinary((byte)~pins.Data);
+            DoAdcBinary((byte)~data);
         }
         else
         {
-            DoSbcDecimal(pins.Data);
+            DoSbcDecimal(data);
         }
     }
 

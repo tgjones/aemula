@@ -23,6 +23,8 @@ public partial class Mos6502Chip
     // Processor flags
     public ProcessorFlags P;
 
+    public byte PByte => P.AsByte(_brkFlags == BrkFlags.None);
+
     /// <summary>
     /// Instruction register - stores opcode of instruction being executed.
     /// </summary>
@@ -34,8 +36,12 @@ public partial class Mos6502Chip
     private byte _tr;
 
     private BrkFlags _brkFlags;
+    private byte _resetTimer;
 
     private ushort _ad;
+    private byte _sp;
+
+    private byte? _dataOutputRegister;
 
     private bool _previousNmi;
     private ushort _nmiCounter;
@@ -45,18 +51,139 @@ public partial class Mos6502Chip
 
     internal byte TR => _tr;
 
+    private bool _phi0;
+
+    public bool Phi0
+    {
+        set
+        {
+            if (_phi0 == value)
+            {
+                return;
+            }
+
+            _phi0 = value;
+
+            if (!_resetPin)
+            {
+                return;
+            }
+
+            if (value)
+            {
+                // Transitioning from low to high.
+                // Will be reading / writing data bus.
+                // We send the already-calculated values out to the address and data pins.
+
+                if (_dataOutputRegister != null)
+                {
+                    Pins.Data = _dataOutputRegister.Value;
+                    _dataOutputRegister = null;
+                }
+            }
+            else
+            {
+                // Transitioning from high to low.
+                // Will be executing instruction.
+
+                if (Pins.Sync)
+                {
+                    Pins.Sync = false;
+                    _ir = _brkFlags == BrkFlags.Reset 
+                        ? (byte)0 
+                        : Pins.Data;
+                    _tr = 0;
+                    if (_brkFlags == BrkFlags.None)
+                    {
+                        PC++;
+                    }
+                }
+
+                if (_brkFlags == BrkFlags.Reset)
+                {
+                    _resetTimer++;
+
+                    switch (_resetTimer)
+                    {
+                        case 1:
+                            break;
+
+                        case 2:
+                            Pins.Sync = true;
+                            PC = (ushort)((Pins.Data << 8) | (PC & 0xFF));
+                            Pins.Address = PC;
+                            break;
+                    }
+
+                    if (_resetTimer <= 2)
+                    {
+                        return;
+                    }
+                }
+
+                // Assume we're going to read.
+                Pins.RW = true;
+
+                ExecuteInstruction(ref Pins);
+
+                _tr++;
+            }
+        }
+    }
+
+    public bool Phi1 => !_phi0;
+
+    public bool Phi2 => _phi0;
+
+    private bool _resetPin;
+
+    public bool Res
+    {
+        get => _resetPin; // Shouldn't be accessible
+        set
+        {
+            _resetPin = value;
+
+            if (!value)
+            {
+                _brkFlags = BrkFlags.Reset;
+            }
+            else if (value && !_resetPin)
+            {
+                _resetTimer = 0;
+            }
+        }
+    }
+
     public Mos6502Chip(Mos6502Options options)
     {
         _bcdEnabled = options.BcdEnabled;
 
+        _phi0 = true;
+        _resetPin = true;
+        _brkFlags = BrkFlags.Reset;
+
+        // These initial register values are from Visual 6502.
+        PC = 0xFF;
+        X = 0xC0;
+        SP = 0xC0;
+        P.Z = true;
+
         Pins = new Mos6502Pins
         {
-            Sync = true,
+            Sync = false,
             Res = true,
             RW = true,
             Nmi = true,
             Irq = true,
+            Address = 0x00FF,
         };
+    }
+
+    public void Startup()
+    {
+        Res = false;
+        Res = true;
     }
 
     public void Tick()

@@ -25,7 +25,7 @@ public struct ProcessorFlags
     public bool D;
 
     /// <summary>
-    /// Overflow
+    /// Overflow (bit 7)
     /// </summary>
     public bool V;
 
