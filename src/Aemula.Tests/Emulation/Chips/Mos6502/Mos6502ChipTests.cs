@@ -123,11 +123,6 @@ public class Mos6502ChipTests
 
         var lastPC = 0;
 
-        // Delay asserting IRQ / NMI for a few cycles, otherwise the
-        // test program seems to break.
-        const int numberOfCyclesToDelayInterrupt = 5;
-        int? irqSignalDelay = null;
-
         while (true)
         {
             await testHelper.Tick();
@@ -136,28 +131,15 @@ public class Mos6502ChipTests
             ref var irqSignal = ref ram[irqSignalAddress];
             if (irqSignal != 0)
             {
-                if (irqSignalDelay == null)
+                if (BitUtility.GetBitAsBoolean(irqSignal, 1))
                 {
-                    irqSignalDelay = numberOfCyclesToDelayInterrupt;
+                    testHelper.AssertNmi();
+                    BitUtility.ClearBit(ref irqSignal, 1);
                 }
-                else
+                if (BitUtility.GetBitAsBoolean(irqSignal, 0))
                 {
-                    irqSignalDelay--;
-                }
-
-                if (irqSignalDelay == 0)
-                {
-                    if (BitUtility.GetBitAsBoolean(irqSignal, 1))
-                    {
-                        testHelper.AssertNmi();
-                        BitUtility.ClearBit(ref irqSignal, 1);
-                    }
-                    if (BitUtility.GetBitAsBoolean(irqSignal, 0))
-                    {
-                        testHelper.AssertIrq();
-                        BitUtility.ClearBit(ref irqSignal, 0);
-                    }
-                    irqSignalDelay = null;
+                    testHelper.AssertIrq();
+                    BitUtility.ClearBit(ref irqSignal, 0);
                 }
             }
 
@@ -173,7 +155,6 @@ public class Mos6502ChipTests
         }
 
         const ushort expectedPC = 0x06F8;
-
         if (testHelper.PC != expectedPC)
         {
             testHelper.DumpToConsole();
