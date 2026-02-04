@@ -3,7 +3,6 @@
 public struct Mos6502Pins
 {
     public bool Rdy;
-    public bool Sync;
     public bool Res;
 
     /// <summary>

@@ -85,7 +85,7 @@ internal sealed class Atari2600Debugger : Debugger
     {
         base.TickSystem();
 
-        if (_system.Cpu.Pins.Sync)
+        if (_system.Cpu.Sync)
         {
             OnAddressExecuting(_system.Cpu.Address);
         }

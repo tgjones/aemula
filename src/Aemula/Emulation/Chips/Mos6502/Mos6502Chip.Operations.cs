@@ -229,6 +229,6 @@ partial class Mos6502Chip
     private void FetchNextInstruction(ref Mos6502Pins pins)
     {
         _address = PC;
-        pins.Sync = true;
+        _sync = true;
     }
 }

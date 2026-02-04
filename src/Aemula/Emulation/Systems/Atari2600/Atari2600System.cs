@@ -154,7 +154,7 @@ public sealed class Atari2600System : EmulatedSystem
 
         var address = _cpu.Address;
 
-        if (_cpu.Pins.Sync)
+        if (_cpu.Sync)
         {
             _lastPC = address;
         }

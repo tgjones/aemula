@@ -25,7 +25,7 @@ internal sealed class Mos6502ChipTestHelper
     private bool _irqAsserted;
 
     public ushort PC => _chip.PC;
-    public bool Sync => _chip.Pins.Sync;
+    public bool Sync => _chip.Sync;
 
     public Mos6502ChipTestHelper(
         Func<ushort, byte> readMemory,
@@ -153,7 +153,7 @@ internal sealed class Mos6502ChipTestHelper
             _writeMemory(_chip.Address, _chip.Data);
         }
 
-        if (_chip.Pins.Sync)
+        if (_chip.Sync)
         {
             if (_referenceChip != null)
             {
@@ -198,7 +198,7 @@ internal sealed class Mos6502ChipTestHelper
             Address: _chip.Address,
             Data: isDataBusValid ? _chip.Data : (byte)0,
             RW: _chip.Pins.RW,
-            Sync: _chip.Pins.Sync,
+            Sync: _chip.Sync,
             Res: _chip.Pins.Res,
             Nmi: _chip.Nmi,
             Irq: _chip.Irq);

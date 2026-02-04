@@ -22,6 +22,9 @@ public partial class Mos6502Chip
         set => _data = value;
     }
 
+    private bool _sync;
+    public bool Sync => _sync;
+
     // Registers
     public byte A;
     public byte X;
@@ -108,9 +111,9 @@ public partial class Mos6502Chip
                     _irqCounter |= 1;
                 }
 
-                if (Pins.Sync)
+                if (_sync)
                 {
-                    Pins.Sync = false;
+                    _sync = false;
 
                     _ir = _data;
                     _tr = 0;
@@ -153,7 +156,7 @@ public partial class Mos6502Chip
                             break;
 
                         case 2:
-                            Pins.Sync = true;
+                            _sync = true;
                             PC = (ushort)((_data << 8) | (PC & 0xFF));
                             _address = PC;
                             break;
@@ -248,13 +251,14 @@ public partial class Mos6502Chip
 
         Pins = new Mos6502Pins
         {
-            Sync = false,
             Res = true,
             RW = true,
         };
 
         // These initial bus values are from Visual 6502.
         _address = 0x00FF;
+        _data = 0x00;
+        _sync = false;
     }
 
     public void Startup()
