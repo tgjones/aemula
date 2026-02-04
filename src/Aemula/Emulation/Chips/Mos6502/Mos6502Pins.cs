@@ -3,7 +3,6 @@
 public struct Mos6502Pins
 {
     public bool Rdy;
-    public bool Res;
 
     /// <summary>
     /// Read/write pin. True for read, false for write.

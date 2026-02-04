@@ -238,10 +238,6 @@ public partial class Mos6502Chip
         _bcdEnabled = options.BcdEnabled;
 
         _phi0 = true;
-        _resetPin = true;
-        _brkFlags = BrkFlags.Reset;
-        _nmiPin = true;
-        _irqPin = true;
 
         // These initial register values are from Visual 6502.
         PC = 0xFF;
@@ -251,11 +247,14 @@ public partial class Mos6502Chip
 
         Pins = new Mos6502Pins
         {
-            Res = true,
             RW = true,
         };
 
         // These initial bus values are from Visual 6502.
+        _resetPin = true;
+        _brkFlags = BrkFlags.Reset;
+        _nmiPin = true;
+        _irqPin = true;
         _address = 0x00FF;
         _data = 0x00;
         _sync = false;

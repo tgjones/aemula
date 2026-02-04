@@ -199,7 +199,7 @@ internal sealed class Mos6502ChipTestHelper
             Data: isDataBusValid ? _chip.Data : (byte)0,
             RW: _chip.Pins.RW,
             Sync: _chip.Sync,
-            Res: _chip.Pins.Res,
+            Res: _chip.Res,
             Nmi: _chip.Nmi,
             Irq: _chip.Irq);
 

@@ -51,7 +51,8 @@ public sealed class Atari2600System : EmulatedSystem
 
     public override void Reset()
     {
-        _cpu.Pins.Res = true;
+        _cpu.Res = false;
+        _cpu.Res = true;
     }
 
     internal byte ReadByteDebug(ushort address)
