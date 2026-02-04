@@ -18,7 +18,7 @@ public sealed class Mos6502Debugger
 
     public void RegisterStepModes(Debugger debugger)
     {
-        debugger.StepModes.Add(new DebuggerStepMode("Step Instruction", () => Cpu.Pins.Sync && Cpu.Pins.Address != _startPC, () => _startPC = Cpu.Pins.Address));
+        debugger.StepModes.Add(new DebuggerStepMode("Step Instruction", () => Cpu.Pins.Sync && Cpu.Address != _startPC, () => _startPC = Cpu.Address));
         debugger.StepModes.Add(new DebuggerStepMode("Step CPU Cycle", () => Cpu.TR != _startTR, () => _startTR = Cpu.TR));
     }
 }

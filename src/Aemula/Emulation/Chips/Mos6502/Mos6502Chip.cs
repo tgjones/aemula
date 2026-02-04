@@ -9,6 +9,11 @@ public partial class Mos6502Chip
 {
     public Mos6502Pins Pins;
 
+    // Pins
+
+    private ushort _address;
+    public ushort Address => _address;
+
     // Registers
     public byte A;
     public byte X;
@@ -142,7 +147,7 @@ public partial class Mos6502Chip
                         case 2:
                             Pins.Sync = true;
                             PC = (ushort)((Pins.Data << 8) | (PC & 0xFF));
-                            Pins.Address = PC;
+                            _address = PC;
                             break;
                     }
 
@@ -240,8 +245,10 @@ public partial class Mos6502Chip
             RW = true,
             Nmi = true,
             Irq = true,
-            Address = 0x00FF,
         };
+
+        // These initial bus values are from Visual 6502.
+        _address = 0x00FF;
     }
 
     public void Startup()

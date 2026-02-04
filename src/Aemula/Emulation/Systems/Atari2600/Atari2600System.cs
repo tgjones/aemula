@@ -152,7 +152,7 @@ public sealed class Atari2600System : EmulatedSystem
         _cpu.Phi0 = false;
         _cpu.Phi0 = true;
 
-        var address = _cpu.Pins.Address;
+        var address = _cpu.Address;
 
         if (_cpu.Pins.Sync)
         {
@@ -195,7 +195,7 @@ public sealed class Atari2600System : EmulatedSystem
             // If a cartridge is plugged in, always give it a chance to provide data.
             if (_cartridge != null)
             {
-                _cartridge.Pins.A = (ushort)(_cpu.Pins.Address & 0x1FFF);
+                _cartridge.Pins.A = (ushort)(_cpu.Address & 0x1FFF);
                 _cartridge.Pins.D = _cpu.Pins.Data;
 
                 _cartridge.Cycle();

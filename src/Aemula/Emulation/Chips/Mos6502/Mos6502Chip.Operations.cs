@@ -228,7 +228,7 @@ partial class Mos6502Chip
     [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
     private void FetchNextInstruction(ref Mos6502Pins pins)
     {
-        pins.Address = PC;
+        _address = PC;
         pins.Sync = true;
     }
 }

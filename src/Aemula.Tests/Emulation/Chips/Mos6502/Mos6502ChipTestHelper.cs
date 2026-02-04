@@ -105,7 +105,7 @@ internal sealed class Mos6502ChipTestHelper
         {
             if (_handleMemoryAccess != null)
             {
-                var result = _handleMemoryAccess(_chip.Pins.Address, GetChipRegisterState());
+                var result = _handleMemoryAccess(_chip.Address, GetChipRegisterState());
                 switch (result)
                 {
                     case Mos6502MemoryAccessResult(Mos6502MemoryAccessResultKind.Continue, _):
@@ -123,14 +123,14 @@ internal sealed class Mos6502ChipTestHelper
                 }
             }
 
-            var value = _readMemory(_chip.Pins.Address);
+            var value = _readMemory(_chip.Address);
 
             _chip.Pins.Data = value;
 
             if (_referenceChip != null)
             {
                 _referenceChip?.SetBus(Flawless6502.NodeIds.db, value);
-                _logger.Add(new MemoryLog(_chip.Pins.Address, value, true));
+                _logger.Add(new MemoryLog(_chip.Address, value, true));
             }
 
             // If we've just read from memory location 0xFFFA, we know it's
@@ -138,7 +138,7 @@ internal sealed class Mos6502ChipTestHelper
             // before now, but the part of 6502_interrupt_test that tests
             // NMI and IRQ together expects that IRQ will be asserted all
             // the way through NMI interrupt handling.
-            if (_irqAsserted && _chip.Pins.Address == 0xFFFE)
+            if (_irqAsserted && _chip.Address == 0xFFFE)
             {
                 DeassertIrq();
             }
@@ -147,17 +147,17 @@ internal sealed class Mos6502ChipTestHelper
         {
             if (_referenceChip != null)
             {
-                _logger.Add(new MemoryLog(_chip.Pins.Address, _chip.Pins.Data, false));
+                _logger.Add(new MemoryLog(_chip.Address, _chip.Pins.Data, false));
             }
 
-            _writeMemory(_chip.Pins.Address, _chip.Pins.Data);
+            _writeMemory(_chip.Address, _chip.Pins.Data);
         }
 
         if (_chip.Pins.Sync)
         {
             if (_referenceChip != null)
             {
-                _logger.Add(new DisassemblyLog(_chip.Pins.Address, _readMemory));
+                _logger.Add(new DisassemblyLog(_chip.Address, _readMemory));
             }
 
             // We wait another half cycle before comparing registers.
@@ -195,7 +195,7 @@ internal sealed class Mos6502ChipTestHelper
 
         var chipPinState = new Mos6502PinState(
             Phi2: _chip.Phi2,
-            Address: _chip.Pins.Address,
+            Address: _chip.Address,
             Data: isDataBusValid ? _chip.Pins.Data : (byte)0,
             RW: _chip.Pins.RW,
             Sync: _chip.Pins.Sync,

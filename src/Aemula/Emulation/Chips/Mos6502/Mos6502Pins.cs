@@ -2,7 +2,6 @@
 
 public struct Mos6502Pins
 {
-    public ushort Address;
     public byte Data;
     public bool Rdy;
     public bool Irq;

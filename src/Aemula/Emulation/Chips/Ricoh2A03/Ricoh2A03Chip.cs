@@ -1,5 +1,4 @@
 ﻿using System.Collections.Generic;
-using System.Net.NetworkInformation;
 using Aemula.Emulation.Chips.Mos6502;
 using Aemula.UI;
 
@@ -12,6 +11,8 @@ public sealed partial class Ricoh2A03Chip
     private readonly Mos6502Chip _cpuCore;
     private readonly DmaUnit _dmaUnit;
 
+    // Pin values.
+    private ushort? _address; // Null if not being driven by DMA unit.
     private bool _clk;
     private int _clockCounter;
     private bool _phi0;
@@ -95,7 +96,7 @@ public sealed partial class Ricoh2A03Chip
 
     public bool RW => _cpuCore.Pins.RW;
 
-    public ushort Address => _cpuCore.Pins.Address;
+    public ushort Address => _address ?? _cpuCore.Address;
 
     public byte Data
     {
@@ -129,9 +130,9 @@ public sealed partial class Ricoh2A03Chip
         // TODO: APU stuff.
 
         // TODO: When to do this?
-        _dmaUnit.Cycle(ref _cpuCore.Pins);
+        _dmaUnit.Cycle(this, ref _cpuCore.Pins);
 
-        var address = _cpuCore.Pins.Address;
+        var address = _cpuCore.Address;
 
         if (address >= 0x4000 && address <= 0x401F)
         {
