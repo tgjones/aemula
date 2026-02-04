@@ -54,7 +54,7 @@ public class Mos6502ChipTests
             address => ram[address],
             (address, data) => ram[address] = data,
             // This test does pass the reference comparison, but...
-            // it takes 8.5 hours to complete on my machine!
+            // it takes 8.5 hours to complete on my machine.
             doReferenceComparison: false);
 
         await testHelper.Startup();
@@ -67,6 +67,35 @@ public class Mos6502ChipTests
         await Assert.That(testHelper.PC).IsEqualTo((ushort)0x3399);
     }
 
+    [Test]
+    public async Task DormannDecimalTest()
+    {
+        var ram = new byte[0x10000];
+
+        var testCode = File.ReadAllBytes(Path.Combine(AssetsPath, "6502_decimal_test.bin"));
+        Array.Copy(testCode, 0, ram, 0x0200, testCode.Length);
+
+        // Patch the test start address into the RESET vector.
+        ram[0xFFFC] = 0x00;
+        ram[0xFFFD] = 0x02;
+
+        var testHelper = new Mos6502ChipTestHelper(
+            address => ram[address],
+            (address, data) => ram[address] = data,
+            // This test does pass the reference comparison, but...
+            // it takes several hours to complete on my machine.
+            doReferenceComparison: false);
+
+        await testHelper.Startup();
+
+        while (testHelper.PC != 0x024b)
+        {
+            await testHelper.Tick();
+        }
+
+        await Assert.That(testHelper.PC).IsEqualTo((ushort)0x024b);
+        await Assert.That(ram[0x000B]).IsEqualTo((byte)0);
+    }
     [Test]
     [Arguments(" start")]
     [Arguments("ldab")]
