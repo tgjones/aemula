@@ -125,7 +125,7 @@ internal sealed class Mos6502ChipTestHelper
 
             var value = _readMemory(_chip.Address);
 
-            _chip.Pins.Data = value;
+            _chip.Data = value;
 
             if (_referenceChip != null)
             {
@@ -147,10 +147,10 @@ internal sealed class Mos6502ChipTestHelper
         {
             if (_referenceChip != null)
             {
-                _logger.Add(new MemoryLog(_chip.Address, _chip.Pins.Data, false));
+                _logger.Add(new MemoryLog(_chip.Address, _chip.Data, false));
             }
 
-            _writeMemory(_chip.Address, _chip.Pins.Data);
+            _writeMemory(_chip.Address, _chip.Data);
         }
 
         if (_chip.Pins.Sync)
@@ -196,7 +196,7 @@ internal sealed class Mos6502ChipTestHelper
         var chipPinState = new Mos6502PinState(
             Phi2: _chip.Phi2,
             Address: _chip.Address,
-            Data: isDataBusValid ? _chip.Pins.Data : (byte)0,
+            Data: isDataBusValid ? _chip.Data : (byte)0,
             RW: _chip.Pins.RW,
             Sync: _chip.Pins.Sync,
             Res: _chip.Pins.Res,

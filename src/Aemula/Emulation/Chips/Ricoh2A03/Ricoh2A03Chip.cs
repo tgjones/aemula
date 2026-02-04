@@ -100,8 +100,8 @@ public sealed partial class Ricoh2A03Chip
 
     public byte Data
     {
-        get => _cpuCore.Pins.Data;
-        set => _cpuCore.Pins.Data = value;
+        get => _cpuCore.Data;
+        set => _cpuCore.Data = value;
     }
 
     public bool Nmi
@@ -143,7 +143,7 @@ public sealed partial class Ricoh2A03Chip
         {
             if (_cpuCore.Pins.RW)
             {
-                _cpuCore.Pins.Data = address switch
+                _cpuCore.Data = address switch
                 {
                     // Write-only
                     OamDmaAddress => 0,
@@ -157,7 +157,7 @@ public sealed partial class Ricoh2A03Chip
                 switch (address)
                 {
                     case OamDmaAddress:
-                        _dmaUnit.SetHiByte(_cpuCore.Pins.Data);
+                        _dmaUnit.SetHiByte(_cpuCore.Data);
 
                         // Tell CPU we want to pause it at the next read cycle.
                         _cpuCore.Pins.Rdy = true;

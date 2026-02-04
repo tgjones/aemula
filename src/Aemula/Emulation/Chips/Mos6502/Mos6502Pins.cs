@@ -2,7 +2,6 @@
 
 public struct Mos6502Pins
 {
-    public byte Data;
     public bool Rdy;
     public bool Sync;
     public bool Res;

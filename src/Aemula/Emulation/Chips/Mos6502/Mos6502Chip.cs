@@ -14,6 +14,14 @@ public partial class Mos6502Chip
     private ushort _address;
     public ushort Address => _address;
 
+    // TODO: Make this tri-state: read, write, or high-impedance.
+    private byte _data;
+    public byte Data
+    {
+        get => _data;
+        set => _data = value;
+    }
+
     // Registers
     public byte A;
     public byte X;
@@ -83,7 +91,7 @@ public partial class Mos6502Chip
 
                 if (_dataOutputRegister != null)
                 {
-                    Pins.Data = _dataOutputRegister.Value;
+                    _data = _dataOutputRegister.Value;
                     _dataOutputRegister = null;
                 }
             }
@@ -104,7 +112,7 @@ public partial class Mos6502Chip
                 {
                     Pins.Sync = false;
 
-                    _ir = Pins.Data;
+                    _ir = _data;
                     _tr = 0;
 
                     // For IRQ to be triggered, the IRQ pin must have been low in the cycle _before_ SYNC.
@@ -146,7 +154,7 @@ public partial class Mos6502Chip
 
                         case 2:
                             Pins.Sync = true;
-                            PC = (ushort)((Pins.Data << 8) | (PC & 0xFF));
+                            PC = (ushort)((_data << 8) | (PC & 0xFF));
                             _address = PC;
                             break;
                     }

@@ -18,7 +18,7 @@ partial class Mos6502Chip
 
     private void Arr(in Mos6502Pins pins)
     {
-        And(pins.Data);
+        And(_data);
 
         // http://www.6502.org/users/andre/petindex/local/64doc.txt
         if (_bcdEnabled && P.D)
