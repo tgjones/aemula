@@ -101,7 +101,7 @@ internal sealed class Mos6502ChipTestHelper
         }
 
         // Memory read or write occurs on phi0 high.
-        if (_chip.Pins.RW)
+        if (_chip.RW)
         {
             if (_handleMemoryAccess != null)
             {
@@ -191,13 +191,13 @@ internal sealed class Mos6502ChipTestHelper
             return;
         }
 
-        var isDataBusValid = _chip.Phi2 && !_chip.Pins.RW && _chip.Res;
+        var isDataBusValid = _chip.Phi2 && !_chip.RW && _chip.Res;
 
         var chipPinState = new Mos6502PinState(
             Phi2: _chip.Phi2,
             Address: _chip.Address,
             Data: isDataBusValid ? _chip.Data : (byte)0,
-            RW: _chip.Pins.RW,
+            RW: _chip.RW,
             Sync: _chip.Sync,
             Res: _chip.Res,
             Nmi: _chip.Nmi,

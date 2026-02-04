@@ -31,7 +31,7 @@ partial class Ricoh2A03Chip
                 if (DmaState == DmaState.Active)
                 {
                     chip._address = (ushort)((_dmaHiByte << 8) | _dmaLoByte);
-                    pins.RW = true;
+                    chip._rw = true;
                 }
                 _isDmaReadCycle = false;
             }
@@ -41,7 +41,7 @@ partial class Ricoh2A03Chip
                 if (DmaState == DmaState.Active)
                 {
                     chip._address = 0x2004;
-                    pins.RW = false;
+                    chip._rw = false;
 
                     // Check if we have finished the DMA transfer.
                     if (_dmaLoByte == 0xFF)

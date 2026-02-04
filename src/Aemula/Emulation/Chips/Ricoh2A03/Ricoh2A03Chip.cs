@@ -13,6 +13,7 @@ public sealed partial class Ricoh2A03Chip
 
     // Pin values.
     private ushort? _address; // Null if not being driven by DMA unit.
+    private bool? _rw; // Null if not being driven by DMA unit.
     private bool _clk;
     private int _clockCounter;
     private bool _phi0;
@@ -94,7 +95,7 @@ public sealed partial class Ricoh2A03Chip
 
     public bool M2 => _m2;
 
-    public bool RW => _cpuCore.Pins.RW;
+    public bool RW => _cpuCore.RW;
 
     public ushort Address => _address ?? _cpuCore.Address;
 
@@ -141,7 +142,7 @@ public sealed partial class Ricoh2A03Chip
 
         if (address >= 0x4000 && address <= 0x401F)
         {
-            if (_cpuCore.Pins.RW)
+            if (_cpuCore.RW)
             {
                 _cpuCore.Data = address switch
                 {
@@ -173,7 +174,7 @@ public sealed partial class Ricoh2A03Chip
 
         // Did CPU become paused on this cycle? If so it means we previously requested it
         // to pause so that we can start a DMA transfer.
-        if (_cpuCore.Pins.RW && _cpuCore.Pins.Rdy)
+        if (_cpuCore.RW && _cpuCore.Pins.Rdy)
         {
             _dmaUnit.DmaState = DmaState.Pending;
         }

@@ -62,6 +62,8 @@ public partial class Mos6502Chip
     private ushort _nmiCounter;
     private ushort _irqCounter;
 
+    private bool _rw;
+
     private readonly bool _bcdEnabled;
 
     internal byte TR => _tr;
@@ -169,7 +171,7 @@ public partial class Mos6502Chip
                 }
 
                 // Assume we're going to read.
-                Pins.RW = true;
+                _rw = true;
 
                 ExecuteInstruction(ref Pins);
 
@@ -233,6 +235,11 @@ public partial class Mos6502Chip
         }
     }
 
+    /// <summary>
+    /// Read/write pin. True for read, false for write.
+    /// </summary>
+    public bool RW => _rw;
+
     public Mos6502Chip(Mos6502Options options)
     {
         _bcdEnabled = options.BcdEnabled;
@@ -245,11 +252,6 @@ public partial class Mos6502Chip
         SP = 0xC0;
         P.Z = true;
 
-        Pins = new Mos6502Pins
-        {
-            RW = true,
-        };
-
         // These initial bus values are from Visual 6502.
         _resetPin = true;
         _brkFlags = BrkFlags.Reset;
@@ -258,6 +260,7 @@ public partial class Mos6502Chip
         _address = 0x00FF;
         _data = 0x00;
         _sync = false;
+        _rw = true;
     }
 
     public void Startup()

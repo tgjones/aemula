@@ -167,7 +167,7 @@ public sealed class Atari2600System : EmulatedSystem
         {
             case 0b0000000010000000: // RIOT (A7 hi, A12 lo)
                 _riot.Pins.RS = GetBitAsBoolean(address, 9); // RIOT RS is connected to A9.
-                _riot.Pins.RW = _cpu.Pins.RW;                // RIOT RW is connected to CPU RW.
+                _riot.Pins.RW = _cpu.RW;                     // RIOT RW is connected to CPU RW.
                 _riot.Pins.A = (byte)(address & 0b1111111);  // RIOT Address pins are connected to A0..A6.
                 _riot.Pins.DB = _cpu.Data;
 
@@ -178,7 +178,7 @@ public sealed class Atari2600System : EmulatedSystem
                 break;
 
             case 0b0000000000000000: // TIA (A7 lo, A12 lo)
-                _tia.Pins.RW = _cpu.Pins.RW;                    // TIA RW is connected to CPU RW.
+                _tia.Pins.RW = _cpu.RW;                         // TIA RW is connected to CPU RW.
                 _tia.Pins.Address = (byte)(address & 0b111111); // TIA Address pins are connected to A0..A5.
                 _tia.Pins.Data05 = (byte)(_cpu.Data & 0x3F);
                 _tia.Pins.Data67 = (byte)(_cpu.Data >> 6);
@@ -191,7 +191,7 @@ public sealed class Atari2600System : EmulatedSystem
                 break;
         }
 
-        if (_cpu.Pins.RW)
+        if (_cpu.RW)
         {
             // If a cartridge is plugged in, always give it a chance to provide data.
             if (_cartridge != null)

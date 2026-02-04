@@ -713,13 +713,13 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
                         "{",
                         "    _dataOutputRegister = (byte)(PC >> 8);",
                         "}",
-                        "pins.RW = (_brkFlags & BrkFlags.Reset) != 0;");
+                        "_rw = (_brkFlags & BrkFlags.Reset) != 0;");
                     Add("_address = (ushort)(0x0100 | (byte)(SP - 1));",
                         "if ((_brkFlags & BrkFlags.Reset) == 0)",
                         "{",
                         "    _dataOutputRegister = (byte)(PC & 0xFF);",
                         "}",
-                        "pins.RW = (_brkFlags & BrkFlags.Reset) != 0;");
+                        "_rw = (_brkFlags & BrkFlags.Reset) != 0;");
                     Add("_address = (ushort)(0x0100 | (byte)(SP - 2));",
                         "if ((_brkFlags & BrkFlags.Reset) == 0)",
                         "{",
@@ -740,7 +740,7 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
                         "}",
                         "else",
                         "{",
-                        "    pins.RW = false;",
+                        "    _rw = false;",
                         "    _ad = (_brkFlags & BrkFlags.Nmi) != 0",
                         "        ? (ushort)0xFFFA",
                         "        : (ushort)0xFFFE;",
@@ -772,9 +772,9 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
                     // Put SP on address bus.
                     Add("PC++;", "_sp = SP;", "SP = _data;", "_address = (ushort)(0x0100 | _sp);", "_ad = _data;");
                     // Write PC high byte to stack.
-                    Add("_address = (ushort)(0x0100 | _sp);", "_dataOutputRegister = (byte)(PC >> 8);", "pins.RW = false;");
+                    Add("_address = (ushort)(0x0100 | _sp);", "_dataOutputRegister = (byte)(PC >> 8);", "_rw = false;");
                     // Write PC low byte to stack.
-                    Add("_address = (ushort)(0x0100 | (byte)(_sp - 1));", "_dataOutputRegister = (byte)(PC & 0xFF);", "pins.RW = false;");
+                    Add("_address = (ushort)(0x0100 | (byte)(_sp - 1));", "_dataOutputRegister = (byte)(PC & 0xFF);", "_rw = false;");
                     // Read high byte of target address.
                     Add("_address = PC;");
                     Add("SP = (byte)(_sp - 2);", "PC = (ushort)((_data << 8) | _ad);");
@@ -860,14 +860,14 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
                     Add("_address = (ushort)(0x0100 | SP);",
                         "SP = (byte)(SP - 1);",
                         "_dataOutputRegister = A;",
-                        "pins.RW = false;");
+                        "_rw = false;");
                     break;
 
                 case "PHP":
                     Add("_address = (ushort)(0x0100 | SP);",
                         "SP = (byte)(SP - 1);",
                         "_dataOutputRegister = P.AsByte(true);",
-                        "pins.RW = false;");
+                        "_rw = false;");
                     break;
 
                 case "TAX":
@@ -902,22 +902,22 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
 
                 case "STA":
                     Description = "Store Accumulator";
-                    ModifyPrevious("_dataOutputRegister = A;", "pins.RW = false;");
+                    ModifyPrevious("_dataOutputRegister = A;", "_rw = false;");
                     break;
 
                 case "STX":
                     Description = "Store X Register";
-                    ModifyPrevious("_dataOutputRegister = X;", "pins.RW = false;");
+                    ModifyPrevious("_dataOutputRegister = X;", "_rw = false;");
                     break;
 
                 case "STY":
                     Description = "Store Y Register";
-                    ModifyPrevious("_dataOutputRegister = Y;", "pins.RW = false;");
+                    ModifyPrevious("_dataOutputRegister = Y;", "_rw = false;");
                     break;
 
                 case "SAX":
                     Description = "Store Accumulator and X (undocumented)";
-                    ModifyPrevious("_dataOutputRegister = (byte)(A & X);", "pins.RW = false;");
+                    ModifyPrevious("_dataOutputRegister = (byte)(A & X);", "_rw = false;");
                     break;
 
                 case "SHA":
@@ -929,11 +929,11 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
                     break;
 
                 case "SHX":
-                    ModifyPrevious("_data = (byte)(X & ((_address >> 8) + 1));", "pins.RW = false;");
+                    ModifyPrevious("_data = (byte)(X & ((_address >> 8) + 1));", "_rw = false;");
                     break;
 
                 case "SHY":
-                    ModifyPrevious("_data = (byte)(Y & ((_address >> 8) + 1));", "pins.RW = false;");
+                    ModifyPrevious("_data = (byte)(Y & ((_address >> 8) + 1));", "_rw = false;");
                     break;
 
                 case "LAX":
@@ -1204,7 +1204,7 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
 
         private void AddRmwCycle()
         {
-            Add("_ad = _data;", "pins.RW = false;");
+            Add("_ad = _data;", "_rw = false;");
         }
 
         private static string[] GetOpsCmp(string register) => new[]
@@ -1226,7 +1226,7 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
         private static readonly string[] OpsAsl =
         {
             "_dataOutputRegister = AslHelper((byte)_ad);",
-            "pins.RW = false;"
+            "_rw = false;"
         };
 
         private static readonly string[] OpsCmp = GetOpsCmp("A");
@@ -1234,7 +1234,7 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
         private static readonly string[] OpsDec =
         {
             "_dataOutputRegister = P.SetZeroNegativeFlags((byte)(_ad - 1));",
-            "pins.RW = false;"
+            "_rw = false;"
         };
 
         private static readonly string[] OpsEor =
@@ -1245,13 +1245,13 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
         private static readonly string[] OpsInc =
         {
             "_dataOutputRegister = P.SetZeroNegativeFlags((byte)(_ad + 1));",
-            "pins.RW = false;"
+            "_rw = false;"
         };
 
         private static readonly string[] OpsLsr =
         {
             "_dataOutputRegister = LsrHelper((byte)_ad);",
-            "pins.RW = false;"
+            "_rw = false;"
         };
 
         private static readonly string[] OpsLsra =
@@ -1267,13 +1267,13 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
         private static readonly string[] OpsRol =
         {
             "_dataOutputRegister = RolHelper((byte)_ad);",
-            "pins.RW = false;"
+            "_rw = false;"
         };
 
         private static readonly string[] OpsRor =
         {
             "_dataOutputRegister = RorHelper((byte)_ad);",
-            "pins.RW = false;"
+            "_rw = false;"
         };
 
         private static readonly string[] OpsRora =
@@ -1289,7 +1289,7 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
         private static readonly string[] OpsSha =
         {
             "_dataOutputRegister = (byte)(A & X & ((_address >> 8) + 1));",
-            "pins.RW = false;"
+            "_rw = false;"
         };
 
         public void EncodeAddressingMode(Instruction instruction)
