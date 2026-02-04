@@ -725,6 +725,15 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
                         "{",
                         "    _dataOutputRegister = P.AsByte(_brkFlags == BrkFlags.None);",
                         "}",
+                        "P.I = true;",
+                        "// If NMI was asserted in the SYNC cycle prior to this BRK instruction," +
+                        "// then even though that would normally be too late to affect this " +
+                        "// instruction, the NMI actually hijacks the BRK.",
+                        "if (_nmiCounter != 0)",
+                        "{",
+                        "    _brkFlags = BrkFlags.Nmi;",
+                        "    _nmiCounter = 0;",
+                        "}",
                         "if ((_brkFlags & BrkFlags.Reset) != 0)",
                         "{",
                         "    _ad = 0xFFFC;",
@@ -739,11 +748,17 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
                     Add("{",
                         "    SP -= 3;",
                         "}",
+                        "// Interestingly, Flawless6502 shows that even as late as this cycle," +
+                        "// an NMI still 'hijacks' the BRK instruction... except that it's too late" +
+                        "// to affect the vector address. So the NMI just sort of gets lost.",
+                        "if (_nmiCounter != 0)",
+                        "{",
+                        "    _nmiCounter = 0;",
+                        "}",
                         "pins.Address = _ad++;");
                     Add("pins.Address = _ad;",
                         "_ad = pins.Data;",
-                        "_brkFlags = BrkFlags.None;",
-                        "P.I = true;");
+                        "_brkFlags = BrkFlags.None;");
                     Add("PC = (ushort)((pins.Data << 8) | _ad);");
                     break;
 

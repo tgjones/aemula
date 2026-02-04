@@ -32,3 +32,14 @@ internal interface ILoggable
 {
     string ToLogEntry();
 }
+
+internal sealed record MemoryLog(ushort Address, byte Data, bool IsRead)
+        : ILoggable
+{
+    public string ToLogEntry()
+    {
+        return IsRead
+            ? $"Read      ${Address:X4} => ${Data:X2}"
+            : $"Write     ${Address:X4} <= ${Data:X2}";
+    }
+}

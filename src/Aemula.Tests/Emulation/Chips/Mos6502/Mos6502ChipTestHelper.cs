@@ -21,7 +21,11 @@ internal sealed class Mos6502ChipTestHelper
     private int _cycle;
     private bool _validateRegisters;
 
+    private bool _nmiAsserted;
+    private bool _irqAsserted;
+
     public ushort PC => _chip.PC;
+    public bool Sync => _chip.Pins.Sync;
 
     public Mos6502ChipTestHelper(
         Func<ushort, byte> readMemory,
@@ -60,8 +64,8 @@ internal sealed class Mos6502ChipTestHelper
         _chip.Phi0 = true;
         // TODO: RDY
         // TODO: SO
-        // TODO: IRQ
-        // TODO: NMI
+        _chip.Irq = true;
+        _chip.Nmi = true;
 
         // Run for 8 cycles so that RESET fully takes effect
         for (var i = 0; i < 8; i++)
@@ -89,6 +93,12 @@ internal sealed class Mos6502ChipTestHelper
         }
 
         await SetPhi0(true);
+
+        // A cycle is enough for NMI to latch. We can de-assert it.
+        if (_nmiAsserted)
+        {
+            DeassertNmi();
+        }
 
         // Memory read or write occurs on phi0 high.
         if (_chip.Pins.RW)
@@ -121,6 +131,16 @@ internal sealed class Mos6502ChipTestHelper
             {
                 _referenceChip?.SetBus(Flawless6502.NodeIds.db, value);
                 _logger.Add(new MemoryLog(_chip.Pins.Address, value, true));
+            }
+
+            // If we've just read from memory location 0xFFFA, we know it's
+            // safe to de-assert IRQ. In theory we could have de-asserted it
+            // before now, but the part of 6502_interrupt_test that tests
+            // NMI and IRQ together expects that IRQ will be asserted all
+            // the way through NMI interrupt handling.
+            if (_irqAsserted && _chip.Pins.Address == 0xFFFE)
+            {
+                DeassertIrq();
             }
         }
         else
@@ -179,7 +199,9 @@ internal sealed class Mos6502ChipTestHelper
             Data: isDataBusValid ? _chip.Pins.Data : (byte)0,
             RW: _chip.Pins.RW,
             Sync: _chip.Pins.Sync,
-            Res: _chip.Pins.Res);
+            Res: _chip.Pins.Res,
+            Nmi: _chip.Nmi,
+            Irq: _chip.Irq);
 
         _logger.Add(new PinsLog(_cycle, chipPinState));
 
@@ -189,7 +211,9 @@ internal sealed class Mos6502ChipTestHelper
             Data: isDataBusValid ? _referenceChip.GetBus(Flawless6502.NodeIds.db) : (byte)0,
             RW: _referenceChip.IsHigh(Flawless6502.NodeIds.rw),
             Sync: _referenceChip.IsHigh(Flawless6502.NodeIds.sync),
-            Res: _referenceChip.IsHigh(Flawless6502.NodeIds.res));
+            Res: _referenceChip.IsHigh(Flawless6502.NodeIds.res),
+            Nmi: _referenceChip.IsHigh(Flawless6502.NodeIds.nmi),
+            Irq: _referenceChip.IsHigh(Flawless6502.NodeIds.irq));
 
         if (!chipPinState.Equals(referenceChipPinState))
         {
@@ -234,17 +258,6 @@ internal sealed class Mos6502ChipTestHelper
         SP: _chip.SP,
         P: Mos6502ProcessorFlagsState.FromProcessorFlags(_chip.P));
 
-    private sealed record MemoryLog(ushort Address, byte Data, bool IsRead) 
-        : ILoggable
-    {
-        public string ToLogEntry()
-        {
-            return IsRead
-                ? $"Read      ${Address:X4} => ${Data:X2}"
-                : $"Write     ${Address:X4} <= ${Data:X2}";
-        }
-    }
-
     private sealed record DisassemblyLog(ushort Address, Func<ushort, byte> ReadMemory) 
         : ILoggable
     {
@@ -273,6 +286,36 @@ internal sealed class Mos6502ChipTestHelper
     {
         public string ToLogEntry() => $"Registers {Registers}";
     }
+
+    public void AssertNmi() => SetNmi(false);
+
+    private void DeassertNmi() => SetNmi(true);
+
+    private void SetNmi(bool value)
+    {
+        _referenceChip?.SetNode(
+            Flawless6502.NodeIds.nmi, 
+            value ? NodeValue.PulledHigh : NodeValue.PulledLow);
+        _chip.Nmi = value;
+
+        _nmiAsserted = !value;
+    }
+
+    public void AssertIrq() => SetIrq(false);
+
+    private void DeassertIrq() => SetIrq(true);
+
+    private void SetIrq(bool value)
+    {
+        _referenceChip?.SetNode(
+            Flawless6502.NodeIds.irq,
+            value ? NodeValue.PulledHigh : NodeValue.PulledLow);
+        _chip.Irq = value;
+
+        _irqAsserted = !value;
+    }
+
+    public void DumpToConsole() => _logger.DumpToConsole();
 }
 
 internal readonly record struct Mos6502MemoryAccessResult(

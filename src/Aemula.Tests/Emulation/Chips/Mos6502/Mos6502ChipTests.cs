@@ -96,6 +96,91 @@ public class Mos6502ChipTests
         await Assert.That(testHelper.PC).IsEqualTo((ushort)0x024b);
         await Assert.That(ram[0x000B]).IsEqualTo((byte)0);
     }
+
+    [Test]
+    public async Task DormannInterruptTest()
+    {
+        var ram = new byte[0x10000];
+
+        var testCode = File.ReadAllBytes(Path.Combine(AssetsPath, "6502_interrupt_test.bin"));
+        Array.Copy(testCode, 0, ram, 0x000A, testCode.Length);
+
+        // Patch the test start address into the RESET vector.
+        ram[0xFFFC] = 0x00;
+        ram[0xFFFD] = 0x04;
+
+        var testHelper = new Mos6502ChipTestHelper(
+            address => ram[address],
+            (address, data) => ram[address] = data,
+            // This test does pass the reference comparison, but...
+            // it takes several hours to complete on my machine.
+            doReferenceComparison: true);
+
+        await testHelper.Startup();
+
+        const ushort irqSignalAddress = 0xBFFC;
+        ram[irqSignalAddress] = 0x00;
+
+        var lastPC = 0;
+
+        // Delay asserting IRQ / NMI for a few cycles, otherwise the
+        // test program seems to break.
+        const int numberOfCyclesToDelayInterrupt = 5;
+        int? irqSignalDelay = null;
+
+        while (true)
+        {
+            await testHelper.Tick();
+
+            // Check if test program wants interrupt to be raised.
+            ref var irqSignal = ref ram[irqSignalAddress];
+            if (irqSignal != 0)
+            {
+                if (irqSignalDelay == null)
+                {
+                    irqSignalDelay = numberOfCyclesToDelayInterrupt;
+                }
+                else
+                {
+                    irqSignalDelay--;
+                }
+
+                if (irqSignalDelay == 0)
+                {
+                    if (BitUtility.GetBitAsBoolean(irqSignal, 1))
+                    {
+                        testHelper.AssertNmi();
+                        BitUtility.ClearBit(ref irqSignal, 1);
+                    }
+                    if (BitUtility.GetBitAsBoolean(irqSignal, 0))
+                    {
+                        testHelper.AssertIrq();
+                        BitUtility.ClearBit(ref irqSignal, 0);
+                    }
+                    irqSignalDelay = null;
+                }
+            }
+
+            if (testHelper.Sync)
+            {
+                if (lastPC == testHelper.PC)
+                {
+                    break;
+                }
+
+                lastPC = testHelper.PC;
+            }
+        }
+
+        const ushort expectedPC = 0x06F5;
+
+        if (testHelper.PC != expectedPC)
+        {
+            testHelper.DumpToConsole();
+            await Assert.That(testHelper.PC).IsEqualTo(expectedPC);
+        }
+    }
+
     [Test]
     [Arguments(" start")]
     [Arguments("ldab")]

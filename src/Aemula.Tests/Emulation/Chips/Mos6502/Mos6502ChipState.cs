@@ -8,11 +8,13 @@ internal record struct Mos6502PinState(
     byte Data,
     bool RW,
     bool Sync,
-    bool Res)
+    bool Res,
+    bool Nmi,
+    bool Irq)
 {
     public override readonly string ToString()
     {
-        return $"Ø2 {(Phi2 ? '1' : '0')}   AB {Address:X4}   DB {Data:X2}   RW {(RW ? '1' : '0')}   SYNC {(Sync ? '1' : '0')}   RES {(Res ? '1' : '0')}";
+        return $"Ø2 {(Phi2 ? '1' : '0')}   AB {Address:X4}   DB {Data:X2}   RW {(RW ? '1' : '0')}   SYNC {(Sync ? '1' : '0')}   RES {(Res ? '1' : '0')}   NMI {(Nmi ? '1' : '0')}   IRQ {(Irq ? '1' : '0')}";
     }
 }
 

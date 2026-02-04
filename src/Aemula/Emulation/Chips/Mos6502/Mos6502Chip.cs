@@ -41,7 +41,8 @@ public partial class Mos6502Chip
 
     private byte? _dataOutputRegister;
 
-    private bool _previousNmi;
+    private bool _nmiPin;
+    private bool _irqPin;
     private ushort _nmiCounter;
     private ushort _irqCounter;
 
@@ -86,14 +87,44 @@ public partial class Mos6502Chip
                 // Transitioning from high to low.
                 // Will be executing instruction.
 
+                // IRQ is level-sensitive (reacts to a low signal level).
+                // So as long as it's low, and so as long as interrupts are enabled,
+                // we keep setting the lowest bit of the IRQ counter.
+                if (!_irqPin && !P.I)
+                {
+                    _irqCounter |= 1;
+                }
+
                 if (Pins.Sync)
                 {
                     Pins.Sync = false;
-                    _ir = _brkFlags == BrkFlags.Reset 
-                        ? (byte)0 
-                        : Pins.Data;
+
+                    _ir = Pins.Data;
                     _tr = 0;
-                    if (_brkFlags == BrkFlags.None)
+
+                    // For IRQ to be triggered, the IRQ pin must have been low in the cycle _before_ SYNC.
+                    // We're currently in the cycle _after_ SYNC, so we check if the 3rd bit is set.
+                    if ((_irqCounter & 0b100) != 0)
+                    {
+                        _brkFlags |= BrkFlags.Irq;
+                        _irqCounter = 0;
+                    }
+
+                    // For NMI to be triggered, the NMI pin must have been set low at any cycle before SYNC.
+                    if ((_nmiCounter & 0xFFFC) != 0)
+                    {
+                        _brkFlags = BrkFlags.Nmi;
+                        _nmiCounter = 0;
+                    }
+
+                    // Only keep lower 2 bits of IRQ counter.
+                    _irqCounter &= 0b11;
+
+                    if (_brkFlags != BrkFlags.None)
+                    {
+                        _ir = 0;
+                    }
+                    else
                     {
                         PC++;
                     }
@@ -126,7 +157,12 @@ public partial class Mos6502Chip
 
                 ExecuteInstruction(ref Pins);
 
+                // Increment timing register.
                 _tr++;
+
+                // Increment interrupt counters.
+                _irqCounter <<= 1;
+                _nmiCounter <<= 1;
             }
         }
     }
@@ -155,6 +191,32 @@ public partial class Mos6502Chip
         }
     }
 
+    public bool Nmi
+    {
+        // Exposed for testing, even though this is a write-only pin.
+        internal get => _nmiPin;
+        set
+        {
+            // NMI is edge-sensitive (triggered by high-to-low transition).
+            if (!value && _nmiPin)
+            {
+                _nmiCounter |= 1;
+            }
+            _nmiPin = value;
+        }
+    }
+
+    public bool Irq
+    {
+        // Exposed for testing, even though this is a write-only pin.
+        internal get => _irqPin;
+        set
+        {
+            // IRQ is level-sensitive (reacts to a low signal level).
+            _irqPin = value;
+        }
+    }
+
     public Mos6502Chip(Mos6502Options options)
     {
         _bcdEnabled = options.BcdEnabled;
@@ -162,6 +224,8 @@ public partial class Mos6502Chip
         _phi0 = true;
         _resetPin = true;
         _brkFlags = BrkFlags.Reset;
+        _nmiPin = true;
+        _irqPin = true;
 
         // These initial register values are from Visual 6502.
         PC = 0xFF;
