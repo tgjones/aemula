@@ -49,7 +49,7 @@ partial class Ricoh2A03Chip
                         DmaState = DmaState.Inactive;
 
                         // Let CPU continue on next clock cycle.
-                        pins.Rdy = false;
+                        chip.Rdy = false;
                     }
                     else
                     {

@@ -63,6 +63,7 @@ public partial class Mos6502Chip
     private ushort _irqCounter;
 
     private bool _rw;
+    private bool _rdy;
 
     private readonly bool _bcdEnabled;
 
@@ -239,6 +240,14 @@ public partial class Mos6502Chip
     /// Read/write pin. True for read, false for write.
     /// </summary>
     public bool RW => _rw;
+
+    // TODO: Implement this.
+    public bool Rdy
+    {
+        // Exposed for testing, even though this is a write-only pin.
+        internal get => _rdy;
+        set => _rdy = value;
+    }
 
     public Mos6502Chip(Mos6502Options options)
     {

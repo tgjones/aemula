@@ -115,6 +115,11 @@ public sealed partial class Ricoh2A03Chip
         set => _cpuCore.Irq = value;
     }
 
+    public bool Rdy
+    {
+        set => _cpuCore.Rdy = value;
+    }
+
     public Ricoh2A03Chip()
     {
         _cpuCore = new Mos6502Chip(new Mos6502Options(false));
@@ -161,7 +166,7 @@ public sealed partial class Ricoh2A03Chip
                         _dmaUnit.SetHiByte(_cpuCore.Data);
 
                         // Tell CPU we want to pause it at the next read cycle.
-                        _cpuCore.Pins.Rdy = true;
+                        _cpuCore.Rdy = true;
 
                         break;
 
@@ -174,7 +179,7 @@ public sealed partial class Ricoh2A03Chip
 
         // Did CPU become paused on this cycle? If so it means we previously requested it
         // to pause so that we can start a DMA transfer.
-        if (_cpuCore.RW && _cpuCore.Pins.Rdy)
+        if (_cpuCore.RW && _cpuCore.Rdy)
         {
             _dmaUnit.DmaState = DmaState.Pending;
         }

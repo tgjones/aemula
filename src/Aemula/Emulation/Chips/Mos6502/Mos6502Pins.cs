@@ -2,5 +2,5 @@
 
 public struct Mos6502Pins
 {
-    public bool Rdy;
+    
 }

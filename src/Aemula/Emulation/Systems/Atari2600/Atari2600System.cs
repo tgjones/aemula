@@ -117,7 +117,7 @@ public sealed class Atari2600System : EmulatedSystem
         }
 
         // TIA can pause CPU.
-        _cpu.Pins.Rdy = _tia.Pins.Rdy;
+        _cpu.Rdy = _tia.Pins.Rdy;
 
         // Prepare composite video output.
         byte ntscSignal;
