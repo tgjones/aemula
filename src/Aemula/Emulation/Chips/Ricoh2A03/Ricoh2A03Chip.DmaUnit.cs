@@ -14,7 +14,7 @@ partial class Ricoh2A03Chip
         private byte _dmaHiByte;
         private byte _dmaLoByte;
 
-        public void Cycle(Ricoh2A03Chip chip, ref Mos6502Pins pins)
+        public void Cycle(Ricoh2A03Chip chip)
         {
             // DMA transfer can only become active on a read cycle.
             if (DmaState == DmaState.Pending && _isDmaReadCycle)

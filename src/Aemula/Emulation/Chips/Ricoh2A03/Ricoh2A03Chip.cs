@@ -141,7 +141,7 @@ public sealed partial class Ricoh2A03Chip
         // TODO: APU stuff.
 
         // TODO: When to do this?
-        _dmaUnit.Cycle(this, ref _cpuCore.Pins);
+        _dmaUnit.Cycle(this);
 
         var address = _cpuCore.Address;
 

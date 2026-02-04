@@ -16,7 +16,7 @@ partial class Mos6502Chip
         A = P.SetZeroNegativeFlags((byte)(A & data));
     }
 
-    private void Arr(in Mos6502Pins pins)
+    private void Arr()
     {
         And(_data);
 
@@ -226,7 +226,7 @@ partial class Mos6502Chip
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
-    private void FetchNextInstruction(ref Mos6502Pins pins)
+    private void FetchNextInstruction()
     {
         _address = PC;
         _sync = true;

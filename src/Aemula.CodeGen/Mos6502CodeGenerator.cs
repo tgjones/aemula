@@ -29,7 +29,7 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
         sb.AppendLine("{");
         sb.AppendLine("    partial class Mos6502Chip");
         sb.AppendLine("    {");
-        sb.AppendLine("        private void ExecuteInstruction(ref Mos6502Pins pins)");
+        sb.AppendLine("        private void ExecuteInstruction()");
         sb.AppendLine("        {");
         sb.AppendLine("            int tempInt32 = 0;");
         sb.AppendLine("            ");
@@ -1033,7 +1033,7 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
                     break;
 
                 case "ARR":
-                    Add("Arr(pins);");
+                    Add("Arr();");
                     break;
 
                 case "SBC":
@@ -1179,7 +1179,7 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
                 "_ad = (ushort)(PC + (sbyte)_data);",
                 $"if (P.{register} != {value.ToString().ToLowerInvariant()})",
                 "{",
-                "    FetchNextInstruction(ref pins);",
+                "    FetchNextInstruction();",
                 "}");
 
             // Executed if branch was taken.
@@ -1191,7 +1191,7 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
                 "    PC = _ad;",
                 "    _irqCounter >>= 1;",
                 "    _nmiCounter >>= 1;",
-                "    FetchNextInstruction(ref pins);",
+                "    FetchNextInstruction();",
                 "}",
                 "else",
                 "{",
@@ -1408,11 +1408,11 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
             {
                 case MemoryAccess.None:
                 case MemoryAccess.Read:
-                    codeBuilder.ModifyPrevious("FetchNextInstruction(ref pins);");
+                    codeBuilder.ModifyPrevious("FetchNextInstruction();");
                     break;
 
                 default:
-                    codeBuilder.Add("FetchNextInstruction(ref pins);");
+                    codeBuilder.Add("FetchNextInstruction();");
                     break;
             }
 

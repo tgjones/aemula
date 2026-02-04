@@ -7,8 +7,6 @@ namespace Aemula.Emulation.Chips.Mos6502;
 
 public partial class Mos6502Chip
 {
-    public Mos6502Pins Pins;
-
     // Pins
 
     private ushort _address;
@@ -174,7 +172,7 @@ public partial class Mos6502Chip
                 // Assume we're going to read.
                 _rw = true;
 
-                ExecuteInstruction(ref Pins);
+                ExecuteInstruction();
 
                 // Increment timing register.
                 _tr++;
