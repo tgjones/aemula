@@ -14,7 +14,7 @@ partial class Ricoh2A03Chip
         private byte _dmaHiByte;
         private byte _dmaLoByte;
 
-        public void Cycle(ref Mos6502Pins pins)
+        public void Cycle(Ricoh2A03Chip chip)
         {
             // DMA transfer can only become active on a read cycle.
             if (DmaState == DmaState.Pending && _isDmaReadCycle)
@@ -30,8 +30,8 @@ partial class Ricoh2A03Chip
                 // Only do a read if a DMA transfer is actually active.
                 if (DmaState == DmaState.Active)
                 {
-                    pins.Address = (ushort)((_dmaHiByte << 8) | _dmaLoByte);
-                    pins.RW = true;
+                    chip._address = (ushort)((_dmaHiByte << 8) | _dmaLoByte);
+                    chip._rw = true;
                 }
                 _isDmaReadCycle = false;
             }
@@ -40,8 +40,8 @@ partial class Ricoh2A03Chip
                 // Only do a write if a DMA transfer is actually active.
                 if (DmaState == DmaState.Active)
                 {
-                    pins.Address = 0x2004;
-                    pins.RW = false;
+                    chip._address = 0x2004;
+                    chip._rw = false;
 
                     // Check if we have finished the DMA transfer.
                     if (_dmaLoByte == 0xFF)
@@ -49,7 +49,7 @@ partial class Ricoh2A03Chip
                         DmaState = DmaState.Inactive;
 
                         // Let CPU continue on next clock cycle.
-                        pins.Rdy = false;
+                        chip.Rdy = false;
                     }
                     else
                     {

@@ -5,6 +5,8 @@
     <PackageReference Include="ImGui.NET" />
     <PackageReference Include="Veldrid.ImGui" />
 
+    <InternalsVisibleTo Include="Aemula.Tests" />
+
     <Content Include="Emulation\**\Roms\*.*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

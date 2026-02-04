@@ -29,7 +29,7 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
         sb.AppendLine("{");
         sb.AppendLine("    partial class Mos6502Chip");
         sb.AppendLine("    {");
-        sb.AppendLine("        private void ExecuteInstruction(ref Mos6502Pins pins)");
+        sb.AppendLine("        private void ExecuteInstruction()");
         sb.AppendLine("        {");
         sb.AppendLine("            int tempInt32 = 0;");
         sb.AppendLine("            ");
@@ -659,12 +659,24 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
     {
         private readonly List<List<string>> _lines = new List<List<string>>();
 
-        public string Description { get; private set; }
+        private string[]? _next;
+
+        public string? Description { get; private set; }
         public List<List<string>> Lines => _lines;
 
         public void Add(params string[] text)
         {
-            _lines.Add(text.ToList());
+            var code = new List<string>();
+
+            if (_next != null)
+            {
+                code.AddRange(_next);
+                _next = null;
+            }
+
+            code.AddRange(text);
+
+            _lines.Add(code);
         }
 
         public void ModifyPrevious(params string[] text)
@@ -681,84 +693,119 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
             _lines[numLines - 1].AddRange(text);
         }
 
+        public void ModifyNext(params string[] text)
+        {
+            _next = text;
+        }
+
         public void EncodeOperation(string mnemonic, AddressingMode addressingMode)
         {
             switch (mnemonic)
             {
                 // Special cases
                 case "BRK":
-                    Add("if ((_brkFlags & (BrkFlags.Irq | BrkFlags.Nmi)) == 0)",
+                    Add("if (_brkFlags == BrkFlags.None)",
                         "{",
-                        "    PC += 1;",
+                        "    PC++;",
                         "}",
-                        "pins.Address = (ushort)(0x0100 | SP--);",
-                        "pins.Data = (byte)(PC >> 8);",
-                        "pins.RW = (_brkFlags & BrkFlags.Reset) != 0;");
-                    Add("pins.Address = (ushort)(0x0100 | SP--);",
-                        "pins.Data = (byte)(PC & 0xFF);",
-                        "pins.RW = (_brkFlags & BrkFlags.Reset) != 0;");
-                    Add("pins.Address = (ushort)(0x0100 | SP--);",
-                        "pins.Data = P.AsByte(_brkFlags == BrkFlags.None);",
+                        "_address = (ushort)(0x0100 | SP);",
+                        "if ((_brkFlags & BrkFlags.Reset) == 0)",
+                        "{",
+                        "    _dataOutputRegister = (byte)(PC >> 8);",
+                        "}",
+                        "_rw = (_brkFlags & BrkFlags.Reset) != 0;");
+                    Add("_address = (ushort)(0x0100 | (byte)(SP - 1));",
+                        "if ((_brkFlags & BrkFlags.Reset) == 0)",
+                        "{",
+                        "    _dataOutputRegister = (byte)(PC & 0xFF);",
+                        "}",
+                        "_rw = (_brkFlags & BrkFlags.Reset) != 0;");
+                    Add("_address = (ushort)(0x0100 | (byte)(SP - 2));",
+                        "if ((_brkFlags & BrkFlags.Reset) == 0)",
+                        "{",
+                        "    _dataOutputRegister = P.AsByte(_brkFlags == BrkFlags.None);",
+                        "}",
+                        "P.I = true;",
+                        "// If NMI was asserted in the SYNC cycle prior to this BRK instruction," +
+                        "// then even though that would normally be too late to affect this " +
+                        "// instruction, the NMI actually hijacks the BRK.",
+                        "if (_nmiCounter != 0)",
+                        "{",
+                        "    _brkFlags = BrkFlags.Nmi;",
+                        "    _nmiCounter = 0;",
+                        "}",
                         "if ((_brkFlags & BrkFlags.Reset) != 0)",
                         "{",
                         "    _ad = 0xFFFC;",
                         "}",
                         "else",
                         "{",
-                        "    pins.RW = false;",
+                        "    _rw = false;",
                         "    _ad = (_brkFlags & BrkFlags.Nmi) != 0",
                         "        ? (ushort)0xFFFA",
                         "        : (ushort)0xFFFE;",
                         "}");
-                    Add("pins.Address = _ad++;", "P.I = true;", "_brkFlags = BrkFlags.None;");
-                    Add("pins.Address = _ad;", "_ad = pins.Data;");
-                    Add("PC = (ushort)((pins.Data << 8) | _ad);");
+                    Add("{",
+                        "    SP -= 3;",
+                        "}",
+                        "// Interestingly, Flawless6502 shows that even as late as this cycle," +
+                        "// an NMI still 'hijacks' the BRK instruction... except that it's too late" +
+                        "// to affect the vector address. So the NMI just sort of gets lost.",
+                        "if (_nmiCounter != 0)",
+                        "{",
+                        "    _nmiCounter = 0;",
+                        "}",
+                        "_address = _ad++;");
+                    Add("_address = _ad;",
+                        "_ad = _data;",
+                        "_brkFlags = BrkFlags.None;");
+                    Add("PC = (ushort)((_data << 8) | _ad);");
                     break;
 
                 case "JMP":
-                    ModifyPrevious("PC = pins.Address;");
+                    ModifyPrevious("PC = _address;");
                     break;
 
                 case "JSR":
                     // Read low byte of target address.
-                    Add("pins.Address = PC++;");
+                    Add("_address = PC;");
                     // Put SP on address bus.
-                    Add("pins.Address = (ushort)(0x0100 | SP);", "_ad = pins.Data;");
+                    Add("PC++;", "_sp = SP;", "SP = _data;", "_address = (ushort)(0x0100 | _sp);", "_ad = _data;");
                     // Write PC high byte to stack.
-                    Add("pins.Address = (ushort)(0x0100 | SP--);", "pins.Data = (byte)(PC >> 8);", "pins.RW = false;");
+                    Add("_address = (ushort)(0x0100 | _sp);", "_dataOutputRegister = (byte)(PC >> 8);", "_rw = false;");
                     // Write PC low byte to stack.
-                    Add("pins.Address = (ushort)(0x0100 | SP--);", "pins.Data = (byte)(PC & 0xFF);", "pins.RW = false;");
+                    Add("_address = (ushort)(0x0100 | (byte)(_sp - 1));", "_dataOutputRegister = (byte)(PC & 0xFF);", "_rw = false;");
                     // Read high byte of target address.
-                    Add("pins.Address = PC;");
-                    Add("PC = (ushort)((pins.Data << 8) | _ad);");
+                    Add("_address = PC;");
+                    Add("SP = (byte)(_sp - 2);", "PC = (ushort)((_data << 8) | _ad);");
                     break;
 
                 case "PLA":
-                    Add("pins.Address = (ushort)(0x0100 | SP++);");
-                    Add("pins.Address = (ushort)(0x0100 | SP);");
-                    Add("A = P.SetZeroNegativeFlags(pins.Data);");
+                    Add("_address = (ushort)(0x0100 | SP);");
+                    Add("SP++;", "_address = (ushort)(0x0100 | SP);");
+                    Add("A = P.SetZeroNegativeFlags(_data);");
                     break;
 
                 case "PLP":
-                    Add("pins.Address = (ushort)(0x0100 | SP++);");
-                    Add("pins.Address = (ushort)(0x0100 | SP);");
-                    Add("P.SetFromByte(P.SetZeroNegativeFlags(pins.Data));");
+                    Add("_address = (ushort)(0x0100 | SP);");
+                    Add("SP++;", "_address = (ushort)(0x0100 | SP);");
+                    Add("P.SetFromByte(P.SetZeroNegativeFlags(_data));");
                     break;
 
                 case "RTI":
-                    Add("pins.Address = (ushort)(0x0100 | SP++);");
-                    Add("pins.Address = (ushort)(0x0100 | SP++);");
-                    Add("pins.Address = (ushort)(0x0100 | SP++);", "P.SetFromByte(pins.Data);");
-                    Add("pins.Address = (ushort)(0x0100 | SP);", "_ad = pins.Data;");
-                    Add("PC = (ushort)((pins.Data << 8) | _ad);");
+                    Add("PC++;", "_address = (ushort)(0x0100 | SP);");
+                    Add("_address = (ushort)(0x0100 | (byte)(SP + 1));");
+                    Add("_address = (ushort)(0x0100 | (byte)(SP + 2));", "P.SetFromByte(_data);");
+                    Add("SP += 3;", "_address = (ushort)(0x0100 | SP);", "_ad = _data;");
+                    Add("PC = (ushort)((_data << 8) | _ad);");
                     break;
 
                 case "RTS":
-                    Add("pins.Address = (ushort)(0x0100 | SP++);");
-                    Add("pins.Address = (ushort)(0x0100 | SP++);");
-                    Add("pins.Address = (ushort)(0x0100 | SP);", "_ad = pins.Data;");
-                    Add("PC = (ushort)((pins.Data << 8) | _ad);", "pins.Address = PC++;");
-                    Add("");
+                    Add("_address = (ushort)(0x0100 | SP);", "PC++;");
+                    Add("_address = (ushort)(0x0100 | (byte)(SP + 1));");
+                    Add("SP += 2;", "_address = (ushort)(0x0100 | SP);", "_ad = _data;");
+                    Add("PC = (ushort)((_data << 8) | _ad);", "_address = PC;");
+                    Add("PC++;");
                     break;
 
                 case "CLC":
@@ -810,15 +857,17 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
                     break;
 
                 case "PHA":
-                    Add("pins.Address = (ushort)(0x0100 | SP--);",
-                        "pins.Data = A;",
-                        "pins.RW = false;");
+                    Add("_address = (ushort)(0x0100 | SP);",
+                        "SP = (byte)(SP - 1);",
+                        "_dataOutputRegister = A;",
+                        "_rw = false;");
                     break;
 
                 case "PHP":
-                    Add("pins.Address = (ushort)(0x0100 | SP--);",
-                        "pins.Data = P.AsByte(true);",
-                        "pins.RW = false;");
+                    Add("_address = (ushort)(0x0100 | SP);",
+                        "SP = (byte)(SP - 1);",
+                        "_dataOutputRegister = P.AsByte(true);",
+                        "_rw = false;");
                     break;
 
                 case "TAX":
@@ -853,22 +902,22 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
 
                 case "STA":
                     Description = "Store Accumulator";
-                    ModifyPrevious("pins.Data = A;", "pins.RW = false;");
+                    ModifyPrevious("_dataOutputRegister = A;", "_rw = false;");
                     break;
 
                 case "STX":
                     Description = "Store X Register";
-                    ModifyPrevious("pins.Data = X;", "pins.RW = false;");
+                    ModifyPrevious("_dataOutputRegister = X;", "_rw = false;");
                     break;
 
                 case "STY":
                     Description = "Store Y Register";
-                    ModifyPrevious("pins.Data = Y;", "pins.RW = false;");
+                    ModifyPrevious("_dataOutputRegister = Y;", "_rw = false;");
                     break;
 
                 case "SAX":
                     Description = "Store Accumulator and X (undocumented)";
-                    ModifyPrevious("pins.Data = (byte)(A & X);", "pins.RW = false;");
+                    ModifyPrevious("_dataOutputRegister = (byte)(A & X);", "_rw = false;");
                     break;
 
                 case "SHA":
@@ -880,31 +929,31 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
                     break;
 
                 case "SHX":
-                    ModifyPrevious("pins.Data = (byte)(X & ((pins.Address >> 8) + 1));", "pins.RW = false;");
+                    ModifyPrevious("_data = (byte)(X & ((_address >> 8) + 1));", "_rw = false;");
                     break;
 
                 case "SHY":
-                    ModifyPrevious("pins.Data = (byte)(Y & ((pins.Address >> 8) + 1));", "pins.RW = false;");
+                    ModifyPrevious("_data = (byte)(Y & ((_address >> 8) + 1));", "_rw = false;");
                     break;
 
                 case "LAX":
                     Description = "Load A and X Registers (undocumented)";
-                    Add("A = P.SetZeroNegativeFlags(pins.Data);", "X = P.SetZeroNegativeFlags(pins.Data);");
+                    Add("A = P.SetZeroNegativeFlags(_data);", "X = P.SetZeroNegativeFlags(_data);");
                     break;
 
                 case "LDA":
                     Description = "Load Accumulator";
-                    Add("A = P.SetZeroNegativeFlags(pins.Data);");
+                    Add("A = P.SetZeroNegativeFlags(_data);");
                     break;
 
                 case "LDX":
                     Description = "Load X Register";
-                    Add("X = P.SetZeroNegativeFlags(pins.Data);");
+                    Add("X = P.SetZeroNegativeFlags(_data);");
                     break;
 
                 case "LDY":
                     Description = "Load Y Register";
-                    Add("Y = P.SetZeroNegativeFlags(pins.Data);");
+                    Add("Y = P.SetZeroNegativeFlags(_data);");
                     break;
 
                 case "AND":
@@ -924,9 +973,9 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
 
                 case "BIT":
                     Description = "Bit Test";
-                    Add("P.Z = (A & pins.Data) == 0;",
-                        "P.V = (pins.Data & 0x40) == 0x40;",
-                        "P.N = (pins.Data & 0x80) == 0x80;");
+                    Add("P.V = (_data & 0x40) == 0x40;",
+                        "P.Z = (A & _data) == 0;",
+                        "P.N = (_data & 0x80) == 0x80;");
                     break;
 
                 case "CMP":
@@ -945,33 +994,33 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
                     break;
 
                 case "LXA":
-                    Add("A = (byte)((A | 0xEE) & pins.Data);",
+                    Add("A = (byte)((A | 0xEE) & _data);",
                         "X = A;",
                         "P.SetZeroNegativeFlags(A);");
                     break;
 
                 case "SBX":
-                    Add("tempInt32 = (A & X) - pins.Data;",
+                    Add("tempInt32 = (A & X) - _data;",
                         "X = (byte)tempInt32;",
                         "P.C = tempInt32 >= 0;",
                         "P.SetZeroNegativeFlags(X);");
                     break;
 
                 case "LAS":
-                    Add("A = (byte)(pins.Data & SP);",
+                    Add("A = (byte)(_data & SP);",
                         "X = A;",
                         "SP = A;",
                         "P.SetZeroNegativeFlags(A);");
                     break;
 
                 case "ANC":
-                    Add("A &= pins.Data;",
+                    Add("A &= _data;",
                         "P.SetZeroNegativeFlags(A);",
                         "P.C = (A & 0x80) != 0;");
                     break;
 
                 case "ANE":
-                    Add("A = (byte)((A | 0xEE) & X & pins.Data);",
+                    Add("A = (byte)((A | 0xEE) & X & _data);",
                         "P.SetZeroNegativeFlags(A);");
                     break;
 
@@ -984,7 +1033,7 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
                     break;
 
                 case "ARR":
-                    Add("Arr(pins);");
+                    Add("Arr();");
                     break;
 
                 case "SBC":
@@ -1020,7 +1069,9 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
                 case "DCP":
                     Description = "Decrement Memory then Compare (undocumented)";
                     AddRmwCycle();
-                    Add(OpsDec.Concat(OpsCmp).ToArray());
+                    Add([..OpsDec, 
+                        $"P.SetZeroNegativeFlags((byte)(A - _dataOutputRegister));",
+                        $"P.C = A >= _dataOutputRegister;"]);
                     break;
 
                 case "INC":
@@ -1032,7 +1083,8 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
                 case "ISB":
                     Description = "Increment Memory then Subtract (undocumented, also known as ISC)";
                     AddRmwCycle();
-                    Add(OpsInc.Concat(OpsSbc).ToArray());
+                    Add(OpsInc);
+                    ModifyNext("Sbc(_data);");
                     break;
 
                 case "ROL":
@@ -1044,7 +1096,7 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
                 case "RLA":
                     Description = "ROL + AND (undocumented)";
                     AddRmwCycle();
-                    Add(OpsRol.Concat(OpsAnd).ToArray());
+                    Add([..OpsRol, "And(_dataOutputRegister.Value);"]);
                     break;
 
                 case "ASL":
@@ -1056,7 +1108,7 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
                 case "SLO":
                     Description = "ASL + ORA (undocumented)";
                     AddRmwCycle();
-                    Add(OpsAsl.Concat(OpsOra).ToArray());
+                    Add([..OpsAsl, "A = P.SetZeroNegativeFlags((byte)(A | _dataOutputRegister));"]);
                     break;
 
                 case "LSR":
@@ -1068,13 +1120,13 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
                 case "SRE":
                     Description = "LSR + EOR (undocumented)";
                     AddRmwCycle();
-                    Add(OpsLsr.Concat(OpsEor).ToArray());
+                    Add([..OpsLsr, "A = P.SetZeroNegativeFlags((byte)(A ^ _dataOutputRegister));"]);
                     break;
 
                 case "RRA":
                     Description = "ROR + ADC (undocumented)";
                     AddRmwCycle();
-                    Add(OpsRor.Concat(OpsAdc).ToArray());
+                    Add([..OpsRor, "Adc(_dataOutputRegister.Value);"]);
                     break;
 
                 case "ROR":
@@ -1123,23 +1175,27 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
 
         private void EncodeBranch(string register, bool value)
         {
-            Add("pins.Address = PC;",
-                "_ad = (ushort)(PC + (sbyte)pins.Data);",
+            Add("_address = PC;",
+                "_ad = (ushort)(PC + (sbyte)_data);",
                 $"if (P.{register} != {value.ToString().ToLowerInvariant()})",
                 "{",
-                "    FetchNextInstruction(ref pins);",
+                "    FetchNextInstruction();",
                 "}");
 
             // Executed if branch was taken.
             // For taken branches that cross a page boundary, shift IRQ and NMI counters
             // to account for branch interrupt quirk.
-            Add("pins.Address = (ushort)((PC & 0xFF00) | (_ad & 0xFF));",
+            Add("_address = (ushort)((PC & 0xFF00) | (_ad & 0xFF));",
                 "if ((_ad & 0xFF00) == (PC & 0xFF00))",
                 "{",
                 "    PC = _ad;",
                 "    _irqCounter >>= 1;",
                 "    _nmiCounter >>= 1;",
-                "    FetchNextInstruction(ref pins);",
+                "    FetchNextInstruction();",
+                "}",
+                "else",
+                "{",
+                "    PC = _address;",
                 "}");
 
             // Only executed if page was crossed.
@@ -1148,54 +1204,54 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
 
         private void AddRmwCycle()
         {
-            Add("_ad = pins.Data;", "pins.RW = false;");
+            Add("_ad = _data;", "_rw = false;");
         }
 
         private static string[] GetOpsCmp(string register) => new[]
         {
-            $"P.SetZeroNegativeFlags((byte)({register} - pins.Data));",
-            $"P.C = {register} >= pins.Data;"
+            $"P.SetZeroNegativeFlags((byte)({register} - _data));",
+            $"P.C = {register} >= _data;",
         };
 
         private static readonly string[] OpsAdc =
         {
-            "Adc(pins);"
+            "Adc(_data);"
         };
 
         private static readonly string[] OpsAnd =
         {
-            "And(pins);"
+            "And(_data);"
         };
 
         private static readonly string[] OpsAsl =
         {
-            "pins.Data = AslHelper((byte)_ad);",
-            "pins.RW = false;"
+            "_dataOutputRegister = AslHelper((byte)_ad);",
+            "_rw = false;"
         };
 
         private static readonly string[] OpsCmp = GetOpsCmp("A");
 
         private static readonly string[] OpsDec =
         {
-            "pins.Data = P.SetZeroNegativeFlags((byte)(_ad - 1));",
-            "pins.RW = false;"
+            "_dataOutputRegister = P.SetZeroNegativeFlags((byte)(_ad - 1));",
+            "_rw = false;"
         };
 
         private static readonly string[] OpsEor =
         {
-            "A = P.SetZeroNegativeFlags((byte)(A ^ pins.Data));"
+            "A = P.SetZeroNegativeFlags((byte)(A ^ _data));"
         };
 
         private static readonly string[] OpsInc =
         {
-            "pins.Data = P.SetZeroNegativeFlags((byte)(_ad + 1));",
-            "pins.RW = false;"
+            "_dataOutputRegister = P.SetZeroNegativeFlags((byte)(_ad + 1));",
+            "_rw = false;"
         };
 
         private static readonly string[] OpsLsr =
         {
-            "pins.Data = LsrHelper((byte)_ad);",
-            "pins.RW = false;"
+            "_dataOutputRegister = LsrHelper((byte)_ad);",
+            "_rw = false;"
         };
 
         private static readonly string[] OpsLsra =
@@ -1205,19 +1261,19 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
 
         private static readonly string[] OpsOra =
         {
-            "A = P.SetZeroNegativeFlags((byte)(A | pins.Data));"
+            "A = P.SetZeroNegativeFlags((byte)(A | _data));",
         };
 
         private static readonly string[] OpsRol =
         {
-            "pins.Data = RolHelper((byte)_ad);",
-            "pins.RW = false;"
+            "_dataOutputRegister = RolHelper((byte)_ad);",
+            "_rw = false;"
         };
 
         private static readonly string[] OpsRor =
         {
-            "pins.Data = RorHelper((byte)_ad);",
-            "pins.RW = false;"
+            "_dataOutputRegister = RorHelper((byte)_ad);",
+            "_rw = false;"
         };
 
         private static readonly string[] OpsRora =
@@ -1227,13 +1283,13 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
 
         private static readonly string[] OpsSbc =
         {
-            "Sbc(pins);"
+            "Sbc(_data);"
         };
 
         private static readonly string[] OpsSha =
         {
-            "pins.Data = (byte)(A & X & ((pins.Address >> 8) + 1));",
-            "pins.RW = false;"
+            "_dataOutputRegister = (byte)(A & X & ((_address >> 8) + 1));",
+            "_rw = false;"
         };
 
         public void EncodeAddressingMode(Instruction instruction)
@@ -1242,92 +1298,93 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
             {
                 case AddressingMode.None:
                 case AddressingMode.Accumulator:
-                    Add("pins.Address = PC;");
+                    Add("_address = PC;");
                     break;
 
                 case AddressingMode.Immediate:
-                    Add("pins.Address = PC++;");
+                    Add("_address = PC;");
+                    ModifyNext("PC++;");
                     break;
 
                 case AddressingMode.ZeroPage:
-                    Add("pins.Address = PC++;");
-                    Add("pins.Address = pins.Data;");
+                    Add("_address = PC;");
+                    Add("PC++;", "_address = _data;");
                     break;
 
                 case AddressingMode.ZeroPageX:
-                    Add("pins.Address = PC++;");
-                    Add("_ad = pins.Data;", "pins.Address = _ad;");
-                    Add("pins.Address = (byte)(_ad + X);");
+                    Add("_address = PC;");
+                    Add("PC++;", "_ad = _data;", "_address = _ad;");
+                    Add("_address = (byte)(_ad + X);");
                     break;
 
                 case AddressingMode.ZeroPageY:
-                    Add("pins.Address = PC++;");
-                    Add("_ad = pins.Data;", "pins.Address = _ad;");
-                    Add("pins.Address = (byte)(_ad + Y);");
+                    Add("_address = PC;");
+                    Add("PC++;", "_ad = _data;", "_address = _ad;");
+                    Add("_address = (byte)(_ad + Y);");
                     break;
 
                 case AddressingMode.Absolute:
-                    Add("pins.Address = PC++;");
-                    Add("pins.Address = PC++;", "_ad = pins.Data;");
-                    Add("pins.Address = (ushort)((pins.Data << 8)| _ad);");
+                    Add("_address = PC;");
+                    Add("PC++;", "_address = PC;", "_ad = _data;");
+                    Add("PC++;", "_address = (ushort)((_data << 8)| _ad);");
                     break;
 
                 case AddressingMode.AbsoluteX:
-                    Add("pins.Address = PC++;");
-                    Add("pins.Address = PC++;", "_ad = pins.Data;");
-                    Add("_ad |= (ushort)(pins.Data << 8);", "pins.Address = (ushort)((_ad & 0xFF00) | (byte)(_ad + X));");
+                    Add("_address = PC;");
+                    Add("PC++;", "_address = PC;", "_ad = _data;");
+                    Add("PC++;", "_ad |= (ushort)(_data << 8);", "_address = (ushort)((_ad & 0xFF00) | (byte)(_ad + X));");
                     if (instruction.MemoryAccess == MemoryAccess.Read)
                     {
                         ModifyPrevious("IncrementTimingRegisterIfNoPageCrossing(X);");
                     }
-                    Add("pins.Address = (ushort)(_ad + X);");
+                    Add("_address = (ushort)(_ad + X);");
                     break;
 
                 case AddressingMode.AbsoluteY:
-                    Add("pins.Address = PC++;");
-                    Add("pins.Address = PC++;", "_ad = pins.Data;");
-                    Add("_ad |= (ushort)(pins.Data << 8);", "pins.Address = (ushort)((_ad & 0xFF00) | (byte)(_ad + Y));");
+                    Add("_address = PC;");
+                    Add("PC++;", "_address = PC;", "_ad = _data;");
+                    Add("PC++;", "_ad |= (ushort)(_data << 8);", "_address = (ushort)((_ad & 0xFF00) | (byte)(_ad + Y));");
                     if (instruction.MemoryAccess == MemoryAccess.Read)
                     {
                         ModifyPrevious("IncrementTimingRegisterIfNoPageCrossing(Y);");
                     }
-                    Add("pins.Address = (ushort)(_ad + Y);");
+                    Add("_address = (ushort)(_ad + Y);");
                     break;
 
                 case AddressingMode.IndexedIndirectX:
-                    Add("pins.Address = PC++;");
-                    Add("_ad = pins.Data;", "pins.Address = _ad;");
-                    Add("_ad = (byte)(_ad + X);", "pins.Address = _ad;");
-                    Add("pins.Address = (byte)(_ad + 1);", "_ad = pins.Data;");
-                    Add("pins.Address = (ushort)((pins.Data << 8) | _ad);");
+                    Add("_address = PC;");
+                    Add("PC++;", "_ad = _data;", "_address = _ad;");
+                    Add("_ad = (byte)(_ad + X);", "_address = _ad;");
+                    Add("_address = (byte)(_ad + 1);", "_ad = _data;");
+                    Add("_address = (ushort)((_data << 8) | _ad);");
                     break;
 
                 case AddressingMode.IndirectIndexedY:
-                    Add("pins.Address = PC++;");
-                    Add("_ad = pins.Data;", "pins.Address = _ad;");
-                    Add("pins.Address = (byte)(_ad + 1);", "_ad = pins.Data;");
-                    Add("_ad |= (ushort)(pins.Data << 8);", "pins.Address = (ushort)((_ad & 0xFF00) | (byte)(_ad + Y));");
+                    Add("_address = PC;");
+                    Add("PC++;", "_ad = _data;", "_address = _ad;");
+                    Add("_address = (byte)(_ad + 1);", "_ad = _data;");
+                    Add("_ad |= (ushort)(_data << 8);", "_address = (ushort)((_ad & 0xFF00) | (byte)(_ad + Y));");
                     if (instruction.MemoryAccess == MemoryAccess.Read)
                     {
                         ModifyPrevious("IncrementTimingRegisterIfNoPageCrossing(Y);");
                     }
-                    Add("pins.Address = (ushort)(_ad + Y);");
+                    Add("_address = (ushort)(_ad + Y);");
                     break;
 
                 case AddressingMode.Indirect:
-                    Add("pins.Address = PC++;");
-                    Add("pins.Address = PC++;", "_ad = pins.Data;");
-                    Add("_ad |= (ushort)(pins.Data << 8);", "pins.Address = _ad;");
-                    Add("pins.Address = (ushort)((_ad & 0xFF00) | (byte)(_ad + 1));", "_ad = pins.Data;");
-                    Add("pins.Address = (ushort)((pins.Data << 8) | _ad);");
+                    Add("_address = PC;");
+                    Add("PC++;", "_address = PC;", "_ad = _data;");
+                    Add("PC++;", "_ad |= (ushort)(_data << 8);", "_address = _ad;");
+                    Add("_address = (ushort)((_ad & 0xFF00) | (byte)(_ad + 1));", "_ad = _data;");
+                    Add("_address = (ushort)((_data << 8) | _ad);");
                     break;
 
                 case AddressingMode.Jsr:
                     break;
 
                 case AddressingMode.Invalid:
-                    Add("pins.Address = PC;");
-                    Add("pins.Address = 0xFFFF;", "pins.Data = 0xFF;", "_ir--;");
+                    Add("_address = PC;");
+                    Add("_address = 0xFFFF;", "_data = 0xFF;", "_ir--;");
                     break;
 
                 default:
@@ -1351,11 +1408,11 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
             {
                 case MemoryAccess.None:
                 case MemoryAccess.Read:
-                    codeBuilder.ModifyPrevious("FetchNextInstruction(ref pins);");
+                    codeBuilder.ModifyPrevious("FetchNextInstruction();");
                     break;
 
                 default:
-                    codeBuilder.Add("FetchNextInstruction(ref pins);");
+                    codeBuilder.Add("FetchNextInstruction();");
                     break;
             }
 

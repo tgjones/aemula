@@ -51,7 +51,8 @@ public sealed class Atari2600System : EmulatedSystem
 
     public override void Reset()
     {
-        _cpu.Pins.Res = true;
+        _cpu.Res = false;
+        _cpu.Res = true;
     }
 
     internal byte ReadByteDebug(ushort address)
@@ -116,7 +117,7 @@ public sealed class Atari2600System : EmulatedSystem
         }
 
         // TIA can pause CPU.
-        _cpu.Pins.Rdy = _tia.Pins.Rdy;
+        _cpu.Rdy = _tia.Pins.Rdy;
 
         // Prepare composite video output.
         byte ntscSignal;
@@ -149,11 +150,12 @@ public sealed class Atari2600System : EmulatedSystem
 
     private void DoCpuCycle()
     {
-        _cpu.Tick();
+        _cpu.Phi0 = false;
+        _cpu.Phi0 = true;
 
-        var address = _cpu.Pins.Address;
+        var address = _cpu.Address;
 
-        if (_cpu.Pins.Sync)
+        if (_cpu.Sync)
         {
             _lastPC = address;
         }
@@ -165,41 +167,41 @@ public sealed class Atari2600System : EmulatedSystem
         {
             case 0b0000000010000000: // RIOT (A7 hi, A12 lo)
                 _riot.Pins.RS = GetBitAsBoolean(address, 9); // RIOT RS is connected to A9.
-                _riot.Pins.RW = _cpu.Pins.RW;                // RIOT RW is connected to CPU RW.
+                _riot.Pins.RW = _cpu.RW;                     // RIOT RW is connected to CPU RW.
                 _riot.Pins.A = (byte)(address & 0b1111111);  // RIOT Address pins are connected to A0..A6.
-                _riot.Pins.DB = _cpu.Pins.Data;
+                _riot.Pins.DB = _cpu.Data;
 
                 _riot.CpuCycle();
 
-                _cpu.Pins.Data = _riot.Pins.DB;
+                _cpu.Data = _riot.Pins.DB;
 
                 break;
 
             case 0b0000000000000000: // TIA (A7 lo, A12 lo)
-                _tia.Pins.RW = _cpu.Pins.RW;                    // TIA RW is connected to CPU RW.
+                _tia.Pins.RW = _cpu.RW;                         // TIA RW is connected to CPU RW.
                 _tia.Pins.Address = (byte)(address & 0b111111); // TIA Address pins are connected to A0..A5.
-                _tia.Pins.Data05 = (byte)(_cpu.Pins.Data & 0x3F);
-                _tia.Pins.Data67 = (byte)(_cpu.Pins.Data >> 6);
+                _tia.Pins.Data05 = (byte)(_cpu.Data & 0x3F);
+                _tia.Pins.Data67 = (byte)(_cpu.Data >> 6);
 
                 _tia.CpuCycle();
 
                 // On the TIA data pins, only pins 6 and 7 are bidirectional,
                 // so we combine those with the existing value on the CPU data bus.
-                _cpu.Pins.Data = (byte)(_cpu.Pins.Data & 0x3F | _tia.Pins.Data67 << 6);
+                _cpu.Data = (byte)(_cpu.Data & 0x3F | _tia.Pins.Data67 << 6);
                 break;
         }
 
-        if (_cpu.Pins.RW)
+        if (_cpu.RW)
         {
             // If a cartridge is plugged in, always give it a chance to provide data.
             if (_cartridge != null)
             {
-                _cartridge.Pins.A = (ushort)(_cpu.Pins.Address & 0x1FFF);
-                _cartridge.Pins.D = _cpu.Pins.Data;
+                _cartridge.Pins.A = (ushort)(_cpu.Address & 0x1FFF);
+                _cartridge.Pins.D = _cpu.Data;
 
                 _cartridge.Cycle();
 
-                _cpu.Pins.Data = _cartridge.Pins.D;
+                _cpu.Data = _cartridge.Pins.D;
             }
         }
         else

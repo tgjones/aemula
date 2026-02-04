@@ -7,7 +7,21 @@ namespace Aemula.Emulation.Chips.Mos6502;
 
 public partial class Mos6502Chip
 {
-    public Mos6502Pins Pins;
+    // Pins
+
+    private ushort _address;
+    public ushort Address => _address;
+
+    // TODO: Make this tri-state: read, write, or high-impedance.
+    private byte _data;
+    public byte Data
+    {
+        get => _data;
+        set => _data = value;
+    }
+
+    private bool _sync;
+    public bool Sync => _sync;
 
     // Registers
     public byte A;
@@ -34,112 +48,232 @@ public partial class Mos6502Chip
     private byte _tr;
 
     private BrkFlags _brkFlags;
+    private byte _resetTimer;
 
     private ushort _ad;
+    private byte _sp;
 
-    private bool _previousNmi;
+    private byte? _dataOutputRegister;
+
+    private bool _nmiPin;
+    private bool _irqPin;
     private ushort _nmiCounter;
     private ushort _irqCounter;
+
+    private bool _rw;
+    private bool _rdy;
 
     private readonly bool _bcdEnabled;
 
     internal byte TR => _tr;
 
+    private bool _phi0;
+
+    public bool Phi0
+    {
+        set
+        {
+            if (_phi0 == value)
+            {
+                return;
+            }
+
+            _phi0 = value;
+
+            if (!_resetPin)
+            {
+                return;
+            }
+
+            // TODO: NMI, IRQ, RDY
+
+            if (value)
+            {
+                // Transitioning from low to high.
+                // Will be reading / writing data bus.
+                // We send the already-calculated values out to the address and data pins.
+
+                if (_dataOutputRegister != null)
+                {
+                    _data = _dataOutputRegister.Value;
+                    _dataOutputRegister = null;
+                }
+            }
+            else
+            {
+                // Transitioning from high to low.
+                // Will be executing instruction.
+
+                // IRQ is level-sensitive (reacts to a low signal level).
+                // So as long as it's low, and so as long as interrupts are enabled,
+                // we keep setting the lowest bit of the IRQ counter.
+                if (!_irqPin && !P.I)
+                {
+                    _irqCounter |= 1;
+                }
+
+                if (_sync)
+                {
+                    _sync = false;
+
+                    _ir = _data;
+                    _tr = 0;
+
+                    // For IRQ to be triggered, the IRQ pin must have been low in the cycle _before_ SYNC.
+                    // We're currently in the cycle _after_ SYNC, so we check if the 3rd bit is set.
+                    if ((_irqCounter & 0b100) != 0)
+                    {
+                        _brkFlags |= BrkFlags.Irq;
+                        _irqCounter = 0;
+                    }
+
+                    // For NMI to be triggered, the NMI pin must have been set low at any cycle before SYNC.
+                    if ((_nmiCounter & 0xFFFC) != 0)
+                    {
+                        _brkFlags = BrkFlags.Nmi;
+                        _nmiCounter = 0;
+                    }
+
+                    // Only keep lower 2 bits of IRQ counter.
+                    _irqCounter &= 0b11;
+
+                    if (_brkFlags != BrkFlags.None)
+                    {
+                        _ir = 0;
+                    }
+                    else
+                    {
+                        PC++;
+                    }
+                }
+
+                if (_brkFlags == BrkFlags.Reset)
+                {
+                    _resetTimer++;
+
+                    switch (_resetTimer)
+                    {
+                        case 1:
+                            break;
+
+                        case 2:
+                            _sync = true;
+                            PC = (ushort)((_data << 8) | (PC & 0xFF));
+                            _address = PC;
+                            break;
+                    }
+
+                    if (_resetTimer <= 2)
+                    {
+                        return;
+                    }
+                }
+
+                // Assume we're going to read.
+                _rw = true;
+
+                ExecuteInstruction();
+
+                // Increment timing register.
+                _tr++;
+
+                // Increment interrupt counters.
+                _irqCounter <<= 1;
+                _nmiCounter <<= 1;
+            }
+        }
+    }
+
+    public bool Phi1 => !_phi0;
+
+    public bool Phi2 => _phi0;
+
+    private bool _resetPin;
+
+    public bool Res
+    {
+        get => _resetPin; // Shouldn't be accessible
+        set
+        {
+            _resetPin = value;
+
+            if (!value)
+            {
+                _brkFlags = BrkFlags.Reset;
+            }
+            else if (value && !_resetPin)
+            {
+                _resetTimer = 0;
+            }
+        }
+    }
+
+    public bool Nmi
+    {
+        // Exposed for testing, even though this is a write-only pin.
+        internal get => _nmiPin;
+        set
+        {
+            // NMI is edge-sensitive (triggered by high-to-low transition).
+            if (!value && _nmiPin)
+            {
+                _nmiCounter |= 1;
+            }
+            _nmiPin = value;
+        }
+    }
+
+    public bool Irq
+    {
+        // Exposed for testing, even though this is a write-only pin.
+        internal get => _irqPin;
+        set
+        {
+            // IRQ is level-sensitive (reacts to a low signal level).
+            _irqPin = value;
+        }
+    }
+
+    /// <summary>
+    /// Read/write pin. True for read, false for write.
+    /// </summary>
+    public bool RW => _rw;
+
+    // TODO: Implement this.
+    public bool Rdy
+    {
+        // Exposed for testing, even though this is a write-only pin.
+        internal get => _rdy;
+        set => _rdy = value;
+    }
+
     public Mos6502Chip(Mos6502Options options)
     {
         _bcdEnabled = options.BcdEnabled;
 
-        Pins = new Mos6502Pins
-        {
-            Sync = true,
-            Res = true,
-            RW = true,
-            Nmi = true,
-            Irq = true,
-        };
+        _phi0 = true;
+
+        // These initial register values are from Visual 6502.
+        PC = 0xFF;
+        X = 0xC0;
+        SP = 0xC0;
+        P.Z = true;
+
+        // These initial bus values are from Visual 6502.
+        _resetPin = true;
+        _brkFlags = BrkFlags.Reset;
+        _nmiPin = true;
+        _irqPin = true;
+        _address = 0x00FF;
+        _data = 0x00;
+        _sync = false;
+        _rw = true;
     }
 
-    public void Tick()
+    public void Startup()
     {
-        ref var pins = ref Pins;
-
-        if (pins.Sync || !pins.Irq || !pins.Nmi || pins.Rdy || pins.Res)
-        {
-            // NMI is edge-sensitive (triggered by high-to-low transitions).
-            if (!pins.Nmi && pins.Nmi != _previousNmi)
-            {
-                _nmiCounter |= 1;
-            }
-
-            // IRQ is level-sensitive (reacts to a low signal level).
-            if (!pins.Irq && !P.I)
-            {
-                _irqCounter |= 1;
-            }
-
-            // Check RDY pin, but only during a read cycle.
-            if (pins.Rdy & pins.RW)
-            {
-                // When RDY is high, we "tick" the IRQ counter but not the NMI counter.
-                _irqCounter <<= 1;
-                return;
-            }
-
-            if (pins.Sync)
-            {
-                _ir = pins.Data;
-                _tr = 0;
-                pins.Sync = false;
-
-                // For IRQ to be triggered, the IRQ pin must have been low in the cycle _before_ SYNC.
-                // We're currently in the cycle _after_ SYNC, so we check if the 3rd bit is set.
-                if ((_irqCounter & 0b100) != 0)
-                {
-                    _brkFlags |= BrkFlags.Irq;
-                }
-
-                // For NMI to be triggered, the NMI pin must have been set low at any cycle before SYNC.
-                if ((_nmiCounter & 0xFFFC) != 0)
-                {
-                    _brkFlags = BrkFlags.Nmi;
-                }
-
-                // Reset gets priority over NMI or IRQ.
-                if (pins.Res)
-                {
-                    _brkFlags = BrkFlags.Reset;
-                }
-
-                // Only keep lower 2 bits of IRQ and NMI counters.
-                _irqCounter &= 0b11;
-                _nmiCounter &= 0b11;
-
-                if (_brkFlags != BrkFlags.None)
-                {
-                    _ir = 0;
-                    pins.Res = false;
-                }
-                else
-                {
-                    PC++;
-                }
-            }
-        }
-
-        // Assume we're going to read.
-        pins.RW = true;
-
-        ExecuteInstruction(ref pins);
-
-        // Increment timing register.
-        _tr += 1;
-
-        // Increment interrupt counters.
-        _irqCounter <<= 1;
-        _nmiCounter <<= 1;
-
-        // Store NMI flag. We need this because NMI is edge-triggered.
-        _previousNmi = pins.Nmi;
+        Res = false;
+        Res = true;
     }
 
     [Flags]

@@ -7,15 +7,17 @@ namespace Aemula.Emulation.Systems.Nes;
 
 public sealed class NesSystem : EmulatedSystem
 {
-    public override ulong CyclesPerSecond => 5369318;
+    public override ulong CyclesPerSecond => 21477272;
 
     private readonly byte[] _ram;
     private readonly byte[] _vram;
 
-    private Cartridge _cartridge;
+    private Cartridge? _cartridge;
 
     private byte _ppuCycle;
     private byte _vramLowAddressLatch;
+
+    private bool? _lastM2;
 
     public readonly Ricoh2A03Chip Cpu;
 
@@ -29,6 +31,10 @@ public sealed class NesSystem : EmulatedSystem
 
         _ram = new byte[0x0800];
         _vram = new byte[0x0800];
+
+        // Reset CPU.
+        Cpu.Res = false;
+        Cpu.Res = true;
     }
 
     public override void Tick()
@@ -42,12 +48,12 @@ public sealed class NesSystem : EmulatedSystem
 
         _ppuCycle++;
 
-        if (_ppuCycle == 3)
+        if (_ppuCycle == 13)
         {
             _ppuCycle = 0;
         }
 
-        Cpu.CpuCore.Pins.Nmi = Ppu.Pins.Nmi;
+        Cpu.Nmi = Ppu.Pins.Nmi;
     }
 
     private void TickCpu()
@@ -60,12 +66,26 @@ public sealed class NesSystem : EmulatedSystem
 
     private void DoCpuCycle()
     {
-        Cpu.Cycle();
+        Cpu.Clk = false;
+        Cpu.Clk = true;
 
-        ref var cpuPins = ref Cpu.CpuCore.Pins;
+        if (_lastM2 == null)
+        {
+            _lastM2 = Cpu.M2;
+        }
+        else if (_lastM2 == Cpu.M2)
+        {
+            return;
+        }
+
+        if (!Cpu.M2)
+        {
+            return;
+        }
+
         ref var ppuPins = ref Ppu.Pins;
 
-        var address = cpuPins.Address;
+        var address = Cpu.Address;
 
         // The 3 high bits dictate which chips are selected.
         var a13_a15 = address >> 13;
@@ -73,22 +93,22 @@ public sealed class NesSystem : EmulatedSystem
         switch (a13_a15)
         {
             case 0b000: // Internal RAM. Only address pins A0..A10 are connected.
-                if (cpuPins.RW)
+                if (Cpu.RW)
                 {
-                    cpuPins.Data = _ram[address & 0x7FF];
+                    Cpu.Data = _ram[address & 0x7FF];
                 }
                 else
                 {
-                    _ram[address & 0x7FF] = cpuPins.Data;
+                    _ram[address & 0x7FF] = Cpu.Data;
                 }
                 break;
 
             case 0b001: // PPU ports. Only address pins A0..A2 are connected.
-                ppuPins.CpuRW = cpuPins.RW;
+                ppuPins.CpuRW = Cpu.RW;
                 ppuPins.CpuAddress = (byte)(address & 0x7);
-                ppuPins.CpuData = cpuPins.Data;
+                ppuPins.CpuData = Cpu.Data;
                 Ppu.CpuCycle();
-                cpuPins.Data = ppuPins.CpuData;
+                Cpu.Data = ppuPins.CpuData;
                 break;
 
             // $4000-$401F is mapped internally on 2A03 chip.
@@ -98,11 +118,11 @@ public sealed class NesSystem : EmulatedSystem
             case 0b110:
             case 0b111:
                 // This is ROM - can't write to it.
-                if (cpuPins.RW)
+                if (Cpu.RW)
                 {
                     // TODO: Mapper implementations.
                     // What follows is NROM-128, mapper 0.
-                    cpuPins.Data = _cartridge?.PrgRom[address & 0x3FFF] ?? 0;
+                    Cpu.Data = _cartridge?.PrgRom[address & 0x3FFF] ?? 0;
                 }
                 break;
         }
@@ -189,7 +209,8 @@ public sealed class NesSystem : EmulatedSystem
 
     public override void Reset()
     {
-        Cpu.CpuCore.Pins.Res = true;
+        Cpu.Res = false;
+        Cpu.Res = true;
     }
 
     internal byte ReadChrRom(ushort address)
