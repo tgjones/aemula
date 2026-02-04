@@ -172,7 +172,7 @@ public class Mos6502ChipTests
             }
         }
 
-        const ushort expectedPC = 0x06F5;
+        const ushort expectedPC = 0x06F8;
 
         if (testHelper.PC != expectedPC)
         {

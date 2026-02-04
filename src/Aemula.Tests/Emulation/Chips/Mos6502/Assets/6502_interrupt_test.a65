@@ -70,6 +70,10 @@ IRQ_bit     = 0         ;bit number of feedback to IRQ
 NMI_bit     = 1         ;bit number of feedback to NMI, -1 if not available
 I_filter    = $7f       ;filtering bit 7 = diag stop
 
+; If true, the test will check for the presence of the 6502 hardware bug
+; on concurrent BRK and NMI.
+test_concurrent_brk_and_nmi_bug = 1
+
 ;typical IO chip port B - set i_drive = 0 to avoid pullup resistors
 ;I_port      = $bfb2     ;feedback port address
 ;I_ddr       = $bfb3     ;feedback DDR address, 0 = no DDR
@@ -810,6 +814,12 @@ I_clr   macro  ibit     ;ibit = interrupt bit
         sta irq_count
         sta brk_count
         push_stat 0
+
+        if test_concurrent_brk_and_nmi_bug = 1
+          lda #0
+          sta nmi_and_brk_modification_ref+1
+        endif
+
         I_set 8         ;trigger NMI + IRQ
     endif
         brk
@@ -927,6 +937,11 @@ nmi_trap
         pha
         tsx        
         lda $102,x     ;test break on stack
+        ; On real 6502 the B flag will be set on concurrent BRK and NMI.
+        ; This has been verified using Visual6502.
+        ; To minimize changes, the next operation is modified at runtime
+        ; to test this behavior.
+nmi_and_brk_modification_ref
         and #break
         trap_ne         ;unexpected B-flag! - this may fail on a real 6502
                         ;due to a hardware bug on concurrent BRK & NMI
