@@ -243,8 +243,6 @@ public partial class Mos6502Chip
             Sync = false,
             Res = true,
             RW = true,
-            Nmi = true,
-            Irq = true,
         };
 
         // These initial bus values are from Visual 6502.

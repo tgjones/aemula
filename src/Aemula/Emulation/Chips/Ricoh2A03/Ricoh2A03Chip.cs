@@ -106,7 +106,12 @@ public sealed partial class Ricoh2A03Chip
 
     public bool Nmi
     {
-        set => _cpuCore.Pins.Nmi = value;
+        set => _cpuCore.Nmi = value;
+    }
+
+    public bool Irq
+    {
+        set => _cpuCore.Irq = value;
     }
 
     public Ricoh2A03Chip()
