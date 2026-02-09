@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Numerics;
-using ImGuiNET;
-using Veldrid;
+using Hexa.NET.ImGui;
+using Hexa.NET.SDL3;
 
 namespace Aemula.UI;
 
@@ -23,7 +23,19 @@ public abstract class DebuggerWindow : IDisposable
 
     public virtual Pane PreferredPane => Pane.None;
 
-    public virtual void CreateGraphicsResources(GraphicsDevice graphicsDevice, ImGuiRenderer renderer) { }
+    public virtual void CreateGraphicsResources(SDLGPUDevicePtr graphicsDevice) { }
+
+    public void Prepare(EmulatorTime time, SDLGPUCommandBufferPtr commandBuffer)
+    {
+        if (!IsVisible)
+        {
+            return;
+        }
+
+        PrepareOverride(time, commandBuffer);
+    }
+
+    protected virtual void PrepareOverride(EmulatorTime time, SDLGPUCommandBufferPtr commandBuffer) { }
 
     public void Draw(EmulatorTime time)
     {

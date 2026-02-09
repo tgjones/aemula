@@ -1,6 +1,6 @@
 ﻿using System.Numerics;
 using Aemula.Debugging;
-using ImGuiNET;
+using Hexa.NET.ImGui;
 
 namespace Aemula.UI;
 
@@ -36,7 +36,7 @@ public sealed class BreakpointsWindow : DebuggerWindow
 
         ImGui.Separator();
 
-        ImGui.BeginChild("##breakpoint_list", Vector2.Zero, false);
+        ImGui.BeginChild("##breakpoint_list", Vector2.Zero, ImGuiChildFlags.None);
 
         var deleteIndex = -1;
         for (var i = 0; i < _debugger.Breakpoints.NumBreakpoints; i++)

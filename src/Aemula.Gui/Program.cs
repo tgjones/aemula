@@ -10,9 +10,9 @@ using Aemula.Emulation.Systems.Chip8;
 using Aemula.Emulation.Systems.Nes;
 using Aemula.Emulation.Systems.SpaceInvaders;
 using Aemula.UI;
-using ImGuiNET;
-using Veldrid;
-using Veldrid.StartupUtilities;
+using Hexa.NET.ImGui;
+using Hexa.NET.ImGui.Backends.SDL3;
+using Hexa.NET.SDL3;
 
 namespace Aemula.Gui;
 
@@ -28,29 +28,88 @@ public static class Program
 
     public static void Main(string[] args)
     {
-        VeldridStartup.CreateWindowAndGraphicsDevice(
-            new WindowCreateInfo(100, 100, 1024, 768, WindowState.Maximized, "Aemula"),
-            out var window,
-            out var graphicsDevice);
-
-        graphicsDevice.SyncToVerticalBlank = true;
-
-        var imGuiRenderer = new ImGuiRenderer(
-            graphicsDevice,
-            graphicsDevice.SwapchainFramebuffer.OutputDescription,
-            (int)graphicsDevice.SwapchainFramebuffer.Width,
-            (int)graphicsDevice.SwapchainFramebuffer.Height);
-
-        var commandList = graphicsDevice.ResourceFactory.CreateCommandList();
-
-        var windowOpen = true;
-
-        window.Closed += () => windowOpen = false;
-        window.Resized += () =>
+        if (!SDL.Init((uint)(SDLInitFlags.Video | SDLInitFlags.Gamepad)))
         {
-            imGuiRenderer.WindowResized(window.Width, window.Height);
-            graphicsDevice.ResizeMainWindow((uint)window.Width, (uint)window.Height);
-        };
+            Console.WriteLine($"Error: SDL_Init(): {SDL.GetErrorS()}");
+            return;
+        }
+
+        var mainScale = SDL.GetDisplayContentScale(SDL.GetPrimaryDisplay());
+        var windowFlags = SDLWindowFlags.Resizable | SDLWindowFlags.Hidden | SDLWindowFlags.HighPixelDensity;
+        var window = SDL.CreateWindow(
+            "Aemula",
+            (int)(1280 * mainScale),
+            (int)(720 * mainScale),
+            (ulong)windowFlags);
+        if (window.IsNull)
+        {
+            Console.WriteLine($"Error: SDL_CreateWindow(): {SDL.GetErrorS()}");
+            return;
+        }
+
+        SDL.SetWindowPosition(window, (int)SDL.SDL_WINDOWPOS_CENTERED_MASK, (int)SDL.SDL_WINDOWPOS_CENTERED_MASK);
+        SDL.ShowWindow(window);
+
+        var gpuDevice = SDL.CreateGPUDevice(
+            (uint)(SDLGPUShaderFormat.Spirv | SDLGPUShaderFormat.Dxil | SDLGPUShaderFormat.Metallib),
+            true, 
+            (string?)null);
+        if (gpuDevice.IsNull)
+        {
+            Console.WriteLine($"Error: SDL_CreateGPUDevice(): {SDL.GetErrorS()}");
+            return;
+        }
+
+        if (!SDL.ClaimWindowForGPUDevice(gpuDevice, window))
+        {
+            Console.WriteLine($"Error: SDL_ClaimWindowForGPUDevice(): {SDL.GetErrorS()}");
+            return;
+        }
+
+        SDL.SetGPUSwapchainParameters(
+            gpuDevice, 
+            window,
+            SDLGPUSwapchainComposition.Sdr, 
+            SDLGPUPresentMode.Mailbox);
+
+        var ctx = ImGui.CreateContext();
+        ImGui.SetCurrentContext(ctx);
+        ImGuiIOPtr io = ImGui.GetIO();
+        io.ConfigFlags |=
+            ImGuiConfigFlags.NavEnableKeyboard
+            | ImGuiConfigFlags.NavEnableGamepad
+            | ImGuiConfigFlags.DockingEnable;
+            //| ImGuiConfigFlags.ViewportsEnable;
+
+        ImGui.StyleColorsDark();
+        var style = ImGui.GetStyle();
+        style.ScaleAllSizes(mainScale);
+        style.FontScaleDpi = mainScale;
+        io.ConfigDpiScaleFonts = true;
+        io.ConfigDpiScaleViewports = true;
+
+        // TODO: Don't know if we need this.
+        //if ((io.ConfigFlags & ImGuiConfigFlags.ViewportsEnable) != 0)
+        //{
+        //    style.WindowRounding = 0.0f;
+        //    style.Colors[(int)ImGuiCol.WindowBg].W = 1.0f;
+        //}
+
+        Hexa.NET.ImGui.Backends.SDL3.ImGuiImplSDL3.SetCurrentContext(ctx);
+        unsafe
+        {
+            Hexa.NET.ImGui.Backends.SDL3.ImGuiImplSDL3.InitForSDLGPU(
+                new Hexa.NET.ImGui.Backends.SDL3.SDLWindowPtr(
+                    (Hexa.NET.ImGui.Backends.SDL3.SDLWindow*)window.Handle));
+
+            Hexa.NET.ImGui.Backends.SDL3.ImGuiImplSDLGPU3InitInfo initInfo = new()
+            {
+                Device = (Hexa.NET.ImGui.Backends.SDL3.SDLGPUDevice*)gpuDevice.Handle,
+                ColorTargetFormat = (int)SDL.GetGPUSwapchainTextureFormat(gpuDevice, window),
+                MSAASamples = (int)SDLGPUSampleCount.Samplecount1
+            };
+            Hexa.NET.ImGui.Backends.SDL3.ImGuiImplSDL3.SDLGPU3Init(ref initInfo);
+        }
 
         var stopwatch = new Stopwatch();
         stopwatch.Start();
@@ -64,15 +123,16 @@ public static class Program
         var debuggerWindows = debugger.CreateDebuggerWindows().ToArray();
         foreach (var debuggerWindow in debuggerWindows)
         {
-            debuggerWindow.CreateGraphicsResources(graphicsDevice, imGuiRenderer);
+            debuggerWindow.CreateGraphicsResources(gpuDevice);
             debuggerWindow.IsVisible = true;
         }
 
         system.LoadProgram(args[1]);
 
-        ImGuiUtility.SetupDocking();
+        Vector4 clearColor = new(0.45f, 0.55f, 0.60f, 1.00f);
 
-        while (windowOpen)
+        var done = false;
+        while (!done)
         {
             var elapsed = stopwatch.Elapsed;
 
@@ -85,17 +145,48 @@ public static class Program
                 deltaTimeSpan = TimeSpan.FromMilliseconds(17);
             }
 
-            var deltaTime = (float)deltaTimeSpan.TotalSeconds;
-            var inputSnapshot = window.PumpEvents();
-
-            imGuiRenderer.Update(deltaTime, inputSnapshot);
-
-            foreach (var keyEvent in inputSnapshot.KeyEvents)
+            Hexa.NET.SDL3.SDLEvent e = default;
+            while (SDL.PollEvent(ref e))
             {
-                system.OnKeyEvent(keyEvent);
+                unsafe
+                {
+                    ImGuiImplSDL3.ProcessEvent((Hexa.NET.ImGui.Backends.SDL3.SDLEvent*)&e);
+                }
+                var type = (SDLEventType)e.Type;
+                if (type == SDLEventType.Quit ||
+                    (type == SDLEventType.WindowCloseRequested &&
+                        e.Window.WindowID == SDL.GetWindowID(window)))
+                {
+                    done = true;
+                }
+
+                if (!ImGui.GetIO().WantCaptureKeyboard)
+                {
+                    if (type == SDLEventType.KeyDown || type == SDLEventType.KeyUp)
+                    {
+                        system.OnKeyEvent(e.Key);
+                    }
+                }
             }
 
+            if (((SDLWindowFlags)SDL.GetWindowFlags(window) & SDLWindowFlags.Minimized) != 0)
+            {
+                SDL.Delay(10);
+                continue;
+            }
+
+            ImGuiImplSDL3.SDLGPU3NewFrame();
+            ImGuiImplSDL3.NewFrame();
+            ImGui.NewFrame();
+            
             var emulatorTime = new EmulatorTime(elapsed, deltaTimeSpan);
+
+            var commandBuffer = SDL.AcquireGPUCommandBuffer(gpuDevice);
+
+            foreach (var debuggerWindow in debuggerWindows)
+            {
+                debuggerWindow.Prepare(emulatorTime, commandBuffer);
+            }
 
             debugger.RunForDuration(deltaTimeSpan);
 
@@ -107,16 +198,53 @@ public static class Program
                 debuggerWindow.Draw(emulatorTime);
             }
 
-            commandList.Begin();
-            commandList.SetFramebuffer(graphicsDevice.SwapchainFramebuffer);
-            commandList.ClearColorTarget(0, RgbaFloat.Clear);
+            ImGui.Render();
+            var drawData = ImGui.GetDrawData();
+            bool isMinimized = drawData.DisplaySize.X <= 0 || drawData.DisplaySize.Y <= 0;
 
-            imGuiRenderer.Render(graphicsDevice, commandList);
+            unsafe
+            {
+                SDLGPUTexture* swapTexture;
+                SDL.WaitAndAcquireGPUSwapchainTexture(commandBuffer, window, &swapTexture, null, null);
 
-            commandList.End();
+                if (swapTexture != null && !isMinimized)
+                {
+                    ImGuiImplSDL3.SDLGPU3PrepareDrawData(drawData, (Hexa.NET.ImGui.Backends.SDL3.SDLGPUCommandBuffer*)commandBuffer.Handle);
 
-            graphicsDevice.SubmitCommands(commandList);
-            graphicsDevice.SwapBuffers();
+                    SDLGPUColorTargetInfo targetInfo = new()
+                    {
+                        Texture = swapTexture,
+                        ClearColor = new SDLFColor
+                        {
+                            R = clearColor.X,
+                            G = clearColor.Y,
+                            B = clearColor.Z,
+                            A = clearColor.W
+                        },
+                        LoadOp = SDLGPULoadOp.Clear,
+                        StoreOp = SDLGPUStoreOp.Store,
+                        MipLevel = 0,
+                        LayerOrDepthPlane = 0,
+                        Cycle = 0
+                    };
+
+                    var renderPass = SDL.BeginGPURenderPass(commandBuffer, &targetInfo, 1, null);
+                    ImGuiImplSDL3.SDLGPU3RenderDrawData(
+                        drawData,
+                        (Hexa.NET.ImGui.Backends.SDL3.SDLGPUCommandBuffer*)commandBuffer.Handle,
+                        (Hexa.NET.ImGui.Backends.SDL3.SDLGPURenderPass*)renderPass.Handle,
+                        null);
+                    SDL.EndGPURenderPass(renderPass);
+                }
+
+                if ((io.ConfigFlags & ImGuiConfigFlags.ViewportsEnable) != 0)
+                {
+                    ImGui.UpdatePlatformWindows();
+                    ImGui.RenderPlatformWindowsDefault();
+                }
+
+                SDL.SubmitGPUCommandBuffer(commandBuffer);
+            }
         }
 
         foreach (var debuggerWindow in debuggerWindows)
@@ -126,12 +254,16 @@ public static class Program
 
         stopwatch.Stop();
 
-        commandList.Dispose();
-        imGuiRenderer.Dispose();
-        graphicsDevice.Dispose();
-    }
+        SDL.WaitForGPUIdle(gpuDevice);
+        ImGuiImplSDL3.Shutdown();
+        ImGuiImplSDL3.SDLGPU3Shutdown();
+        ImGui.DestroyContext();
 
-    private static bool _firstTime = true;
+        SDL.ReleaseWindowFromGPUDevice(gpuDevice, window);
+        SDL.DestroyGPUDevice(gpuDevice);
+        SDL.DestroyWindow(window);
+        SDL.Quit();
+    }
 
     private static unsafe void DrawWindow(DebuggerWindow[] windows)
     {
@@ -173,7 +305,7 @@ public static class Program
         //ImGui.End();
     }
 
-    private static void DrawMainMenu(DebuggerWindow[] debuggerWindows)
+    private static unsafe void DrawMainMenu(DebuggerWindow[] debuggerWindows)
     {
         if (ImGui.BeginMainMenuBar())
         {
@@ -181,7 +313,7 @@ public static class Program
             {
                 foreach (var debuggerWindow in debuggerWindows)
                 {
-                    if (ImGui.MenuItem(debuggerWindow.DisplayName, null, debuggerWindow.IsVisible, true))
+                    if (ImGui.MenuItem(debuggerWindow.DisplayName, (byte*)null, debuggerWindow.IsVisible, true))
                     {
                         debuggerWindow.IsVisible = true;
 

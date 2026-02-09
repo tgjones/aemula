@@ -94,7 +94,7 @@ internal sealed class VideoOutput
             var videoDataIndex = positionY * Width + _currentPos;
             if (videoDataIndex > 0 && videoDataIndex < Width * _viewportHeight)
             {
-                DisplayBuffer.Data[videoDataIndex] = new Veldrid.RgbaByte(
+                DisplayBuffer.Data[videoDataIndex] = new RgbaByte(
                     (byte)(color >> 16 & 0xFF), // R
                     (byte)(color >> 8 & 0xFF),  // G
                     (byte)(color >> 0 & 0xFF),  // B

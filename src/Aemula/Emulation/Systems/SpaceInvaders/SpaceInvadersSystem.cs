@@ -4,7 +4,7 @@ using Aemula.Emulation.Chips.Intel8080;
 using Aemula.Debugging;
 using Aemula.Emulation.Chips.MB14241;
 using Aemula.Emulation.Systems.SpaceInvaders.Debugging;
-using Veldrid;
+using Hexa.NET.SDL3;
 
 namespace Aemula.Emulation.Systems.SpaceInvaders;
 
@@ -275,27 +275,29 @@ public sealed class SpaceInvadersSystem : EmulatedSystem
         // TODO
     }
 
-    public override void OnKeyEvent(KeyEvent keyEvent)
+    public override void OnKeyEvent(SDLKeyboardEvent keyEvent)
     {
-        if (keyEvent.Key == Key.Number0)
+        var isKeyDown = keyEvent.Type == SDLEventType.KeyDown;
+
+        if (keyEvent.Key == '0') // SDLK_0
         {
-            _keyCoin = keyEvent.Down;
+            _keyCoin = isKeyDown;
         }
-        if (keyEvent.Key == Key.Number1)
+        if (keyEvent.Key == '1') // SDLK_1
         {
-            _keyStart = keyEvent.Down;
+            _keyStart = isKeyDown;
         }
-        if (keyEvent.Key == Key.Space)
+        if (keyEvent.Key == 0x400000cdu) // SDLK_KP_SPACE
         {
-            _keyShoot = keyEvent.Down;
+            _keyShoot = isKeyDown;
         }
-        if (keyEvent.Key == Key.Left)
+        if (keyEvent.Key == 0x40000050u) // SDLK_LEFT
         {
-            _keyLeft = keyEvent.Down;
+            _keyLeft = isKeyDown;
         }
-        if (keyEvent.Key == Key.Right)
+        if (keyEvent.Key == 0x4000004fu) // SDLK_RIGHT
         {
-            _keyRight = keyEvent.Down;
+            _keyRight = isKeyDown;
         }
     }
 

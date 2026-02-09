@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Numerics;
 using Aemula.UI;
-using ImGuiNET;
-using Veldrid;
+using Hexa.NET.ImGui;
+using Hexa.NET.SDL3;
 
 namespace Aemula.Emulation.Systems.Nes.UI;
 
@@ -10,18 +10,20 @@ internal sealed class PatternTableWindow : DebuggerWindow
 {
     private const int PatternTableSize = 128;
     private const int Scale = 2;
+    private const int TransferBufferSizeInBytes = PatternTableSize * PatternTableSize * RgbaByte.SizeInBytes;
 
     private static readonly TimeSpan TextureUpdateInterval = TimeSpan.FromMilliseconds(200);
 
     private readonly NesSystem _nes;
 
-    private readonly RgbaByte[] _pixelData0;
-    private readonly RgbaByte[] _pixelData1;
+    private readonly RgbaByte[] _pixelData0 = new RgbaByte[PatternTableSize * PatternTableSize];
+    private readonly RgbaByte[] _pixelData1 = new RgbaByte[PatternTableSize * PatternTableSize];
 
-    private GraphicsDevice _graphicsDevice;
-    private Texture _patternTableTexture0, _patternTableTexture1;
+    private SDLGPUDevicePtr _graphicsDevice;
+    private SDLGPUTransferBufferPtr _transferBuffer;
+    private SDLGPUTexturePtr _patternTableTexture0, _patternTableTexture1;
 
-    private nint _patternTableTexture0Ptr, _patternTableTexture1Ptr;
+    private ImTextureRef _patternTableTexture0Ptr, _patternTableTexture1Ptr;
 
     private TimeSpan _nextTextureUpdateTime;
 
@@ -32,42 +34,68 @@ internal sealed class PatternTableWindow : DebuggerWindow
     public PatternTableWindow(NesSystem nes)
     {
         _nes = nes;
-
-        _pixelData0 = new RgbaByte[PatternTableSize * PatternTableSize];
-        _pixelData1 = new RgbaByte[PatternTableSize * PatternTableSize];
     }
 
-    public override void CreateGraphicsResources(GraphicsDevice graphicsDevice, ImGuiRenderer renderer)
+    public override void CreateGraphicsResources(SDLGPUDevicePtr graphicsDevice)
     {
         _graphicsDevice = graphicsDevice;
 
-        Texture CreateTexture()
+        _transferBuffer = SDL.CreateGPUTransferBuffer(
+            graphicsDevice,
+            new SDLGPUTransferBufferCreateInfo(
+                SDLGPUTransferBufferUsage.Upload,
+                TransferBufferSizeInBytes));
+        if (_transferBuffer.IsNull)
         {
-            return graphicsDevice.ResourceFactory.CreateTexture(new TextureDescription(
-                PatternTableSize, PatternTableSize,
-                1, 1, 1,
-                PixelFormat.R8_G8_B8_A8_UNorm,
-                TextureUsage.Sampled,
-                TextureType.Texture2D));
+            throw SDL.GetErrorAsException()!;
+        }
+
+        SDLGPUTexturePtr CreateTexture()
+        {
+            var textureInfo = new SDLGPUTextureCreateInfo
+            {
+                Type = SDLGPUTextureType.Texturetype2D,
+                Format = SDLGPUTextureFormat.R8G8B8A8Unorm,
+                Usage = (uint)SDLGPUTextureUsageFlags.Sampler,
+                Width = PatternTableSize,
+                Height = PatternTableSize,
+                NumLevels = 1,
+                SampleCount = SDLGPUSampleCount.Samplecount1,
+                LayerCountOrDepth = 1,
+            };
+
+            var texture = SDL.CreateGPUTexture(graphicsDevice, textureInfo);
+            if (texture.IsNull)
+            {
+                throw SDL.GetErrorAsException()!;
+            }
+
+            return texture;
         }
 
         _patternTableTexture0 = CreateTexture();
         _patternTableTexture1 = CreateTexture();
 
-        _patternTableTexture0Ptr = renderer.GetOrCreateImGuiBinding(graphicsDevice.ResourceFactory, _patternTableTexture0);
-        _patternTableTexture1Ptr = renderer.GetOrCreateImGuiBinding(graphicsDevice.ResourceFactory, _patternTableTexture1);
+        unsafe
+        {
+            _patternTableTexture0Ptr = new ImTextureRef(null, new ImTextureID(_patternTableTexture0));
+            _patternTableTexture1Ptr = new ImTextureRef(null, new ImTextureID(_patternTableTexture1));
+        }
+    }
+
+    protected override void PrepareOverride(EmulatorTime time, SDLGPUCommandBufferPtr commandBuffer)
+    {
+        if (time.TotalTime > _nextTextureUpdateTime)
+        {
+            PopulateTexture(_pixelData0, _patternTableTexture0, (ushort)0x0000u, commandBuffer);
+            PopulateTexture(_pixelData1, _patternTableTexture1, (ushort)0x1000u, commandBuffer);
+
+            _nextTextureUpdateTime = time.TotalTime + TextureUpdateInterval;
+        }
     }
 
     protected override void DrawOverride(EmulatorTime time)
     {
-        if (time.TotalTime > _nextTextureUpdateTime)
-        {
-            PopulateTexture(_pixelData0, _patternTableTexture0, (ushort)0x0000u);
-            PopulateTexture(_pixelData1, _patternTableTexture1, (ushort)0x1000u);
-
-            _nextTextureUpdateTime = time.TotalTime + TextureUpdateInterval;
-        }
-
         var size = new Vector2(PatternTableSize * 2, PatternTableSize * Scale);
 
         ImGui.Image(_patternTableTexture0Ptr, size);
@@ -75,7 +103,7 @@ internal sealed class PatternTableWindow : DebuggerWindow
         ImGui.Image(_patternTableTexture1Ptr, size);
     }
 
-    private void PopulateTexture(RgbaByte[] pixelData, Texture texture, ushort startAddress)
+    private void PopulateTexture(RgbaByte[] pixelData, SDLGPUTexturePtr texture, ushort startAddress, SDLGPUCommandBufferPtr commandBuffer)
     {
         var x = 0;
         var y = 0;
@@ -121,6 +149,38 @@ internal sealed class PatternTableWindow : DebuggerWindow
             x += 8;
         }
 
-        _graphicsDevice.UpdateTexture(texture, pixelData, 0, 0, 0, PatternTableSize, PatternTableSize, 1, 0, 0);
+        unsafe
+        {
+            void* mapped = SDL.MapGPUTransferBuffer(_graphicsDevice, _transferBuffer, true);
+            if (mapped == null)
+            {
+                throw SDL.GetErrorAsException()!;
+            }
+
+            fixed (RgbaByte* pixelDataPtr = &pixelData[0])
+            {
+                Buffer.MemoryCopy(pixelDataPtr, mapped, TransferBufferSizeInBytes, TransferBufferSizeInBytes);
+            }
+        }
+
+        SDL.UnmapGPUTransferBuffer(_graphicsDevice, _transferBuffer);
+
+        var copyPass = SDL.BeginGPUCopyPass(commandBuffer);
+
+        SDL.UploadToGPUTexture(
+            copyPass,
+            new SDLGPUTextureTransferInfo(_transferBuffer, pixelsPerRow: PatternTableSize, rowsPerLayer: PatternTableSize),
+            new SDLGPUTextureRegion(texture, w: PatternTableSize, h: PatternTableSize, d: 1),
+            false);
+
+        SDL.EndGPUCopyPass(copyPass);
+    }
+
+    public override void Dispose()
+    {
+        SDL.ReleaseGPUTexture(_graphicsDevice, _patternTableTexture0);
+        SDL.ReleaseGPUTexture(_graphicsDevice, _patternTableTexture1);
+
+        SDL.ReleaseGPUTransferBuffer(_graphicsDevice, _transferBuffer);
     }
 }

@@ -1,5 +1,5 @@
 ﻿using Aemula.UI;
-using ImGuiNET;
+using Hexa.NET.ImGui;
 using static Aemula.Emulation.Chips.Ricoh2C02.Ricoh2C02Chip;
 
 namespace Aemula.Emulation.Chips.Ricoh2C02.UI;
