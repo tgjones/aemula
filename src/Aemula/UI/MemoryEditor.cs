@@ -618,14 +618,14 @@ public sealed class MemoryEditor : DebuggerWindow
     [
         new(1, () => "Byte"u8, (ref writer, scoped buffer, format) => writer.Write(buffer[0], format)),
         new(1, () => "SByte"u8, (ref writer, scoped buffer, format) => writer.Write((sbyte)buffer[0], format)),
-        new(2, () => "Int16"u8, (ref writer, scoped buffer, format) => writer.Write(BitConverter.ToInt16(buffer), format)),
         new(2, () => "UInt16"u8, (ref writer, scoped buffer, format) => writer.Write(BitConverter.ToUInt16(buffer), format)),
-        new(4, () => "Int32"u8, (ref writer, scoped buffer, format) => writer.Write(BitConverter.ToInt32(buffer), format)),
+        new(2, () => "Int16"u8, (ref writer, scoped buffer, format) => writer.Write(BitConverter.ToInt16(buffer), format)),
         new(4, () => "UInt32"u8, (ref writer, scoped buffer, format) => writer.Write(BitConverter.ToUInt32(buffer), format)),
-        new(8, () => "Int64"u8, (ref writer, scoped buffer, format) => writer.Write(BitConverter.ToInt64(buffer), format)),
+        new(4, () => "Int32"u8, (ref writer, scoped buffer, format) => writer.Write(BitConverter.ToInt32(buffer), format)),
         new(8, () => "UInt64"u8, (ref writer, scoped buffer, format) => writer.Write(BitConverter.ToUInt64(buffer), format)),
+        new(8, () => "Int64"u8, (ref writer, scoped buffer, format) => writer.Write(BitConverter.ToInt64(buffer), format)),
         new(4, () => "Float"u8, (ref writer, scoped buffer, format) => writer.Write(BitConverter.ToSingle(buffer), format)),
-        new(4, () => "Double"u8, (ref writer, scoped buffer, format) => writer.Write(BitConverter.ToDouble(buffer), format)),
+        new(8, () => "Double"u8, (ref writer, scoped buffer, format) => writer.Write(BitConverter.ToDouble(buffer), format)),
     ];
 
     private void DrawPreviewLine(in Sizes s)
@@ -664,7 +664,6 @@ public sealed class MemoryEditor : DebuggerWindow
         ImGui.Text("Hex"u8); ImGui.SameLine(x); ImGui.TextUnformatted(has_value ? buf : naBuf);
         if (has_value)
             DrawPreviewData(DataPreviewAddr, PreviewDataType, DataFormat.Bin, buf);
-        buf[buf.Length - 1] = 0;
         ImGui.Text("Bin"u8); ImGui.SameLine(x); ImGui.TextUnformatted(has_value ? buf : naBuf);
     }
 
