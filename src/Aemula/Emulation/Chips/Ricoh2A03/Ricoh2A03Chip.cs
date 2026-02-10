@@ -92,6 +92,7 @@ public sealed partial class Ricoh2A03Chip
 
     // Shouldn't be exposed.
     public bool CpuCoreSync => _cpuCore.Sync;
+    public bool FinishedReset => _cpuCore.FinishedReset;
 
     public bool M2 => _m2;
 

@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Numerics;
 using Aemula.UI;
-using ImGuiNET;
+using Hexa.NET.ImGui;
 
 namespace Aemula.Emulation.Chips.Tia.UI;
 

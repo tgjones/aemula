@@ -5,11 +5,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Veldrid.ImGui" />
-    <PackageReference Include="Veldrid.StartupUtilities" />
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\Aemula\Aemula.csproj" />
   </ItemGroup>
 

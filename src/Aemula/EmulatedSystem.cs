@@ -1,6 +1,6 @@
 ﻿using System;
 using Aemula.Debugging;
-using Veldrid;
+using Hexa.NET.SDL3;
 
 namespace Aemula;
 
@@ -31,7 +31,7 @@ public abstract class EmulatedSystem : IDisposable
 
     public abstract void Tick();
 
-    public virtual void OnKeyEvent(KeyEvent keyEvent) { }
+    public virtual void OnKeyEvent(SDLKeyboardEvent keyEvent) { }
 
     public virtual Debugger CreateDebugger() => null;
 

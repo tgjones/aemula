@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Numerics;
-using ImGuiNET;
-using Veldrid;
+using Hexa.NET.ImGui;
+using Hexa.NET.SDL3;
 
 namespace Aemula.UI;
 
@@ -10,10 +10,12 @@ public sealed class ScreenDisplayWindow : DebuggerWindow
     private readonly DisplayBuffer _displayBuffer;
     private readonly int _angle;
 
-    private GraphicsDevice _graphicsDevice;
-    private ImGuiRenderer _renderer;
-    private Texture _texture;
-    private nint _textureBinding;
+    private SDLGPUDevicePtr _graphicsDevice;
+    private SDLGPUTransferBufferPtr _transferBuffer;
+    private SDLGPUTexturePtr _texture;
+    private ImTextureRef _textureBinding;
+
+    private uint _textureWidth, _textureHeight;
 
     public override string DisplayName => "Display";
 
@@ -23,57 +25,89 @@ public sealed class ScreenDisplayWindow : DebuggerWindow
         _angle = angle;
     }
 
-    public override void CreateGraphicsResources(GraphicsDevice graphicsDevice, ImGuiRenderer renderer)
+    private uint TransferBufferSizeInBytes => _displayBuffer.Width * _displayBuffer.Height * RgbaByte.SizeInBytes;
+
+    public override void CreateGraphicsResources(SDLGPUDevicePtr graphicsDevice)
     {
-        base.CreateGraphicsResources(graphicsDevice, renderer);
+        base.CreateGraphicsResources(graphicsDevice);
 
         _graphicsDevice = graphicsDevice;
-        _renderer = renderer;
+
+        _transferBuffer = SDL.CreateGPUTransferBuffer(
+            graphicsDevice,
+            new SDLGPUTransferBufferCreateInfo(
+                SDLGPUTransferBufferUsage.Upload,
+                TransferBufferSizeInBytes));
 
         CreateTexture();
     }
 
     private void CreateTexture()
     {
-        if (_texture != null)
+        if (!_texture.IsNull)
         {
-            _texture.Dispose();
+            SDL.ReleaseGPUTexture(_graphicsDevice, _texture);
         }
 
-        _texture = _graphicsDevice.ResourceFactory.CreateTexture(
-            TextureDescription.Texture2D(
-                _displayBuffer.Width,
-                _displayBuffer.Height,
-                1,
-                1,
-                PixelFormat.R8_G8_B8_A8_UNorm,
-                TextureUsage.Sampled));
+        _texture = SDL.CreateGPUTexture(
+            _graphicsDevice,
+            new SDLGPUTextureCreateInfo
+            {
+                Type = SDLGPUTextureType.Texturetype2D,
+                Format = SDLGPUTextureFormat.R8G8B8A8Unorm,
+                Usage = (uint)SDLGPUTextureUsageFlags.Sampler,
+                Width = _displayBuffer.Width,
+                Height = _displayBuffer.Height,
+                NumLevels = 1,
+                SampleCount = SDLGPUSampleCount.Samplecount1,
+                LayerCountOrDepth = 1,
+            });
 
-        _textureBinding = _renderer.GetOrCreateImGuiBinding(
-            _graphicsDevice.ResourceFactory,
-            _texture);
+        _textureWidth = _displayBuffer.Width;
+        _textureHeight = _displayBuffer.Height;
+
+        unsafe
+        {
+            _textureBinding = new ImTextureRef(null, new ImTextureID(_texture));
+        }
     }
 
-    protected override void DrawOverride(EmulatorTime time)
+    protected override void PrepareOverride(EmulatorTime time, SDLGPUCommandBufferPtr commandBuffer)
     {
-        if (_displayBuffer.Width != _texture.Width || _displayBuffer.Height != _texture.Height)
+        if (_displayBuffer.Width != _textureWidth || _displayBuffer.Height != _textureHeight)
         {
             CreateTexture();
         }
 
-        _graphicsDevice.UpdateTexture(
-            _texture,
-            _displayBuffer.Data,
-            0, 0, 0,
-            _displayBuffer.Width,
-            _displayBuffer.Height,
-            1, 0, 0);
+        unsafe
+        {
+            void* mapped = SDL.MapGPUTransferBuffer(_graphicsDevice, _transferBuffer, false);
+            fixed (RgbaByte* pixelDataPtr = &_displayBuffer.Data[0])
+            {
+                Buffer.MemoryCopy(pixelDataPtr, mapped, TransferBufferSizeInBytes, TransferBufferSizeInBytes);
+            }
+        }
 
+        SDL.UnmapGPUTransferBuffer(_graphicsDevice, _transferBuffer);
+
+        var copyPass = SDL.BeginGPUCopyPass(commandBuffer);
+
+        SDL.UploadToGPUTexture(
+            copyPass,
+            new SDLGPUTextureTransferInfo(_transferBuffer, pixelsPerRow: _textureWidth, rowsPerLayer: _textureHeight),
+            new SDLGPUTextureRegion(_texture, w: _textureWidth, h: _textureHeight, d: 1),
+            false);
+
+        SDL.EndGPUCopyPass(copyPass);
+    }
+
+    protected override void DrawOverride(EmulatorTime time)
+    {
         if (_angle == 0)
         {
             var availableSize = ImGui.GetContentRegionAvail();
             var finalSize = CalculateSizeFittingAspectRatio(
-                new Vector2(_texture.Width, _texture.Height),
+                new Vector2(_textureWidth, _textureHeight),
                 availableSize);
 
             ImGui.Image(
@@ -83,10 +117,10 @@ public sealed class ScreenDisplayWindow : DebuggerWindow
             return;
         }
 
-        var size = new Vector2(_texture.Height, _texture.Width);
+        var size = new Vector2(_textureHeight, _textureWidth);
 
         var cursorPos = ImGui.GetCursorPos();
-        cursorPos.X += ImGui.GetWindowContentRegionWidth() / 2;
+        cursorPos.X += ImGui.GetContentRegionAvail().X / 2;
         cursorPos.Y += ImGui.GetWindowHeight() / 2;
 
         var uv0 = new Vector2(1, 0);
@@ -123,6 +157,7 @@ public sealed class ScreenDisplayWindow : DebuggerWindow
     {
         base.Dispose();
 
-        _texture.Dispose();
+        SDL.ReleaseGPUTexture(_graphicsDevice, _texture);
+        SDL.ReleaseGPUTransferBuffer(_graphicsDevice, _transferBuffer);
     }
 }

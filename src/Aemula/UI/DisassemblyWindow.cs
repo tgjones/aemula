@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Numerics;
 using Aemula.Debugging;
-using ImGuiNET;
+using Hexa.NET.ImGui;
 
 namespace Aemula.UI;
 
@@ -74,7 +74,7 @@ public sealed class DisassemblyWindow : DebuggerWindow
 
         if (!_debugger.Stopped)
         {
-            if (ImGui.Button("Break"))
+            if (ImGui.Button("Break"u8))
             {
                 _debugger.ActiveStepModeIndex = -1;
                 _debugger.Stopped = true;
@@ -82,7 +82,7 @@ public sealed class DisassemblyWindow : DebuggerWindow
         }
         else
         {
-            if (ImGui.Button("Continue"))
+            if (ImGui.Button("Continue"u8))
             {
                 _debugger.ActiveStepModeIndex = -1;
                 _debugger.Stopped = false;
@@ -105,111 +105,114 @@ public sealed class DisassemblyWindow : DebuggerWindow
 
         ImGui.Separator();
 
-        if (ImGui.BeginChild("##disassembly_listing", Vector2.Zero, false))
+        var lastPC = _debugger.LastPC;
+
+        Vector2 availableSize = default;
+        if (ImGui.BeginChild("##disassembly_listing"u8, Vector2.Zero, ImGuiChildFlags.None))
         {
+            availableSize = ImGui.GetContentRegionAvail();
+
             ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(8, 3));
 
             var lineHeight = ImGui.GetTextLineHeightWithSpacing();
             var lineHeightDiv2 = (int)(lineHeight / 2.0f);
 
-            int displayStart, displayEnd;
-            ImGuiNative.igCalcListClipping(_disassembly.Count, lineHeight, &displayStart, &displayEnd);
-            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + displayStart * lineHeight);
-
-            var lastPC = _debugger.LastPC;
-            if (lastPC != _previousPC)
-            {
-                // TODONT: Don't search whole array.
-                var index = _disassembly.FindIndex(x => x.Instruction?.AddressNumeric == lastPC);
-
-                if (index < displayStart || index > displayEnd)
-                {
-                    ImGui.SetScrollFromPosY(ImGui.GetCursorStartPos().Y + index * lineHeight);
-                }
-
-                _previousPC = lastPC;
-            }
+            var clipper = new ImGuiListClipper();
+            clipper.Begin(_disassembly.Count, lineHeight);
 
             const byte grayColor = 0x99;
             var grayColorVector = new Vector4(new Vector3(grayColor / (float)0xFF), 1.0f);
 
-            for (var i = displayStart; i < displayEnd; i++)
+            while (clipper.Step())
             {
-                var line = _disassembly[i];
-
-                var pos = ImGui.GetCursorScreenPos();
-                var drawList = ImGui.GetWindowDrawList();
-
-                switch (line.Type)
+                for (var i = clipper.DisplayStart; i < clipper.DisplayEnd; i++)
                 {
-                    case DisassemblyLineType.Instruction:
-                        var instruction = line.Instruction.Value;
-                        ImGui.PushID(instruction.AddressNumeric);
-                        if (ImGui.InvisibleButton("##breakpoint", new Vector2(16, lineHeight)))
-                        {
-                            _debugger.Breakpoints.ToggleExecutionBreakpoint(instruction.AddressNumeric);
-                        }
-                        ImGui.PopID();
+                    var line = _disassembly[i];
 
-                        var breakpointCircleMiddle = new Vector2(pos.X + 7, pos.Y + lineHeightDiv2);
-                        var breakpointIndex = _debugger.Breakpoints.FindIndex(BreakpointManager.ExecutionTypeLabel, instruction.AddressNumeric);
-                        if (breakpointIndex >= 0)
-                        {
-                            var breakpoint = _debugger.Breakpoints.GetBreakpoint(breakpointIndex);
-                            var breakpointColor = breakpoint.Enabled
-                                ? 0xFF0000FF
-                                : 0xFF000088;
-                            drawList.AddCircleFilled(breakpointCircleMiddle, 7, breakpointColor);
-                        }
-                        else if (ImGui.IsItemHovered())
-                        {
-                            drawList.AddCircle(breakpointCircleMiddle, 7, 0xFF0000FF);
-                        }
+                    var pos = ImGui.GetCursorScreenPos();
+                    var drawList = ImGui.GetWindowDrawList();
 
-                        if (instruction.AddressNumeric == lastPC)
-                        {
-                            var a = new Vector2(pos.X + 2, pos.Y);
-                            var b = new Vector2(pos.X + 12, pos.Y + lineHeightDiv2);
-                            var c = new Vector2(pos.X + 2, pos.Y + lineHeight);
-                            drawList.AddTriangleFilled(a, b, c, 0xFF00FFFF);
-                        }
+                    switch (line.Type)
+                    {
+                        case DisassemblyLineType.Instruction:
+                            var instruction = line.Instruction.Value;
+                            ImGui.PushID(instruction.AddressNumeric);
+                            if (ImGui.InvisibleButton("##breakpoint", new Vector2(16, lineHeight)))
+                            {
+                                _debugger.Breakpoints.ToggleExecutionBreakpoint(instruction.AddressNumeric);
+                            }
+                            ImGui.PopID();
 
-                        ImGui.SameLine();
-                        ImGui.Text($"{instruction.Address}:   ");
+                            var breakpointCircleMiddle = new Vector2(pos.X + 7, pos.Y + lineHeightDiv2);
+                            var breakpointIndex = _debugger.Breakpoints.FindIndex(BreakpointManager.ExecutionTypeLabel, instruction.AddressNumeric);
+                            if (breakpointIndex >= 0)
+                            {
+                                var breakpoint = _debugger.Breakpoints.GetBreakpoint(breakpointIndex);
+                                var breakpointColor = breakpoint.Enabled
+                                    ? 0xFF0000FF
+                                    : 0xFF000088;
+                                drawList.AddCircleFilled(breakpointCircleMiddle, 7, breakpointColor);
+                            }
+                            else if (ImGui.IsItemHovered())
+                            {
+                                drawList.AddCircle(breakpointCircleMiddle, 7, 0xFF0000FF);
+                            }
 
-                        ImGui.SameLine();
-                        ImGui.Text($"{instruction.RawBytes}");
+                            if (instruction.AddressNumeric == lastPC)
+                            {
+                                var a = new Vector2(pos.X + 2, pos.Y);
+                                var b = new Vector2(pos.X + 12, pos.Y + lineHeightDiv2);
+                                var c = new Vector2(pos.X + 2, pos.Y + lineHeight);
+                                drawList.AddTriangleFilled(a, b, c, 0xFF00FFFF);
+                            }
 
-                        ImGui.SameLine(200);
-                        ImGui.Text(instruction.Disassembly);
+                            ImGui.SameLine();
+                            ImGui.Text($"{instruction.Address}:   ");
 
-                        // TODO: Show CPU ticks.
-                        break;
+                            ImGui.SameLine();
+                            ImGui.Text($"{instruction.RawBytes}");
 
-                    case DisassemblyLineType.Text:
-                        ImGui.TextColored(grayColorVector, line.Text);
-                        break;
+                            ImGui.SameLine(250);
+                            ImGui.Text(instruction.Disassembly);
 
-                    case DisassemblyLineType.LineSeparator:
-                        ImGui.SetCursorPosX(24);
-                        ImGui.TextColored(grayColorVector, line.Text);
-                        break;
+                            // TODO: Show CPU ticks.
+                            break;
 
-                    case DisassemblyLineType.Ellipsis:
-                        ImGui.SetCursorPosX(24);
-                        ImGui.TextColored(grayColorVector, line.Text);
-                        break;
+                        case DisassemblyLineType.Text:
+                            ImGui.TextColored(grayColorVector, line.Text);
+                            break;
 
-                    default:
-                        throw new InvalidOperationException();
+                        case DisassemblyLineType.LineSeparator:
+                            ImGui.SetCursorPosX(24);
+                            ImGui.TextColored(grayColorVector, line.Text);
+                            break;
+
+                        case DisassemblyLineType.Ellipsis:
+                            ImGui.SetCursorPosX(24);
+                            ImGui.TextColored(grayColorVector, line.Text);
+                            break;
+
+                        default:
+                            throw new InvalidOperationException();
+                    }
                 }
             }
-
-            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + (_disassembly.Count - displayEnd) * lineHeight);
 
             ImGui.PopStyleVar();
         }
         ImGui.EndChild();
+
+        if (lastPC != _previousPC)
+        {
+            // TODONT: Don't search whole array.
+            var indexToScrollTo = _disassembly.FindIndex(x => x.Instruction?.AddressNumeric == lastPC);
+
+            ImGui.BeginChild("##disassembly_listing"u8);
+            ImGui.SetScrollY(indexToScrollTo * ImGui.GetTextLineHeight() - availableSize.Y * 0.5f);
+            ImGui.EndChild();
+
+            _previousPC = lastPC;
+        }
     }
 
     private readonly record struct DisassemblyLine(DisassemblyLineType Type, DisassembledInstruction? Instruction, string Text);

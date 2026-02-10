@@ -48,7 +48,7 @@ public sealed class NesDebugger : Debugger
     {
         base.TickSystem();
 
-        if (_nes.Cpu.CpuCoreSync)
+        if (_nes.Cpu.CpuCoreSync && _nes.Cpu.FinishedReset)
         {
             OnAddressExecuting(_nes.Cpu.Address);
         }
@@ -73,7 +73,7 @@ public sealed class NesDebugger : Debugger
 
         yield return new BreakpointsWindow(this);
 
-        yield return new MemoryEditor(1, _nes.ReadByteDebug, _nes.WriteByteDebug);
+        yield return new MemoryEditor(1, address => _nes.ReadByteDebug((ushort)address), (address, data) => _nes.WriteByteDebug((ushort)address, data));
 
         yield return new PatternTableWindow(_nes);
     }

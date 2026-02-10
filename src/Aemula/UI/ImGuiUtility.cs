@@ -5,21 +5,13 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
-using ImGuiNET;
+using Hexa.NET.ImGui;
 
 namespace Aemula.UI;
 
 public static unsafe class ImGuiUtility
 {
     private const int StackAllocationSizeLimit = 2048;
-
-    public static void SetupDocking()
-    {
-        ImGui.GetIO().ConfigFlags |= ImGuiConfigFlags.DockingEnable;
-
-        // Need to reload .ini file as described in https://github.com/mellinoe/veldrid/issues/410
-        ImGui.LoadIniSettingsFromDisk(ImGui.GetIO().IniFilename);
-    }
 
     public static bool InputHex<T>(string label, uint length, ref T value, T? maximum = null)
         where T : struct, INumber<T>
@@ -93,7 +85,7 @@ public static unsafe class ImGuiUtility
 
         fixed (byte* bytesPtr = bytes)
         {
-            ImGuiNative.igCalcTextSize(&result, bytesPtr, null, 0, -1);
+            ImGui.CalcTextSize(ref result, bytes, (byte*)null, false, -1);
         }
 
         return result;
@@ -105,6 +97,7 @@ public static unsafe class ImGuiUtility
 
     public static bool Combo(string label, ref int current_item, IReadOnlyList<string> items)
     {
+
         byte* native_label;
         var label_byteCount = 0;
         if (label != null)
@@ -153,12 +146,12 @@ public static unsafe class ImGuiUtility
         var popup_max_height_in_items = -1;
         fixed (int* native_current_item = &current_item)
         {
-            var ret = ImGuiNative.igComboStr_arr(native_label, native_current_item, native_items, items.Count, popup_max_height_in_items);
+            var ret = ImGui.Combo(native_label, native_current_item, native_items, items.Count, popup_max_height_in_items);
             if (label_byteCount > StackAllocationSizeLimit)
             {
                 Free(native_label);
             }
-            return ret != 0;
+            return ret;
         }
     }
 
