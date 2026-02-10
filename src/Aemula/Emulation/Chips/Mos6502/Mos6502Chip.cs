@@ -7,6 +7,8 @@ namespace Aemula.Emulation.Chips.Mos6502;
 
 public partial class Mos6502Chip
 {
+    internal bool FinishedReset => _brkFlags != BrkFlags.Reset;
+
     // Pins
 
     private ushort _address;

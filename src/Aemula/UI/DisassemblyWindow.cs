@@ -74,7 +74,7 @@ public sealed class DisassemblyWindow : DebuggerWindow
 
         if (!_debugger.Stopped)
         {
-            if (ImGui.Button("Break"))
+            if (ImGui.Button("Break"u8))
             {
                 _debugger.ActiveStepModeIndex = -1;
                 _debugger.Stopped = true;
@@ -82,7 +82,7 @@ public sealed class DisassemblyWindow : DebuggerWindow
         }
         else
         {
-            if (ImGui.Button("Continue"))
+            if (ImGui.Button("Continue"u8))
             {
                 _debugger.ActiveStepModeIndex = -1;
                 _debugger.Stopped = false;
@@ -105,8 +105,13 @@ public sealed class DisassemblyWindow : DebuggerWindow
 
         ImGui.Separator();
 
-        if (ImGui.BeginChild("##disassembly_listing", Vector2.Zero, ImGuiChildFlags.None))
+        var lastPC = _debugger.LastPC;
+
+        Vector2 availableSize = default;
+        if (ImGui.BeginChild("##disassembly_listing"u8, Vector2.Zero, ImGuiChildFlags.None))
         {
+            availableSize = ImGui.GetContentRegionAvail();
+
             ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(8, 3));
 
             var lineHeight = ImGui.GetTextLineHeightWithSpacing();
@@ -115,19 +120,6 @@ public sealed class DisassemblyWindow : DebuggerWindow
             var clipper = new ImGuiListClipper();
             clipper.Begin(_disassembly.Count, lineHeight);
 
-            //int displayStart, displayEnd;
-            //ImGui.SetCursorPosY(ImGui.GetCursorPosY() + displayStart * lineHeight);
-
-            var lastPC = _debugger.LastPC;
-            int? indexToScrollTo = null;
-            if (lastPC != _previousPC)
-            {
-                // TODONT: Don't search whole array.
-                indexToScrollTo = _disassembly.FindIndex(x => x.Instruction?.AddressNumeric == lastPC);
-
-                _previousPC = lastPC;
-            }
-
             const byte grayColor = 0x99;
             var grayColorVector = new Vector4(new Vector3(grayColor / (float)0xFF), 1.0f);
 
@@ -135,11 +127,6 @@ public sealed class DisassemblyWindow : DebuggerWindow
             {
                 for (var i = clipper.DisplayStart; i < clipper.DisplayEnd; i++)
                 {
-                    if (indexToScrollTo == i)
-                    {
-                        ImGui.SetScrollHereY();
-                    }
-
                     var line = _disassembly[i];
 
                     var pos = ImGui.GetCursorScreenPos();
@@ -211,11 +198,21 @@ public sealed class DisassemblyWindow : DebuggerWindow
                 }
             }
 
-            //ImGui.SetCursorPosY(ImGui.GetCursorPosY() + (_disassembly.Count - displayEnd) * lineHeight);
-
             ImGui.PopStyleVar();
         }
         ImGui.EndChild();
+
+        if (lastPC != _previousPC)
+        {
+            // TODONT: Don't search whole array.
+            var indexToScrollTo = _disassembly.FindIndex(x => x.Instruction?.AddressNumeric == lastPC);
+
+            ImGui.BeginChild("##disassembly_listing"u8);
+            ImGui.SetScrollY(indexToScrollTo * ImGui.GetTextLineHeight() - availableSize.Y * 0.5f);
+            ImGui.EndChild();
+
+            _previousPC = lastPC;
+        }
     }
 
     private readonly record struct DisassemblyLine(DisassemblyLineType Type, DisassembledInstruction? Instruction, string Text);

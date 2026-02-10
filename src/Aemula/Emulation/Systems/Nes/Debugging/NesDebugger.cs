@@ -48,7 +48,7 @@ public sealed class NesDebugger : Debugger
     {
         base.TickSystem();
 
-        if (_nes.Cpu.CpuCoreSync)
+        if (_nes.Cpu.CpuCoreSync && _nes.Cpu.FinishedReset)
         {
             OnAddressExecuting(_nes.Cpu.Address);
         }
