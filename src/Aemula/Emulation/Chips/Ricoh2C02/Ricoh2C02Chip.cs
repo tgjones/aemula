@@ -39,16 +39,16 @@ public sealed partial class Ricoh2C02Chip
 
     private byte _currentLatchData;
 
-    private ushort _patternShiftRegister1;
-    private ushort _patternShiftRegister2;
-    private byte _paletteShiftRegister1;
-    private byte _paletteShiftRegister2;
+    //private ushort _patternShiftRegister1;
+    //private ushort _patternShiftRegister2;
+    //private byte _paletteShiftRegister1;
+    //private byte _paletteShiftRegister2;
 
     // Temporary VRAM address (15 bits)
-    private ushort _t;
+    //private ushort _t;
 
     // Fine X scroll (3 bits)
-    private byte _x;
+    //private byte _x;
 
     // Latch around two-bytes writes into 0x2005 and 0x2006
     private bool _firstWrite = true;
@@ -69,8 +69,8 @@ public sealed partial class Ricoh2C02Chip
     {
         _objectAttributeMemory = new byte[256];
 
-        _systemPalette = new[]
-        {
+        _systemPalette =
+        [
             new Color(84, 84, 84),
             new Color(0, 30, 116),
             new Color(8, 16, 144),
@@ -138,7 +138,7 @@ public sealed partial class Ricoh2C02Chip
             new Color(160, 162, 160),
             new Color(0, 0, 0),
             new Color(0, 0, 0),
-        };
+        ];
 
         _paletteMemory = new byte[32];
     }

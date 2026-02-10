@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Aemula;
 
@@ -116,6 +117,7 @@ public sealed class DisplayBuffer
         Resize(width, height);
     }
 
+    [MemberNotNull(nameof(Data))]
     public void Resize(uint width, uint height)
     {
         Width = width;

@@ -4,6 +4,7 @@ partial class Cartridge
 {
     private unsafe struct FileHeader
     {
+#pragma warning disable 0649
         // Bytes 0-3: "NES" followed by MS-DOS EOF.
         public fixed byte Name[4];
 
@@ -30,6 +31,7 @@ partial class Cartridge
 
         // Bytes 11-15: Unused padding.
         public fixed byte Unused[5];
+#pragma warning restore 0649
     }
 
     private struct Flags6

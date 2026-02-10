@@ -19,7 +19,7 @@ public sealed class DisassemblyWindow : DebuggerWindow
 
     public DisassemblyWindow(Debugger debugger)
     {
-        _disassembly = new List<DisassemblyLine>();
+        _disassembly = [];
 
         _debugger = debugger;
     }
@@ -58,7 +58,7 @@ public sealed class DisassemblyWindow : DebuggerWindow
                         _disassembly.Add(new DisassemblyLine(DisassemblyLineType.Text, null, $"{entry.Label}:"));
                     }
 
-                    _disassembly.Add(new DisassemblyLine(DisassemblyLineType.Instruction, entry.Instruction, null));
+                    _disassembly.Add(new DisassemblyLine(DisassemblyLineType.Instruction, entry.Instruction, ""));
 
                     unknownStart = i + entry.Instruction.Value.InstructionSizeInBytes;
                 }
@@ -135,7 +135,7 @@ public sealed class DisassemblyWindow : DebuggerWindow
                     switch (line.Type)
                     {
                         case DisassemblyLineType.Instruction:
-                            var instruction = line.Instruction.Value;
+                            var instruction = line.Instruction!.Value;
                             ImGui.PushID(instruction.AddressNumeric);
                             if (ImGui.InvisibleButton("##breakpoint", new Vector2(16, lineHeight)))
                             {

@@ -46,7 +46,7 @@ public sealed class SpaceInvadersSystem : EmulatedSystem
         void LoadRom(string fileName, ushort startAddress)
         {
             using var fileStream = File.OpenRead($"Roms/{fileName}");
-            fileStream.Read(_rom, startAddress, (int)fileStream.Length);
+            fileStream.ReadExactly(_rom, startAddress, (int)fileStream.Length);
         }
 
         LoadRom("invaders.h", 0x0000);

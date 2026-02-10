@@ -84,7 +84,7 @@ public abstract class Disassembler
             return;
         }
 
-        DisassembleAddresses(new List<ushort> { address });
+        DisassembleAddresses([address]);
     }
 
     public void OnDataWritten(ushort address)

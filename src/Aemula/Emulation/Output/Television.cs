@@ -7,17 +7,9 @@ public class Television
 
 }
 
-public class Oscillator
+public class Oscillator(float freeRunFrequency, int resolution)
 {
-    private readonly double _deltaPerSecond;
-
-    private float _timeSinceLastReset;
-    private float _value;
-
-    public Oscillator(float freeRunFrequency, int resolution)
-    {
-        _deltaPerSecond = (1.0f / freeRunFrequency) / resolution;
-    }
+    private readonly double _deltaPerSecond = (1.0f / freeRunFrequency) / resolution;
 
     public OscillatorUpdateResult Update(float deltaTime)
     {

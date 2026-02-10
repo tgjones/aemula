@@ -9,12 +9,11 @@ using Aemula.Emulation.Systems.Atari2600;
 using Aemula.Emulation.Systems.Chip8;
 using Aemula.Emulation.Systems.Nes;
 using Aemula.Emulation.Systems.SpaceInvaders;
-using Aemula.UI;
 using Hexa.NET.ImGui;
 using Hexa.NET.ImGui.Backends.SDL3;
 using Hexa.NET.SDL3;
 
-namespace Aemula.Gui;
+namespace Aemula.UI;
 
 public static class Program
 {
@@ -120,11 +119,15 @@ public static class Program
         var system = Systems[systemArg]();
 
         var debugger = system.CreateDebugger();
-        var debuggerWindows = debugger.CreateDebuggerWindows().ToArray();
-        foreach (var debuggerWindow in debuggerWindows)
+        DebuggerWindow[] debuggerWindows = [];
+        if (debugger != null)
         {
-            debuggerWindow.CreateGraphicsResources(gpuDevice);
-            debuggerWindow.IsVisible = true;
+            debuggerWindows = debugger.CreateDebuggerWindows().ToArray();
+            foreach (var debuggerWindow in debuggerWindows)
+            {
+                debuggerWindow.CreateGraphicsResources(gpuDevice);
+                debuggerWindow.IsVisible = true;
+            }
         }
 
         system.LoadProgram(args[1]);
@@ -188,7 +191,7 @@ public static class Program
                 debuggerWindow.Prepare(emulatorTime, commandBuffer);
             }
 
-            debugger.RunForDuration(deltaTimeSpan);
+            debugger?.RunForDuration(deltaTimeSpan);
 
             DrawWindow(debuggerWindows);
             DrawMainMenu(debuggerWindows);
@@ -327,84 +330,4 @@ public static class Program
             ImGui.EndMainMenuBar();
         }
     }
-}
-
-public static class ImGuiExtra
-{
-    public static unsafe void DockBuilderDockWindow(string window_name, uint node_id)
-    {
-        var windowNameByteCount = Encoding.UTF8.GetByteCount(window_name);
-        byte* windowNamePtr;
-        if (windowNameByteCount > 2048)
-        {
-            windowNamePtr = (byte*)Marshal.AllocHGlobal(windowNameByteCount);
-        }
-        else
-        {
-            byte* stackPtr = stackalloc byte[windowNameByteCount + 1];
-            windowNamePtr = stackPtr;
-        }
-
-        var windowNameSpan = new Span<byte>(windowNamePtr, windowNameByteCount + 1);
-        Encoding.UTF8.GetBytes(window_name, windowNameSpan);
-
-        ImGuiNativeExtra.igDockBuilderDockWindow(windowNamePtr, node_id);
-
-        if (windowNameByteCount > 2048)
-        {
-            Marshal.FreeHGlobal((IntPtr)windowNamePtr);
-        }
-    }
-
-    public static uint DockBuilderAddNode(uint id, ImGuiDockNodeFlags flags)
-    {
-        return ImGuiNativeExtra.igDockBuilderAddNode(id, flags);
-    }
-
-    public static void DockBuilderRemoveNode(uint id)
-    {
-        ImGuiNativeExtra.igDockBuilderRemoveNode(id);
-    }
-
-    public static void DockBuilderSetNodeSize(uint id, Vector2 size)
-    {
-        ImGuiNativeExtra.igDockBuilderSetNodeSize(id, size);
-    }
-
-    public static unsafe uint DockBuilderSplitNode(uint nodeId, ImGuiDir split_dir, float size_ratio_for_node_at_dir, out uint out_id_at_dir, out uint out_id_at_opposite_dir)
-    {
-        fixed (uint* out_id_at_dir_ptr = &out_id_at_dir)
-        fixed (uint* out_id_at_opposite_dir_ptr = &out_id_at_opposite_dir)
-        {
-            return ImGuiNativeExtra.igDockBuilderSplitNode(nodeId, split_dir, size_ratio_for_node_at_dir, out_id_at_dir_ptr, out_id_at_opposite_dir_ptr);
-        }
-    }
-
-    public static void DockBuilderFinish(uint id)
-    {
-        ImGuiNativeExtra.igDockBuilderFinish(id);
-    }
-
-    public const ImGuiDockNodeFlags ImGuiDockNodeFlags_DockSpace = (ImGuiDockNodeFlags)(1 << 10);
-}
-
-internal static class ImGuiNativeExtra
-{
-    [DllImport("cimgui", CallingConvention = CallingConvention.Cdecl)]
-    public unsafe static extern void igDockBuilderDockWindow(byte* window_name, uint node_id);
-
-    [DllImport("cimgui", CallingConvention = CallingConvention.Cdecl)]
-    public unsafe static extern uint igDockBuilderAddNode(uint id, ImGuiDockNodeFlags flags);
-
-    [DllImport("cimgui", CallingConvention = CallingConvention.Cdecl)]
-    public unsafe static extern void igDockBuilderRemoveNode(uint id);
-
-    [DllImport("cimgui", CallingConvention = CallingConvention.Cdecl)]
-    public unsafe static extern void igDockBuilderSetNodeSize(uint id, Vector2 size);
-
-    [DllImport("cimgui", CallingConvention = CallingConvention.Cdecl)]
-    public unsafe static extern uint igDockBuilderSplitNode(uint node_id, ImGuiDir split_dir, float size_ratio_for_node_at_dir, uint* out_id_at_dir, uint* out_id_at_opposite_dir);
-
-    [DllImport("cimgui", CallingConvention = CallingConvention.Cdecl)]
-    public unsafe static extern void igDockBuilderFinish(uint id);
 }

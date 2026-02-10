@@ -25,7 +25,7 @@ public sealed class Atari2600System : EmulatedSystem
 
     private ushort _lastPC;
 
-    private Cartridge _cartridge;
+    private Cartridge? _cartridge;
 
     internal Mos6507 Cpu => _cpu;
     //internal VideoOutput VideoOutput => _videoOutput;

@@ -11,13 +11,8 @@
 
 using System;
 using System.Buffers;
-using System.Buffers.Text;
-using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
-using System.Runtime.CompilerServices;
-using System.Text;
-using System.Text.Unicode;
 using Hexa.NET.ImGui;
 using DataType = nint;
 
@@ -100,14 +95,18 @@ public sealed class MemoryEditor : DebuggerWindow
     /// <summary>
     /// Set when mouse is hovering a value.
     /// </summary>
+#pragma warning disable CS0414
     private bool MouseHovered;
+#pragma warning restore CS0414
 
     /// <summary>
     /// The address currently being hovered if <see cref="_mouseHovered"/> is set.
     /// </summary>
     private DataType MouseHoveredAddr;
 
+#pragma warning disable CS0414
     private bool ContentsWidthChanged;
+#pragma warning disable CS0414
     private DataType DataPreviewAddr;
     private DataType DataEditingAddr;
     private bool DataEditingTakeFocus;
@@ -122,7 +121,7 @@ public sealed class MemoryEditor : DebuggerWindow
 
     public override string DisplayName { get; }
 
-    public override Vector2 DefaultSize => new Vector2(500, 350);
+    public override Vector2 DefaultSize => new(500, 350);
 
     public MemoryEditor(
         int windowNumber,
@@ -188,8 +187,10 @@ public sealed class MemoryEditor : DebuggerWindow
     private Sizes CalcSizes(DataType memSize, DataType baseDisplayAddr)
     {
         var style = ImGui.GetStyle();
-        var s = new Sizes();
-        s.AddrDigitsCount = OptAddrDigitsCount;
+        var s = new Sizes
+        {
+            AddrDigitsCount = OptAddrDigitsCount
+        };
         if (s.AddrDigitsCount == 0)
         {
             for (var n = baseDisplayAddr + memSize - 1; n > 0; n >>= 4)
@@ -222,7 +223,7 @@ public sealed class MemoryEditor : DebuggerWindow
         return DataType.TryParse(bytes, NumberStyles.AllowHexSpecifier, CultureInfo.CurrentCulture, out result);
     }
 
-    protected unsafe override void DrawOverride(EmulatorTime time)
+    protected override unsafe void DrawOverride(EmulatorTime time)
     {
         var s = CalcSizes(MemorySize, base_display_addr);
         var style = ImGui.GetStyle();
@@ -383,7 +384,9 @@ public sealed class MemoryEditor : DebuggerWindow
 
                         ImGuiInputTextFlags flags = ImGuiInputTextFlags.CharsHexadecimal | ImGuiInputTextFlags.EnterReturnsTrue | ImGuiInputTextFlags.AutoSelectAll | ImGuiInputTextFlags.NoHorizontalScroll | ImGuiInputTextFlags.CallbackAlways;
                         if (ReadOnly)
+#pragma warning disable CS0162 // Unreachable code detected
                             flags |= ImGuiInputTextFlags.ReadOnly;
+#pragma warning restore CS0162 // Unreachable code detected
                         flags |= ImGuiInputTextFlags.AlwaysOverwrite; // was ImGuiInputTextFlags.AlwaysInsertMode
                         ImGui.SetNextItemWidth(s.GlyphWidth * 2);
                         fixed (byte* dataInputBuf = &DataInputBuf[0])
@@ -795,7 +798,7 @@ internal ref struct Utf8BufferWriter
             }
         }
 
-        if (!value.TryFormat(_buffer.Slice(_written), out var written, classicFormat, null))
+        if (!value.TryFormat(_buffer[_written..], out var written, classicFormat, null))
         {
             throw new InvalidOperationException();
         }

@@ -56,8 +56,12 @@ internal class TelevisionTests
         // Implement vertical and horizontal oscillator, which will free-run if no sync is detected.
 
         var syncSamples = 0;
+#pragma warning disable CS0219 // Variable is assigned but its value is never used
+#pragma warning disable IDE0059 // Unnecessary assignment of a value
         var foundHSync = false;
         var foundVSync = false;
+#pragma warning restore IDE0059 // Unnecessary assignment of a value
+#pragma warning restore CS0219 // Variable is assigned but its value is never used
 
         var samples = new List<double>();
 
@@ -140,7 +144,9 @@ internal class TelevisionTests
     public void CanDecodePal()
     {
         var wfmFilePath = Path.GetFullPath(Path.Combine("Emulation", "Output", "Assets", "nes.wmf"));
+#pragma warning disable IDE0059 // Unnecessary assignment of a value
         var wmfFile = WfmFile.FromFile(wfmFilePath);
+#pragma warning restore IDE0059 // Unnecessary assignment of a value
     }
 }
 
