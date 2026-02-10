@@ -388,7 +388,7 @@ public sealed class MemoryEditor : DebuggerWindow
                         ImGui.SetNextItemWidth(s.GlyphWidth * 2);
                         fixed (byte* dataInputBuf = &DataInputBuf[0])
                         {
-                            if (ImGui.InputText("##data", dataInputBuf, (nuint)DataInputBuf.Length, flags, Callback))
+                            if (ImGui.InputText("##data"u8, dataInputBuf, (nuint)DataInputBuf.Length, flags, Callback))
                                 data_write = data_next = true;
                             else if (!DataEditingTakeFocus && !ImGui.IsItemActive())
                                 DataEditingAddr = data_editing_addr_next = DataType.MaxValue;
@@ -417,7 +417,13 @@ public sealed class MemoryEditor : DebuggerWindow
                         if (OptShowHexII)
                         {
                             if ((b >= 32 && b < 128))
-                                ImGui.Text($".{(char)b} ");
+                            {
+                                var dataBufferWriter = new Utf8BufferWriter(dataBuffer);
+                                dataBufferWriter.Write("."u8);
+                                dataBufferWriter.Write(b);
+                                dataBufferWriter.Write(" \0"u8);
+                                ImGui.Text(dataBuffer);
+                            }
                             else if (b == 0xFF && OptGreyOutZeroes)
                                 ImGui.TextDisabled("## "u8);
                             else if (b == 0x00)
@@ -466,7 +472,7 @@ public sealed class MemoryEditor : DebuggerWindow
                     var mouse_addr = (mouse_off_x >= 0.0f && mouse_off_x < s.OffsetAsciiMaxX - s.OffsetAsciiMinX) ? addr + (DataType)(mouse_off_x / s.GlyphWidth) : DataType.MaxValue;
 
                     ImGui.PushID(line_i);
-                    if (ImGui.InvisibleButton("ascii", new Vector2(s.OffsetAsciiMaxX - s.OffsetAsciiMinX, s.LineHeight)))
+                    if (ImGui.InvisibleButton("ascii"u8, new Vector2(s.OffsetAsciiMaxX - s.OffsetAsciiMinX, s.LineHeight)))
                     {
                         DataEditingAddr = DataPreviewAddr = mouse_addr;
                         DataEditingTakeFocus = true;
