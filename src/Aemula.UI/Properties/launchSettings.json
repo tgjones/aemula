@@ -1,6 +1,6 @@
 {
   "profiles": {
-    "Aemula.Gui": {
+    "Aemula.UI": {
       "commandName": "Project",
       "commandLineArgs": "nes C:\\Code\\aemula\\src\\Aemula.Tests\\Emulation\\Chips\\Ricoh2A03\\Assets\\nestest.nes"
     }
