@@ -118,7 +118,7 @@ public sealed class MemoryEditor : DebuggerWindow
     private DataType GotoAddr;
     private DataType HighlightMin, HighlightMax;
     private int PreviewEndianness;
-    private ImGuiDataType PreviewDataType;
+    private PreviewDataTypeInfo PreviewDataType;
 
     public override string DisplayName { get; }
 
@@ -137,7 +137,7 @@ public sealed class MemoryEditor : DebuggerWindow
         DataPreviewAddr = DataEditingAddr = DataType.MaxValue;
         GotoAddr = DataType.MaxValue;
         HighlightMin = HighlightMax = DataType.MaxValue;
-        PreviewDataType = ImGuiDataType.S32;
+        PreviewDataType = PreviewDataTypes[0];
     }
 
     private void GotoAddrAndHighlight(DataType addrMin, DataType addrMax)
@@ -260,7 +260,7 @@ public sealed class MemoryEditor : DebuggerWindow
         if (DataPreviewAddr >= MemorySize)
             DataPreviewAddr = DataType.MaxValue;
 
-        var preview_data_type_size = OptShowDataPreview ? GetPreviewDataTypeInfo(PreviewDataType).Size : 0;
+        var preview_data_type_size = OptShowDataPreview ? PreviewDataType.Size : 0;
 
         var data_editing_addr_next = DataType.MaxValue;
         if (DataEditingAddr != DataType.MaxValue)
@@ -607,39 +607,25 @@ public sealed class MemoryEditor : DebuggerWindow
         //}
     }
 
-    private readonly ref struct PreviewDataTypeInfo(int size, ReadOnlySpan<byte> description)
-    {
-        public readonly int Size = size;
-        public readonly ReadOnlySpan<byte> Description = description;
-    }
+    private delegate void WritePreviewDataDelegate(ref Utf8BufferWriter writer, scoped ReadOnlySpan<byte> buffer, StandardFormat format);
 
-    private static PreviewDataTypeInfo GetPreviewDataTypeInfo(ImGuiDataType dataType) => dataType switch
-    {
-        ImGuiDataType.S8 => new PreviewDataTypeInfo(1, "Byte"u8),
-        ImGuiDataType.U8 => new PreviewDataTypeInfo(1, "SByte"u8),
-        ImGuiDataType.S16 => new PreviewDataTypeInfo(2, "Int16"u8),
-        ImGuiDataType.U16 => new PreviewDataTypeInfo(2, "UInt16"u8),
-        ImGuiDataType.S32 => new PreviewDataTypeInfo(4, "Int32"u8),
-        ImGuiDataType.U32 => new PreviewDataTypeInfo(4, "UInt32"u8),
-        ImGuiDataType.S64 => new PreviewDataTypeInfo(8, "Int64"u8),
-        ImGuiDataType.U64 => new PreviewDataTypeInfo(8, "UInt64"u8),
-        ImGuiDataType.Float => new PreviewDataTypeInfo(4, "Float"u8),
-        ImGuiDataType.Double => new PreviewDataTypeInfo(8, "Double"u8),
-        _ => throw new NotSupportedException(),
-    };
+    private sealed record PreviewDataTypeInfo(
+        int Size,
+        Func<ReadOnlySpan<byte>> Description,
+        WritePreviewDataDelegate Write);
 
-    private static readonly ImGuiDataType[] supported_data_types =
+    private static readonly PreviewDataTypeInfo[] PreviewDataTypes =
     [
-        ImGuiDataType.S8,
-        ImGuiDataType.U8,
-        ImGuiDataType.S16,
-        ImGuiDataType.U16,
-        ImGuiDataType.S32,
-        ImGuiDataType.U32,
-        ImGuiDataType.S64,
-        ImGuiDataType.U64,
-        ImGuiDataType.Float,
-        ImGuiDataType.Double
+        new(1, () => "Byte"u8, (ref writer, scoped buffer, format) => writer.Write(buffer[0], format)),
+        new(1, () => "SByte"u8, (ref writer, scoped buffer, format) => writer.Write((sbyte)buffer[0], format)),
+        new(2, () => "Int16"u8, (ref writer, scoped buffer, format) => writer.Write(BitConverter.ToInt16(buffer), format)),
+        new(2, () => "UInt16"u8, (ref writer, scoped buffer, format) => writer.Write(BitConverter.ToUInt16(buffer), format)),
+        new(4, () => "Int32"u8, (ref writer, scoped buffer, format) => writer.Write(BitConverter.ToInt32(buffer), format)),
+        new(4, () => "UInt32"u8, (ref writer, scoped buffer, format) => writer.Write(BitConverter.ToUInt32(buffer), format)),
+        new(8, () => "Int64"u8, (ref writer, scoped buffer, format) => writer.Write(BitConverter.ToInt64(buffer), format)),
+        new(8, () => "UInt64"u8, (ref writer, scoped buffer, format) => writer.Write(BitConverter.ToUInt64(buffer), format)),
+        new(4, () => "Float"u8, (ref writer, scoped buffer, format) => writer.Write(BitConverter.ToSingle(buffer), format)),
+        new(4, () => "Double"u8, (ref writer, scoped buffer, format) => writer.Write(BitConverter.ToDouble(buffer), format)),
     ];
 
     private void DrawPreviewLine(in Sizes s)
@@ -650,13 +636,15 @@ public sealed class MemoryEditor : DebuggerWindow
         ImGui.SameLine();
         ImGui.SetNextItemWidth((s.GlyphWidth * 10.0f) + style.FramePadding.X * 2.0f + style.ItemInnerSpacing.X);
 
-        if (ImGui.BeginCombo("##combo_type"u8, GetPreviewDataTypeInfo(PreviewDataType).Description, ImGuiComboFlags.HeightLargest))
+        if (ImGui.BeginCombo("##combo_type"u8, PreviewDataType.Description(), ImGuiComboFlags.HeightLargest))
         {
-            for (int n = 0; n < supported_data_types.Length; n++)
+            for (int n = 0; n < PreviewDataTypes.Length; n++)
             {
-                ImGuiDataType data_type = supported_data_types[n];
-                if (ImGui.Selectable(GetPreviewDataTypeInfo(data_type).Description, PreviewDataType == data_type))
+                var data_type = PreviewDataTypes[n];
+                if (ImGui.Selectable(data_type.Description(), PreviewDataType == data_type))
+                {
                     PreviewDataType = data_type;
+                }
             }
             ImGui.EndCombo();
         }
@@ -680,9 +668,9 @@ public sealed class MemoryEditor : DebuggerWindow
         ImGui.Text("Bin"u8); ImGui.SameLine(x); ImGui.TextUnformatted(has_value ? buf : naBuf);
     }
 
-    private unsafe void DrawPreviewData(DataType addr, ImGuiDataType data_type, DataFormat dataFormat, Span<byte> out_buf)
+    private unsafe void DrawPreviewData(DataType addr, PreviewDataTypeInfo data_type, DataFormat dataFormat, Span<byte> out_buf)
     {
-        var elem_size = GetPreviewDataTypeInfo(data_type).Size;
+        var elem_size = data_type.Size;
         var size = addr + elem_size > MemorySize ? MemorySize - addr : elem_size;
         if (size > 8)
         {
@@ -700,30 +688,21 @@ public sealed class MemoryEditor : DebuggerWindow
             buf.Reverse();
         }
 
+        var bufferWriter = new Utf8BufferWriter(out_buf);
+
         if (dataFormat == DataFormat.Bin)
         {
             Span<byte> binbuf = stackalloc byte[8];
-            var pos = 0;
             buf.Reverse();
             foreach (var b in buf)
             {
                 for (int bit = 7; bit >= 0; bit--)
                 {
-                    out_buf[pos++] = (byte)(((b >> bit) & 1) + '0');
+                    bufferWriter.Write((byte)(((b >> bit) & 1) + '0'));
                 }
-                out_buf[pos++] = (byte)' ';
+                bufferWriter.Write((byte)' ');
             }
-            out_buf[pos++] = (byte)'\0';
-            return;
-        }
-
-        if (dataFormat == DataFormat.Hex && (data_type == ImGuiDataType.Float || data_type == ImGuiDataType.Double))
-        {
-            out_buf[0] = (byte)'T';
-            out_buf[1] = (byte)'O';
-            out_buf[2] = (byte)'D';
-            out_buf[3] = (byte)'O';
-            out_buf[4] = (byte)'\0';
+            bufferWriter.Write((byte)'\0');
             return;
         }
 
@@ -737,61 +716,12 @@ public sealed class MemoryEditor : DebuggerWindow
 
         if (dataFormat == DataFormat.Hex)
         {
-            out_buf[0] = (byte)'0';
-            out_buf[1] = (byte)'x';
-            // We will write the value after "0x"
-            out_buf = out_buf[2..];
+            bufferWriter.Write("0x"u8);
         }
 
-        //out_buf[0] = 0;
-        int bytesWritten;
-        switch (data_type)
-        {
-           case ImGuiDataType.S8:
-                Utf8Formatter.TryFormat((sbyte)buf[0], out_buf, out bytesWritten, format);
-                break;
+        data_type.Write(ref bufferWriter, buf, format);
 
-            case ImGuiDataType.U8:
-                Utf8Formatter.TryFormat(buf[0], out_buf, out bytesWritten, format);
-                break;
-
-            case ImGuiDataType.S16:
-                Utf8Formatter.TryFormat(BitConverter.ToInt16(buf), out_buf, out bytesWritten, format);
-                break;
-
-            case ImGuiDataType.U16:
-                Utf8Formatter.TryFormat(BitConverter.ToUInt16(buf), out_buf, out bytesWritten, format);
-                break;
-
-            case ImGuiDataType.S32:
-                Utf8Formatter.TryFormat(BitConverter.ToInt32(buf), out_buf, out bytesWritten, format);
-                break;
-
-            case ImGuiDataType.U32:
-                Utf8Formatter.TryFormat(BitConverter.ToUInt32(buf), out_buf, out bytesWritten, format);
-                break;
-            
-            case ImGuiDataType.S64:
-                Utf8Formatter.TryFormat(BitConverter.ToInt64(buf), out_buf, out bytesWritten, format);
-                break;
-
-            case ImGuiDataType.U64:
-                Utf8Formatter.TryFormat(BitConverter.ToUInt64(buf), out_buf, out bytesWritten, format);
-                break;
-
-            case ImGuiDataType.Float:
-                Utf8Formatter.TryFormat(BitConverter.ToSingle(buf), out_buf, out bytesWritten, format);
-                break;
-            
-            case ImGuiDataType.Double:
-                Utf8Formatter.TryFormat(BitConverter.ToDouble(buf), out_buf, out bytesWritten, format);
-                break;
-
-            default:
-                throw new InvalidOperationException();
-        }
-
-        Utf8.TryWrite(out_buf[bytesWritten..], $"\0", out _);
+        bufferWriter.Write("\0"u8);
     }
 
     private enum DataFormat
@@ -815,6 +745,11 @@ internal ref struct Utf8BufferWriter
 
     public readonly ReadOnlySpan<byte> WrittenSpan => _buffer[.._written];
 
+    public void Write(byte value)
+    {
+        _buffer[_written++] = value;
+    }
+
     public void Write(ReadOnlySpan<byte> text)
     {
         text.CopyTo(_buffer[_written..]);
@@ -825,6 +760,20 @@ internal ref struct Utf8BufferWriter
     public void Write<T>(T value, StandardFormat format = default)
         where T : IUtf8SpanFormattable
     {
+        if (format.Symbol == 'X' || format.Symbol == 'x')
+        {
+            if (typeof(T) == typeof(float))
+            {
+                Write("TODO"u8);
+                return;
+            }
+            else if (typeof(T) == typeof(double))
+            {
+                Write("TODO"u8);
+                return;
+            }
+        }
+
         Span<char> classicFormat = stackalloc char[2];
         if (format.Symbol != default)
         {
@@ -840,7 +789,6 @@ internal ref struct Utf8BufferWriter
                 classicFormat[1] = (char)('0' + format.Precision);
             }
         }
-
 
         if (!value.TryFormat(_buffer.Slice(_written), out var written, classicFormat, null))
         {
