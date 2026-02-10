@@ -12,14 +12,13 @@
 using System;
 using System.Buffers;
 using System.Buffers.Text;
-using System.ComponentModel.DataAnnotations;
 using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
-using System.Security.Cryptography;
+using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.Unicode;
 using Hexa.NET.ImGui;
-
 using DataType = nint;
 
 namespace Aemula.UI;
@@ -113,8 +112,8 @@ public sealed class MemoryEditor : DebuggerWindow
     private DataType DataEditingAddr;
     private bool DataEditingTakeFocus;
 
-    private readonly byte[] DataInputBuf = new byte[32];
-    private readonly byte[] AddrInputBuf = new byte[32];
+    private readonly byte[] DataInputBuf = GC.AllocateArray<byte>(32, pinned: true);
+    private readonly byte[] AddrInputBuf = GC.AllocateArray<byte>(32, pinned: true);
 
     private DataType GotoAddr;
     private DataType HighlightMin, HighlightMax;
@@ -199,7 +198,7 @@ public sealed class MemoryEditor : DebuggerWindow
             }
         }
         s.LineHeight = ImGui.GetTextLineHeight();
-        s.GlyphWidth = ImGui.CalcTextSize("F").X - 1;                // We assume the font is mono-space
+        s.GlyphWidth = ImGui.CalcTextSize("F"u8).X - 1;         // We assume the font is mono-space
         s.HexCellWidth = (int)(s.GlyphWidth * 2.5f);            // "FF " we include trailing space in the width to easily catch clicks everywhere
         s.SpacingBetweenMidCols = (int)(s.HexCellWidth * 2.5f); // Every OptMidColsCount columns we add a bit of extra spacing
         s.OffsetHexMinX = (s.AddrDigitsCount + 2) * s.GlyphWidth;
@@ -218,40 +217,9 @@ public sealed class MemoryEditor : DebuggerWindow
         return s;
     }
 
-    private string FixedHex(DataType v, int count)
-    {
-        return v.ToString(OptUpperCaseHex ? "X" : "x").PadLeft(count, '0');
-    }
-
     private static bool TryHexParse(byte[] bytes, out DataType result)
     {
-        var input = System.Text.Encoding.UTF8.GetString(bytes).ToString();
-        return DataType.TryParse(input, NumberStyles.AllowHexSpecifier, CultureInfo.CurrentCulture, out result);
-    }
-
-    private static void ReplaceChars(byte[] bytes, string input)
-    {
-        var address = System.Text.Encoding.ASCII.GetBytes(input);
-        for (var i = 0; i < bytes.Length; i++)
-        {
-            bytes[i] = i < address.Length ? address[i] : (byte)0;
-        }
-    }
-
-    private static readonly string[] descs = { "Int8", "Uint8", "Int16", "Uint16", "Int32", "Uint32", "Int64", "Uint64", "Float", "Double" };
-
-    private static string DataTypeGetDesc(ImGuiDataType data_type)
-    {
-        Debug.Assert(data_type >= 0 && (int)data_type < descs.Length);
-        return descs[(int)data_type];
-    }
-
-    private static readonly DataType[] DataTypeSizes = { 1, 1, 2, 2, 4, 4, 8, 8, sizeof(float), sizeof(double) };
-
-    private static DataType DataTypeGetSize(ImGuiDataType data_type)
-    {
-        Debug.Assert(data_type >= 0 && (int)data_type < DataTypeSizes.Length);
-        return DataTypeSizes[(int)data_type];
+        return DataType.TryParse(bytes, NumberStyles.AllowHexSpecifier, CultureInfo.CurrentCulture, out result);
     }
 
     protected unsafe override void DrawOverride(EmulatorTime time)
@@ -292,7 +260,7 @@ public sealed class MemoryEditor : DebuggerWindow
         if (DataPreviewAddr >= MemorySize)
             DataPreviewAddr = DataType.MaxValue;
 
-        var preview_data_type_size = OptShowDataPreview ? DataTypeGetSize(PreviewDataType) : 0;
+        var preview_data_type_size = OptShowDataPreview ? GetPreviewDataTypeInfo(PreviewDataType).Size : 0;
 
         var data_editing_addr_next = DataType.MaxValue;
         if (DataEditingAddr != DataType.MaxValue)
@@ -307,22 +275,29 @@ public sealed class MemoryEditor : DebuggerWindow
         // Draw vertical separator
         var window_pos = ImGui.GetWindowPos();
         if (OptShowAscii)
-            drawList.AddLine(new Vector2(window_pos.X + s.OffsetAsciiMinX - s.GlyphWidth, window_pos.Y), new Vector2(window_pos.X + s.OffsetAsciiMinX - s.GlyphWidth, window_pos.Y + 9999), ImGui.GetColorU32(ImGuiCol.Border));
+            drawList.AddLine(
+                new Vector2(window_pos.X + s.OffsetAsciiMinX - s.GlyphWidth, window_pos.Y),
+                new Vector2(window_pos.X + s.OffsetAsciiMinX - s.GlyphWidth, window_pos.Y + 9999),
+                ImGui.GetColorU32(ImGuiCol.Border));
 
         var color_text = ImGui.GetColorU32(ImGuiCol.Text);
         var color_disabled = OptGreyOutZeroes ? ImGui.GetColorU32(ImGuiCol.TextDisabled) : color_text;
 
-        //var format_byte = OptUpperCaseHex ? "%02X" : "%02x";
-        //var format_byte_space = OptUpperCaseHex ? "%02X " : "%02x ";
-
         MouseHovered = false;
         MouseHoveredAddr = 0;
 
+        Span<byte> addressBuffer = stackalloc byte[16];
+        Span<byte> dataBuffer = stackalloc byte[4];
+
         while (clipper.Step())
-            for (int line_i = clipper.DisplayStart; line_i < clipper.DisplayEnd; line_i++) // display only visible lines
+            for (var line_i = clipper.DisplayStart; line_i < clipper.DisplayEnd; line_i++) // display only visible lines
             {
                 var addr = (DataType)line_i * Cols;
-                ImGui.Text(FixedHex(base_display_addr + addr, s.AddrDigitsCount) + ": ");
+
+                var addressBufferWriter = new Utf8BufferWriter(addressBuffer);
+                addressBufferWriter.Write(base_display_addr + addr, GetAddressStandardFormat(s));
+                addressBufferWriter.Write(": \0"u8);
+                ImGui.Text(addressBufferWriter.WrittenSpan);
 
                 // Draw Hexadecimal
                 for (int n = 0; n < Cols && addr < MemorySize; n++, addr++)
@@ -371,15 +346,15 @@ public sealed class MemoryEditor : DebuggerWindow
                         if (DataEditingTakeFocus)
                         {
                             ImGui.SetKeyboardFocusHere(0);
-                            ReplaceChars(AddrInputBuf, FixedHex(base_display_addr + addr, s.AddrDigitsCount));
-                            ReplaceChars(DataInputBuf, FixedHex(_readMemoryCallback(addr), 2));
+
+                            var addressInputBufferWriter = new Utf8BufferWriter(AddrInputBuf);
+                            addressInputBufferWriter.Write(base_display_addr + addr, GetAddressStandardFormat(s));
+                            addressInputBufferWriter.Write("\0"u8);
+
+                            var dataInputBufferWriter = new Utf8BufferWriter(DataInputBuf);
+                            dataInputBufferWriter.Write(_readMemoryCallback(addr), GetDataStandardFormat());
+                            dataInputBufferWriter.Write("\0"u8);
                         }
-
-                        //var input_text_user_data = new InputTextUserData();
-                        //input_text_user_data.CursorPos = -1;
-
-                        var currentBufOverwrite = new byte[3];
-                        ReplaceChars(currentBufOverwrite, FixedHex(_readMemoryCallback(addr), 2));
 
                         var cursorPos = -1;
 
@@ -389,6 +364,12 @@ public sealed class MemoryEditor : DebuggerWindow
                                 cursorPos = data->CursorPos;
                             if (data->SelectionStart == 0 && data->SelectionEnd == data->BufTextLen)
                             {
+                                Span<byte> currentBufOverwrite = stackalloc byte[3];
+
+                                var currentBufOverwriteWriter = new Utf8BufferWriter(currentBufOverwrite);
+                                currentBufOverwriteWriter.Write(_readMemoryCallback(addr), GetDataStandardFormat());
+                                currentBufOverwriteWriter.Write("\0"u8);
+
                                 // When not editing a byte, always refresh its InputText content pulled from underlying memory data
                                 // (this is a bit tricky, since InputText technically "owns" the master copy of the buffer we edit it in there)
                                 data->DeleteChars(0, data->BufTextLen);
@@ -438,18 +419,28 @@ public sealed class MemoryEditor : DebuggerWindow
                             if ((b >= 32 && b < 128))
                                 ImGui.Text($".{(char)b} ");
                             else if (b == 0xFF && OptGreyOutZeroes)
-                                ImGui.TextDisabled("## ");
+                                ImGui.TextDisabled("## "u8);
                             else if (b == 0x00)
-                                ImGui.Text("   ");
+                                ImGui.Text("   "u8);
                             else
-                                ImGui.Text(FixedHex(b, 2) + " ");
+                            {
+                                var dataBufferWriter = new Utf8BufferWriter(dataBuffer);
+                                dataBufferWriter.Write(b, GetDataStandardFormat());
+                                dataBufferWriter.Write(" \0"u8);
+                                ImGui.Text(dataBuffer);
+                            }
                         }
                         else
                         {
                             if (b == 0 && OptGreyOutZeroes)
-                                ImGui.TextDisabled("00 ");
+                                ImGui.TextDisabled("00 "u8);
                             else
-                                ImGui.Text(FixedHex(b, 2) + " ");
+                            {
+                                var dataBufferWriter = new Utf8BufferWriter(dataBuffer);
+                                dataBufferWriter.Write(b, GetDataStandardFormat());
+                                dataBufferWriter.Write(" \0"u8);
+                                ImGui.Text(dataBuffer);
+                            }
                         }
                         if (ImGui.IsItemHovered())
                         {
@@ -542,7 +533,7 @@ public sealed class MemoryEditor : DebuggerWindow
         {
             if (GotoAddr < MemorySize)
             {
-                ImGui.BeginChild("##scrolling");
+                ImGui.BeginChild("##scrolling"u8);
                 ImGui.SetScrollY((GotoAddr / Cols) * ImGui.GetTextLineHeight() - avail_size.Y * 0.5f);
                 ImGui.EndChild();
                 DataEditingAddr = DataPreviewAddr = GotoAddr;
@@ -556,37 +547,50 @@ public sealed class MemoryEditor : DebuggerWindow
         if (OptShowOptions)
             if (ImGui.IsMouseHoveringRect(contents_pos_start, contents_pos_end))
                 if (ImGui.IsWindowHovered(ImGuiHoveredFlags.ChildWindows) && ImGui.IsMouseReleased(ImGuiMouseButton.Right))
-                    ImGui.OpenPopup("OptionsPopup");
+                    ImGui.OpenPopup("OptionsPopup"u8);
 
-        if (ImGui.BeginPopup("OptionsPopup"))
+        if (ImGui.BeginPopup("OptionsPopup"u8))
         {
             ImGui.SetNextItemWidth(s.GlyphWidth * 7 + style.FramePadding.X * 2.0f);
-            if (ImGui.DragInt("##cols", ref Cols, 0.2f, 4, 32, "%d cols")) { ContentsWidthChanged = true; if (Cols < 1) Cols = 1; }
-            ImGui.Checkbox("Show Data Preview", ref OptShowDataPreview);
-            ImGui.Checkbox("Show HexII", ref OptShowHexII);
-            if (ImGui.Checkbox("Show Ascii", ref OptShowAscii)) { ContentsWidthChanged = true; }
-            ImGui.Checkbox("Grey out zeroes", ref OptGreyOutZeroes);
-            ImGui.Checkbox("Uppercase Hex", ref OptUpperCaseHex);
+            if (ImGui.DragInt("##cols"u8, ref Cols, 0.2f, 4, 32, "%d cols"u8)) { ContentsWidthChanged = true; if (Cols < 1) Cols = 1; }
+            ImGui.Checkbox("Show Data Preview"u8, ref OptShowDataPreview);
+            ImGui.Checkbox("Show HexII"u8, ref OptShowHexII);
+            if (ImGui.Checkbox("Show Ascii"u8, ref OptShowAscii)) { ContentsWidthChanged = true; }
+            ImGui.Checkbox("Grey out zeroes"u8, ref OptGreyOutZeroes);
+            ImGui.Checkbox("Uppercase Hex"u8, ref OptUpperCaseHex);
 
             ImGui.EndPopup();
         }
     }
+
+    private StandardFormat GetAddressStandardFormat(in Sizes s) => new(OptUpperCaseHex ? 'X' : 'x', (byte)s.AddrDigitsCount);
+
+    private StandardFormat GetDataStandardFormat() => new(OptUpperCaseHex ? 'X' : 'x', 2);
 
     private unsafe void DrawOptionsLine(in Sizes s)
     {
         var style = ImGui.GetStyle();
 
         // Options menu
-        if (ImGui.Button("Options"))
-            ImGui.OpenPopup("OptionsPopup");
+        if (ImGui.Button("Options"u8))
+            ImGui.OpenPopup("OptionsPopup"u8);
+
 
         ImGui.SameLine();
-        ImGui.Text($"Range {FixedHex(base_display_addr, s.AddrDigitsCount)}..{FixedHex(base_display_addr + MemorySize - 1, s.AddrDigitsCount)}");
+
+        Span<byte> buffer = stackalloc byte[64];
+        var bufferWriter = new Utf8BufferWriter(buffer);
+        bufferWriter.Write("Range "u8);
+        bufferWriter.Write(base_display_addr, GetAddressStandardFormat(s));
+        bufferWriter.Write(".."u8);
+        bufferWriter.Write(base_display_addr + MemorySize - 1, GetAddressStandardFormat(s));
+        ImGui.Text(bufferWriter.WrittenSpan);
+
         ImGui.SameLine();
         ImGui.SetNextItemWidth((s.AddrDigitsCount + 1) * s.GlyphWidth + style.FramePadding.X * 2.0f);
         fixed (byte* addrInputBufPtr = &AddrInputBuf[0])
         {
-            if (ImGui.InputText("##addr", addrInputBufPtr, (nuint)AddrInputBuf.Length, ImGuiInputTextFlags.CharsHexadecimal | ImGuiInputTextFlags.EnterReturnsTrue))
+            if (ImGui.InputText("##addr"u8, addrInputBufPtr, (nuint)AddrInputBuf.Length, ImGuiInputTextFlags.CharsHexadecimal | ImGuiInputTextFlags.EnterReturnsTrue))
             {
                 if (TryHexParse(AddrInputBuf, out var goto_addr))
                 {
@@ -603,29 +607,62 @@ public sealed class MemoryEditor : DebuggerWindow
         //}
     }
 
-    private static readonly ImGuiDataType[] supported_data_types = { ImGuiDataType.S8, ImGuiDataType.U8, ImGuiDataType.S16, ImGuiDataType.U16, ImGuiDataType.S32, ImGuiDataType.U32, ImGuiDataType.S64, ImGuiDataType.U64, ImGuiDataType.Float, ImGuiDataType.Double };
+    private readonly ref struct PreviewDataTypeInfo(int size, ReadOnlySpan<byte> description)
+    {
+        public readonly int Size = size;
+        public readonly ReadOnlySpan<byte> Description = description;
+    }
+
+    private static PreviewDataTypeInfo GetPreviewDataTypeInfo(ImGuiDataType dataType) => dataType switch
+    {
+        ImGuiDataType.S8 => new PreviewDataTypeInfo(1, "Byte"u8),
+        ImGuiDataType.U8 => new PreviewDataTypeInfo(1, "SByte"u8),
+        ImGuiDataType.S16 => new PreviewDataTypeInfo(2, "Int16"u8),
+        ImGuiDataType.U16 => new PreviewDataTypeInfo(2, "UInt16"u8),
+        ImGuiDataType.S32 => new PreviewDataTypeInfo(4, "Int32"u8),
+        ImGuiDataType.U32 => new PreviewDataTypeInfo(4, "UInt32"u8),
+        ImGuiDataType.S64 => new PreviewDataTypeInfo(8, "Int64"u8),
+        ImGuiDataType.U64 => new PreviewDataTypeInfo(8, "UInt64"u8),
+        ImGuiDataType.Float => new PreviewDataTypeInfo(4, "Float"u8),
+        ImGuiDataType.Double => new PreviewDataTypeInfo(8, "Double"u8),
+        _ => throw new NotSupportedException(),
+    };
+
+    private static readonly ImGuiDataType[] supported_data_types =
+    [
+        ImGuiDataType.S8,
+        ImGuiDataType.U8,
+        ImGuiDataType.S16,
+        ImGuiDataType.U16,
+        ImGuiDataType.S32,
+        ImGuiDataType.U32,
+        ImGuiDataType.S64,
+        ImGuiDataType.U64,
+        ImGuiDataType.Float,
+        ImGuiDataType.Double
+    ];
 
     private void DrawPreviewLine(in Sizes s)
     {
         var style = ImGui.GetStyle();
         ImGui.AlignTextToFramePadding();
-        ImGui.Text("Preview as:");
+        ImGui.Text("Preview as:"u8);
         ImGui.SameLine();
         ImGui.SetNextItemWidth((s.GlyphWidth * 10.0f) + style.FramePadding.X * 2.0f + style.ItemInnerSpacing.X);
 
-        if (ImGui.BeginCombo("##combo_type", DataTypeGetDesc(PreviewDataType), ImGuiComboFlags.HeightLargest))
+        if (ImGui.BeginCombo("##combo_type"u8, GetPreviewDataTypeInfo(PreviewDataType).Description, ImGuiComboFlags.HeightLargest))
         {
             for (int n = 0; n < supported_data_types.Length; n++)
             {
                 ImGuiDataType data_type = supported_data_types[n];
-                if (ImGui.Selectable(DataTypeGetDesc(data_type), PreviewDataType == data_type))
+                if (ImGui.Selectable(GetPreviewDataTypeInfo(data_type).Description, PreviewDataType == data_type))
                     PreviewDataType = data_type;
             }
             ImGui.EndCombo();
         }
         ImGui.SameLine();
         ImGui.SetNextItemWidth((s.GlyphWidth * 6.0f) + style.FramePadding.X * 2.0f + style.ItemInnerSpacing.X);
-        ImGui.Combo("##combo_endianness", ref PreviewEndianness, "LE\0BE\0\0");
+        ImGui.Combo("##combo_endianness"u8, ref PreviewEndianness, "LE\0BE\0\0"u8);
 
         Span<byte> buf = stackalloc byte[128];
         float x = s.GlyphWidth * 6.0f;
@@ -633,22 +670,19 @@ public sealed class MemoryEditor : DebuggerWindow
         if (has_value)
             DrawPreviewData(DataPreviewAddr, PreviewDataType, DataFormat.Dec, buf);
         ReadOnlySpan<byte> naBuf = "N/A"u8;
-        ImGui.Text("Dec"); ImGui.SameLine(x); ImGui.TextUnformatted(has_value ? buf : naBuf);
+        ImGui.Text("Dec"u8); ImGui.SameLine(x); ImGui.TextUnformatted(has_value ? buf : naBuf);
         if (has_value)
             DrawPreviewData(DataPreviewAddr, PreviewDataType, DataFormat.Hex, buf);
-        ImGui.Text("Hex"); ImGui.SameLine(x); ImGui.TextUnformatted(has_value ? buf : naBuf);
+        ImGui.Text("Hex"u8); ImGui.SameLine(x); ImGui.TextUnformatted(has_value ? buf : naBuf);
         if (has_value)
             DrawPreviewData(DataPreviewAddr, PreviewDataType, DataFormat.Bin, buf);
         buf[buf.Length - 1] = 0;
-        ImGui.Text("Bin"); ImGui.SameLine(x); ImGui.TextUnformatted(has_value ? buf : naBuf);
+        ImGui.Text("Bin"u8); ImGui.SameLine(x); ImGui.TextUnformatted(has_value ? buf : naBuf);
     }
 
     private unsafe void DrawPreviewData(DataType addr, ImGuiDataType data_type, DataFormat dataFormat, Span<byte> out_buf)
     {
-        // TODO: Don't do this, it's slow.
-        out_buf.Clear();
-
-        var elem_size = DataTypeGetSize(data_type);
+        var elem_size = GetPreviewDataTypeInfo(data_type).Size;
         var size = addr + elem_size > MemorySize ? MemorySize - addr : elem_size;
         if (size > 8)
         {
@@ -656,7 +690,9 @@ public sealed class MemoryEditor : DebuggerWindow
         }
         Span<byte> buf = stackalloc byte[(int)size];
         for (int i = 0, n = (int)size; i < n; ++i)
+        {
             buf[i] = _readMemoryCallback(addr + i);
+        }
 
         var wantsLittleEndian = PreviewEndianness == 0;
         if (BitConverter.IsLittleEndian != wantsLittleEndian)
@@ -677,6 +713,7 @@ public sealed class MemoryEditor : DebuggerWindow
                 }
                 out_buf[pos++] = (byte)' ';
             }
+            out_buf[pos++] = (byte)'\0';
             return;
         }
 
@@ -686,6 +723,7 @@ public sealed class MemoryEditor : DebuggerWindow
             out_buf[1] = (byte)'O';
             out_buf[2] = (byte)'D';
             out_buf[3] = (byte)'O';
+            out_buf[4] = (byte)'\0';
             return;
         }
 
@@ -705,52 +743,55 @@ public sealed class MemoryEditor : DebuggerWindow
             out_buf = out_buf[2..];
         }
 
-        out_buf[0] = 0;
+        //out_buf[0] = 0;
+        int bytesWritten;
         switch (data_type)
         {
            case ImGuiDataType.S8:
-                Utf8Formatter.TryFormat((sbyte)buf[0], out_buf, out _, format);
+                Utf8Formatter.TryFormat((sbyte)buf[0], out_buf, out bytesWritten, format);
                 break;
 
             case ImGuiDataType.U8:
-                Utf8Formatter.TryFormat(buf[0], out_buf, out _, format);
+                Utf8Formatter.TryFormat(buf[0], out_buf, out bytesWritten, format);
                 break;
 
             case ImGuiDataType.S16:
-                Utf8Formatter.TryFormat(BitConverter.ToInt16(buf), out_buf, out _, format);
+                Utf8Formatter.TryFormat(BitConverter.ToInt16(buf), out_buf, out bytesWritten, format);
                 break;
 
             case ImGuiDataType.U16:
-                Utf8Formatter.TryFormat(BitConverter.ToUInt16(buf), out_buf, out _, format);
+                Utf8Formatter.TryFormat(BitConverter.ToUInt16(buf), out_buf, out bytesWritten, format);
                 break;
 
             case ImGuiDataType.S32:
-                Utf8Formatter.TryFormat(BitConverter.ToInt32(buf), out_buf, out _, format);
+                Utf8Formatter.TryFormat(BitConverter.ToInt32(buf), out_buf, out bytesWritten, format);
                 break;
 
             case ImGuiDataType.U32:
-                Utf8Formatter.TryFormat(BitConverter.ToUInt32(buf), out_buf, out _, format);
+                Utf8Formatter.TryFormat(BitConverter.ToUInt32(buf), out_buf, out bytesWritten, format);
                 break;
             
             case ImGuiDataType.S64:
-                Utf8Formatter.TryFormat(BitConverter.ToInt64(buf), out_buf, out _, format);
+                Utf8Formatter.TryFormat(BitConverter.ToInt64(buf), out_buf, out bytesWritten, format);
                 break;
 
             case ImGuiDataType.U64:
-                Utf8Formatter.TryFormat(BitConverter.ToUInt64(buf), out_buf, out _, format);
+                Utf8Formatter.TryFormat(BitConverter.ToUInt64(buf), out_buf, out bytesWritten, format);
                 break;
 
             case ImGuiDataType.Float:
-                Utf8Formatter.TryFormat(BitConverter.ToSingle(buf), out_buf, out _, format);
+                Utf8Formatter.TryFormat(BitConverter.ToSingle(buf), out_buf, out bytesWritten, format);
                 break;
             
             case ImGuiDataType.Double:
-                Utf8Formatter.TryFormat(BitConverter.ToDouble(buf), out_buf, out _, format);
+                Utf8Formatter.TryFormat(BitConverter.ToDouble(buf), out_buf, out bytesWritten, format);
                 break;
 
             default:
                 throw new InvalidOperationException();
         }
+
+        Utf8.TryWrite(out_buf[bytesWritten..], $"\0", out _);
     }
 
     private enum DataFormat
@@ -758,5 +799,55 @@ public sealed class MemoryEditor : DebuggerWindow
         Bin,
         Dec,
         Hex,
+    }
+}
+
+internal ref struct Utf8BufferWriter
+{
+    private readonly Span<byte> _buffer;
+    private int _written;
+
+    public Utf8BufferWriter(Span<byte> buffer)
+    {
+        _buffer = buffer;
+        _written = 0;
+    }
+
+    public readonly ReadOnlySpan<byte> WrittenSpan => _buffer[.._written];
+
+    public void Write(ReadOnlySpan<byte> text)
+    {
+        text.CopyTo(_buffer[_written..]);
+
+        _written += text.Length;
+    }
+
+    public void Write<T>(T value, StandardFormat format = default)
+        where T : IUtf8SpanFormattable
+    {
+        Span<char> classicFormat = stackalloc char[2];
+        if (format.Symbol != default)
+        {
+            classicFormat[0] = format.Symbol;
+
+            if (format.HasPrecision)
+            {
+                if (format.Precision >= 10)
+                {
+                    throw new NotSupportedException();
+                }
+
+                classicFormat[1] = (char)('0' + format.Precision);
+            }
+        }
+
+
+        if (!value.TryFormat(_buffer.Slice(_written), out var written, classicFormat, null))
+        {
+            throw new InvalidOperationException();
+        }
+
+
+        _written += written;
     }
 }
