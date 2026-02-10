@@ -90,8 +90,6 @@ public sealed class ScreenDisplayWindow : DebuggerWindow
 
         SDL.UnmapGPUTransferBuffer(_graphicsDevice, _transferBuffer);
 
-        //var commandBuffer = SDL.AcquireGPUCommandBuffer(_graphicsDevice);
-
         var copyPass = SDL.BeginGPUCopyPass(commandBuffer);
 
         SDL.UploadToGPUTexture(
@@ -101,8 +99,6 @@ public sealed class ScreenDisplayWindow : DebuggerWindow
             false);
 
         SDL.EndGPUCopyPass(copyPass);
-
-        //SDL.SubmitGPUCommandBuffer(commandBuffer);
     }
 
     protected override void DrawOverride(EmulatorTime time)
