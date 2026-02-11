@@ -119,6 +119,22 @@ public static class Program
             }
         }
 
+        unsafe
+        {
+            // We never free these, but that's okay, they're alive as long as this application is.
+            var debuggerWindowsHandle = GCHandle.Alloc(debuggerWindows);
+            var typeNamePtr = (byte*)Marshal.StringToHGlobalAnsi("Aemula");
+
+            var settingsHandler = new ImGuiSettingsHandler(
+                typeName: typeNamePtr,
+                typeHash: ImGuiP.ImHashStr(typeNamePtr),
+                readOpenFn: &ImGuiSettingsReadOpen,
+                readLineFn: &ImGuiSettingsReadLine,
+                writeAllFn: &ImGuiSettingsWriteAll,
+                userData: (void*)GCHandle.ToIntPtr(debuggerWindowsHandle));
+            ImGuiP.AddSettingsHandler(ref settingsHandler);
+        }
+
         system.LoadProgram(args[1]);
 
         Vector4 clearColor = new(0.45f, 0.55f, 0.60f, 1.00f);
@@ -270,37 +286,37 @@ public static class Program
         var viewport = ImGui.GetMainViewport();
         var dockSpaceId = ImGui.DockSpaceOverViewport(viewport, dockSpaceFlags);
 
-        //if (_firstTime)
-        //{
-        //    _firstTime = false;
+        if (firstRun)
+        {
+            firstRun = false;
 
-        //    ImGuiExtra.DockBuilderRemoveNode(dockSpaceId);
-        //    ImGuiExtra.DockBuilderAddNode(dockSpaceId, dockSpaceFlags | ImGuiExtra.ImGuiDockNodeFlags_DockSpace);
-        //    ImGuiExtra.DockBuilderSetNodeSize(dockSpaceId, viewport.Size);
+            ImGuiP.DockBuilderRemoveNode(dockSpaceId);
+            ImGuiP.DockBuilderAddNode(dockSpaceId, dockSpaceFlags | (ImGuiDockNodeFlags)ImGuiDockNodeFlagsPrivate.Space);
+            ImGuiP.DockBuilderSetNodeSize(dockSpaceId, viewport.Size);
 
-        //    var dockIdLeft = ImGuiExtra.DockBuilderSplitNode(dockSpaceId, ImGuiDir.Left, 0.2f, out _, out dockSpaceId);
-        //    var dockIdRight = ImGuiExtra.DockBuilderSplitNode(dockSpaceId, ImGuiDir.Right, 0.4f, out _, out dockSpaceId);
-        //    var dockIdDown = ImGuiExtra.DockBuilderSplitNode(dockSpaceId, ImGuiDir.Down, 0.25f, out _, out dockSpaceId);
+            uint outIdAtDir = 0;
+            var dockIdLeft = ImGuiP.DockBuilderSplitNode(dockSpaceId, ImGuiDir.Left, 0.2f, &outIdAtDir, &dockSpaceId);
+            var dockIdRight = ImGuiP.DockBuilderSplitNode(dockSpaceId, ImGuiDir.Right, 0.4f, &outIdAtDir, &dockSpaceId);
+            var dockIdDown = ImGuiP.DockBuilderSplitNode(dockSpaceId, ImGuiDir.Down, 0.25f, &outIdAtDir, &dockSpaceId);
 
-        //    foreach (var window in windows)
-        //    {
-        //        uint? dockId = window.PreferredPane switch
-        //        {
-        //            Pane.Left => dockIdLeft,
-        //            Pane.Bottom => dockIdDown,
-        //            Pane.Right => dockIdRight,
-        //            _ => null,
-        //        };
-        //        if (dockId != null)
-        //        {
-        //            ImGuiExtra.DockBuilderDockWindow($"{window.DisplayName}##{window.Name}", dockId.Value);
-        //        }
-        //    }
+            foreach (var window in windows)
+            {
+                uint? dockId = window.PreferredPane switch
+                {
+                    Pane.Left => dockIdLeft,
+                    Pane.Bottom => dockIdDown,
+                    Pane.Right => dockIdRight,
+                    _ => null,
+                };
+                if (dockId != null)
+                {
+                    window.IsOpen = true;
+                    ImGuiP.DockBuilderDockWindow($"{window.DisplayName}##{window.Name}", dockId.Value);
+                }
+            }
 
-        //    ImGuiExtra.DockBuilderFinish(dockSpaceId);
-        //}
-
-        //ImGui.End();
+            ImGuiP.DockBuilderFinish(dockSpaceId);
+        }
     }
 
     private static unsafe void DrawMainMenu(List<DebuggerWindow> debuggerWindows)
@@ -323,6 +339,57 @@ public static class Program
             }
 
             ImGui.EndMainMenuBar();
+        }
+    }
+
+    private static unsafe void* ImGuiSettingsReadOpen(ImGuiContext* context, ImGuiSettingsHandler* handler, byte* name)
+    {
+        var debuggerWindows = (List<DebuggerWindow>)GCHandle.FromIntPtr((nint)handler->UserData).Target!;
+
+        var nameString = Marshal.PtrToStringAnsi((nint)name);
+
+        foreach (var debuggerWindow in debuggerWindows)
+        {
+            if (debuggerWindow.Name == nameString)
+            {
+                return (void*)GCHandle.ToIntPtr(debuggerWindow.GCHandle);
+            }
+        }
+
+        return null;
+    }
+
+    private static unsafe void ImGuiSettingsReadLine(ImGuiContext* context, ImGuiSettingsHandler* handler, void* entry, byte* line)
+    {
+        var debuggerWindow = (DebuggerWindow)GCHandle.FromIntPtr((nint)entry).Target!;
+
+        var lineString = Marshal.PtrToStringAnsi((nint)line);
+
+        if (lineString == "IsOpen=1")
+        {
+            debuggerWindow.IsOpen = true;
+        }
+    }
+
+    private static unsafe void ImGuiSettingsWriteAll(ImGuiContext* context, ImGuiSettingsHandler* handler, ImGuiTextBuffer* buffer)
+    {
+        var debuggerWindows = (List<DebuggerWindow>)GCHandle.FromIntPtr((nint)handler->UserData).Target!;
+
+        // [Aemula][Memory Editor #1]
+        // IsOpen=1
+
+        buffer->reserve(buffer->size() + debuggerWindows.Count * 32);
+        foreach (var debuggerWindow in debuggerWindows)
+        {
+            buffer->append("["u8);
+            buffer->append(handler->TypeName);
+            buffer->append("]["u8);
+            buffer->append(debuggerWindow.Name);
+            buffer->append("]\n"u8);
+            if (debuggerWindow.IsOpen)
+            {
+                buffer->append("IsOpen=1\n"u8);
+            }
         }
     }
 }
