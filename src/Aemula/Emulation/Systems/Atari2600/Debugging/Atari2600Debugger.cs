@@ -91,22 +91,15 @@ internal sealed class Atari2600Debugger : Debugger
         }
     }
 
-    public override IEnumerable<DebuggerWindow> CreateDebuggerWindows()
+    public override void CreateDebuggerWindows(List<DebuggerWindow> result)
     {
-        foreach (var debuggerWindow in base.CreateDebuggerWindows())
-        {
-            yield return debuggerWindow;
-        }
+        base.CreateDebuggerWindows(result);
 
-        foreach (var debuggerWindow in _system.CreateDebuggerWindows())
-        {
-            yield return debuggerWindow;
-        }
+        _system.CreateDebuggerWindows(result);
 
-        yield return new BreakpointsWindow(this);
+        result.Add(new BreakpointsWindow(this));
 
-        //yield return new ScreenDisplayWindow(_system.VideoOutput.DisplayBuffer);
-
-        //yield return new MemoryEditor(1, _system.ReadByteDebug, _system.WriteByteDebug);
+        //result.Add(new ScreenDisplayWindow(_system.VideoOutput.DisplayBuffer));
+        //result.Add(new MemoryEditor(1, _system.ReadByteDebug, _system.WriteByteDebug));
     }
 }

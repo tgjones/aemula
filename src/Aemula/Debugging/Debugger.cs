@@ -10,7 +10,7 @@ public abstract class Debugger
 
     public readonly DebuggerMemoryCallbacks MemoryCallbacks;
 
-    public readonly List<DebuggerStepMode> StepModes = new List<DebuggerStepMode>();
+    public readonly List<DebuggerStepMode> StepModes = [];
     public int ActiveStepModeIndex;
 
     public readonly BreakpointManager Breakpoints;
@@ -82,8 +82,8 @@ public abstract class Debugger
         Disassembler.OnAddressExecuting(address);
     }
 
-    public virtual IEnumerable<DebuggerWindow> CreateDebuggerWindows()
+    public virtual void CreateDebuggerWindows(List<DebuggerWindow> result)
     {
-        yield return new DisassemblyWindow(this);
+        result.Add(new DisassemblyWindow(this));
     }
 }

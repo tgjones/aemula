@@ -359,7 +359,10 @@ public sealed class MemoryEditor : DebuggerWindow
 
                         var cursorPos = -1;
 
-                        unsafe int Callback(ImGuiInputTextCallbackData* data)
+                        // TODO: This allocates every time. Also, there's no Hexa.NET.ImGui.InputText(...)
+                        // overload that lets us pass an unmanaged function pointer, so internally
+                        // Hexa.NET.ImGui calls Marshal.GetFunctionPointerForDelegate() every frame which is not ideal.
+                        int Callback(ImGuiInputTextCallbackData* data)
                         {
                             if (!data->HasSelection())
                                 cursorPos = data->CursorPos;

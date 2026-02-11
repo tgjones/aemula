@@ -435,10 +435,10 @@ public sealed partial class Ricoh2C02Chip
         return address;
     }
 
-    public IEnumerable<DebuggerWindow> CreateDebuggerWindows()
+    internal void CreateDebuggerWindows(List<DebuggerWindow> result)
     {
-        yield return new PpuStateWindow(this);
-        yield return new PaletteWindow(this);
+        result.Add(new PpuStateWindow(this));
+        result.Add(new PaletteWindow(this));
     }
 
     internal Color GetColor(ushort address)

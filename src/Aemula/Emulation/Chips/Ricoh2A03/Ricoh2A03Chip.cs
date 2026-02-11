@@ -187,11 +187,8 @@ public sealed partial class Ricoh2A03Chip
         }
     }
 
-    public IEnumerable<DebuggerWindow> CreateDebuggerWindows()
+    public void CreateDebuggerWindows(List<DebuggerWindow> result)
     {
-        foreach (var debuggerWindow in _cpuCore.CreateDebuggerWindows())
-        {
-            yield return debuggerWindow;
-        }
+        _cpuCore.CreateDebuggerWindows(result);
     }
 }

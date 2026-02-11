@@ -23,7 +23,9 @@ public class Oscillator(float freeRunFrequency, int resolution)
         throw new System.NotImplementedException();
     }
 
+#pragma warning disable CA1822 // Mark members as static
     public void OnSyncSignalDetected()
+#pragma warning restore CA1822 // Mark members as static
     {
         // If the oscillator's current state is close to the point where it
         // would naturally trigger a retrace, trigger a retrace at this

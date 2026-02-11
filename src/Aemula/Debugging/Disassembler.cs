@@ -3,20 +3,13 @@ using System.Collections.Generic;
 
 namespace Aemula.Debugging;
 
-public abstract class Disassembler
+public abstract class Disassembler(DebuggerMemoryCallbacks memoryCallbacks)
 {
-    protected readonly DebuggerMemoryCallbacks MemoryCallbacks;
+    protected readonly DebuggerMemoryCallbacks MemoryCallbacks = memoryCallbacks;
 
-    public readonly DisassemblyEntry[] Cache;
+    public readonly DisassemblyEntry[] Cache = new DisassemblyEntry[0x10000];
 
     internal bool Changed;
-
-    public Disassembler(DebuggerMemoryCallbacks memoryCallbacks)
-    {
-        Cache = new DisassemblyEntry[0x10000];
-
-        MemoryCallbacks = memoryCallbacks;
-    }
 
     public void Reset()
     {
@@ -87,7 +80,11 @@ public abstract class Disassembler
         DisassembleAddresses([address]);
     }
 
+#pragma warning disable CA1822 // Mark members as static
+#pragma warning disable IDE0060 // Remove unused parameter
     public void OnDataWritten(ushort address)
+#pragma warning restore IDE0060 // Remove unused parameter
+#pragma warning restore CA1822 // Mark members as static
     {
         // TODO: Invalidate cache for this address.
     }

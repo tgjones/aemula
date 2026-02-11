@@ -287,9 +287,9 @@ public partial class Mos6502Chip
         Reset = 4,
     }
 
-    public IEnumerable<DebuggerWindow> CreateDebuggerWindows()
+    internal void CreateDebuggerWindows(List<DebuggerWindow> result)
     {
-        yield return new CpuStateWindow(this);
+        result.Add(new CpuStateWindow(this));
     }
 }
 

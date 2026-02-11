@@ -536,8 +536,8 @@ public sealed class TiaChip
         }
     }
 
-    public IEnumerable<DebuggerWindow> CreateDebuggerWindows()
+    public void CreateDebuggerWindows(List<DebuggerWindow> result)
     {
-        yield return new TiaWindow(this);
+        result.Add(new TiaWindow(this));
     }
 }

@@ -37,18 +37,12 @@ public sealed class SpaceInvadersDebugger : Debugger
         }
     }
 
-    public override IEnumerable<DebuggerWindow> CreateDebuggerWindows()
+    public override void CreateDebuggerWindows(List<DebuggerWindow> result)
     {
-        foreach (var debuggerWindow in base.CreateDebuggerWindows())
-        {
-            yield return debuggerWindow;
-        }
+        base.CreateDebuggerWindows(result);
 
-        foreach (var debuggerWindow in _system.Cpu.CreateDebuggerWindows())
-        {
-            yield return debuggerWindow;
-        }
+        _system.Cpu.CreateDebuggerWindows(result);
 
-        yield return new ScreenDisplayWindow(_system.Display, 90);
+        result.Add(new ScreenDisplayWindow(_system.Display, 90));
     }
 }

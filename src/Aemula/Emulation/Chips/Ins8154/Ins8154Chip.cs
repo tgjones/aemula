@@ -15,7 +15,7 @@ public struct Ins8154Pins
     /// </summary>
     public bool CS1;
 
-    internal bool IsChipActive() => !CS0 && CS1;
+    internal readonly bool IsChipActive() => !CS0 && CS1;
 
     /// <summary>
     /// Read strobe.

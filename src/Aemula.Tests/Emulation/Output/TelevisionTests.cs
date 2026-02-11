@@ -99,7 +99,9 @@ internal class TelevisionTests
                 //{
                 //    break;
                 //}
+#pragma warning disable IDE0059 // Unnecessary assignment of a value
                 foundHSync = true;
+#pragma warning restore IDE0059 // Unnecessary assignment of a value
                 xPos = 0;
                 yPos++;
             }
@@ -108,7 +110,9 @@ internal class TelevisionTests
             const int vSyncDuration = 380; // TODO
             if (!isBelowSyncLevel && syncSamples >= vSyncDuration)
             {
+#pragma warning disable IDE0059 // Unnecessary assignment of a value
                 foundVSync = true;
+#pragma warning restore IDE0059 // Unnecessary assignment of a value
                 yPos = 0;
             }
 
