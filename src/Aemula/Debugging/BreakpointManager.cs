@@ -34,7 +34,7 @@ public sealed class BreakpointManager
             false,
             false,
             false,
-            (in Breakpoint breakpoint, ushort pc) => pc == breakpoint.Address,
+            (in breakpoint, pc) => pc == breakpoint.Address,
             address => 0));
 
         AddBreakpointTypeDefinition(new BreakpointTypeDefinition(
@@ -43,7 +43,7 @@ public sealed class BreakpointManager
             true,
             true,
             false,
-            (in Breakpoint breakpoint, ushort pc) => EvaluateCondition(breakpoint, _memoryCallbacks.Read(breakpoint.Address)),
+            (in breakpoint, pc) => EvaluateCondition(breakpoint, _memoryCallbacks.Read(breakpoint.Address)),
             address => _memoryCallbacks.Read(address)));
 
         AddBreakpointTypeDefinition(new BreakpointTypeDefinition(
@@ -52,7 +52,7 @@ public sealed class BreakpointManager
             true,
             false,
             true,
-            (in Breakpoint breakpoint, ushort pc) => EvaluateCondition(breakpoint, _memoryCallbacks.ReadWord(breakpoint.Address)),
+            (in breakpoint, pc) => EvaluateCondition(breakpoint, _memoryCallbacks.ReadWord(breakpoint.Address)),
             address => _memoryCallbacks.ReadWord(address)));
 
         _breakpoints = new Breakpoint[MaxBreakpoints];

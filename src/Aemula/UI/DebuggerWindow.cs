@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using Hexa.NET.ImGui;
 using Hexa.NET.SDL3;
 
@@ -7,14 +8,17 @@ namespace Aemula.UI;
 
 public abstract class DebuggerWindow : IDisposable
 {
-    private bool _isVisible;
+    private readonly GCHandle _gcHandle;
+    private bool _isOpen;
+
+    public GCHandle GCHandle => _gcHandle;
 
     public virtual Vector2 DefaultSize { get; } = new Vector2(400, 300);
 
-    public bool IsVisible
+    public bool IsOpen
     {
-        get => _isVisible;
-        set => _isVisible = value;
+        get => _isOpen;
+        set => _isOpen = value;
     }
 
     public string Name => DisplayName;
@@ -23,11 +27,16 @@ public abstract class DebuggerWindow : IDisposable
 
     public virtual Pane PreferredPane => Pane.None;
 
+    protected DebuggerWindow()
+    {
+        _gcHandle = GCHandle.Alloc(this);
+    }
+
     public virtual void CreateGraphicsResources(SDLGPUDevicePtr graphicsDevice) { }
 
     public void Prepare(EmulatorTime time, SDLGPUCommandBufferPtr commandBuffer)
     {
-        if (!IsVisible)
+        if (!IsOpen)
         {
             return;
         }
@@ -39,14 +48,14 @@ public abstract class DebuggerWindow : IDisposable
 
     public void Draw(EmulatorTime time)
     {
-        if (!IsVisible)
+        if (!IsOpen)
         {
             return;
         }
 
         ImGui.SetNextWindowSize(DefaultSize, ImGuiCond.FirstUseEver);
 
-        if (ImGui.Begin($"{DisplayName}##{Name}", ref _isVisible))
+        if (ImGui.Begin($"{DisplayName}##{Name}", ref _isOpen))
         {
             DrawOverride(time);
         }
@@ -55,5 +64,8 @@ public abstract class DebuggerWindow : IDisposable
 
     protected abstract void DrawOverride(EmulatorTime time);
 
-    public virtual void Dispose() { }
+    public virtual void Dispose()
+    {
+        GC.SuppressFinalize(this);
+    }
 }

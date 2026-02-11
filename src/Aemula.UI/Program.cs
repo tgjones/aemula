@@ -1,20 +1,18 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
+using System.IO;
 using System.Numerics;
 using System.Runtime.InteropServices;
-using System.Text;
 using Aemula.Emulation.Systems.Atari2600;
 using Aemula.Emulation.Systems.Chip8;
 using Aemula.Emulation.Systems.Nes;
 using Aemula.Emulation.Systems.SpaceInvaders;
-using Aemula.UI;
 using Hexa.NET.ImGui;
 using Hexa.NET.ImGui.Backends.SDL3;
 using Hexa.NET.SDL3;
 
-namespace Aemula.Gui;
+namespace Aemula.UI;
 
 public static class Program
 {
@@ -79,7 +77,6 @@ public static class Program
             ImGuiConfigFlags.NavEnableKeyboard
             | ImGuiConfigFlags.NavEnableGamepad
             | ImGuiConfigFlags.DockingEnable;
-            //| ImGuiConfigFlags.ViewportsEnable;
 
         ImGui.StyleColorsDark();
         var style = ImGui.GetStyle();
@@ -88,27 +85,19 @@ public static class Program
         io.ConfigDpiScaleFonts = true;
         io.ConfigDpiScaleViewports = true;
 
-        // TODO: Don't know if we need this.
-        //if ((io.ConfigFlags & ImGuiConfigFlags.ViewportsEnable) != 0)
-        //{
-        //    style.WindowRounding = 0.0f;
-        //    style.Colors[(int)ImGuiCol.WindowBg].W = 1.0f;
-        //}
-
-        Hexa.NET.ImGui.Backends.SDL3.ImGuiImplSDL3.SetCurrentContext(ctx);
+        ImGuiImplSDL3.SetCurrentContext(ctx);
         unsafe
         {
-            Hexa.NET.ImGui.Backends.SDL3.ImGuiImplSDL3.InitForSDLGPU(
+            ImGuiImplSDL3.InitForSDLGPU(
                 new Hexa.NET.ImGui.Backends.SDL3.SDLWindowPtr(
                     (Hexa.NET.ImGui.Backends.SDL3.SDLWindow*)window.Handle));
 
-            Hexa.NET.ImGui.Backends.SDL3.ImGuiImplSDLGPU3InitInfo initInfo = new()
-            {
-                Device = (Hexa.NET.ImGui.Backends.SDL3.SDLGPUDevice*)gpuDevice.Handle,
-                ColorTargetFormat = (int)SDL.GetGPUSwapchainTextureFormat(gpuDevice, window),
-                MSAASamples = (int)SDLGPUSampleCount.Samplecount1
-            };
-            Hexa.NET.ImGui.Backends.SDL3.ImGuiImplSDL3.SDLGPU3Init(ref initInfo);
+            ImGuiImplSDLGPU3InitInfo initInfo = new(
+                (Hexa.NET.ImGui.Backends.SDL3.SDLGPUDevice*)gpuDevice.Handle,
+                colorTargetFormat: (int)SDL.GetGPUSwapchainTextureFormat(gpuDevice, window),
+                msaaSamples: (int)SDLGPUSampleCount.Samplecount1);
+
+            ImGuiImplSDL3.SDLGPU3Init(ref initInfo);
         }
 
         var stopwatch = new Stopwatch();
@@ -120,16 +109,25 @@ public static class Program
         var system = Systems[systemArg]();
 
         var debugger = system.CreateDebugger();
-        var debuggerWindows = debugger.CreateDebuggerWindows().ToArray();
-        foreach (var debuggerWindow in debuggerWindows)
+        var debuggerWindows = new List<DebuggerWindow>();
+        if (debugger != null)
         {
-            debuggerWindow.CreateGraphicsResources(gpuDevice);
-            debuggerWindow.IsVisible = true;
+            debugger.CreateDebuggerWindows(debuggerWindows);
+            foreach (var debuggerWindow in debuggerWindows)
+            {
+                debuggerWindow.CreateGraphicsResources(gpuDevice);
+            }
         }
 
         system.LoadProgram(args[1]);
 
         Vector4 clearColor = new(0.45f, 0.55f, 0.60f, 1.00f);
+
+        bool firstRun;
+        unsafe
+        {
+            firstRun = !File.Exists(Marshal.PtrToStringAnsi((nint)ImGui.GetIO().IniFilename));
+        }
 
         var done = false;
         while (!done)
@@ -188,9 +186,9 @@ public static class Program
                 debuggerWindow.Prepare(emulatorTime, commandBuffer);
             }
 
-            debugger.RunForDuration(deltaTimeSpan);
+            debugger?.RunForDuration(deltaTimeSpan);
 
-            DrawWindow(debuggerWindows);
+            DrawWindow(debuggerWindows, ref firstRun);
             DrawMainMenu(debuggerWindows);
 
             foreach (var debuggerWindow in debuggerWindows)
@@ -265,7 +263,7 @@ public static class Program
         SDL.Quit();
     }
 
-    private static unsafe void DrawWindow(DebuggerWindow[] windows)
+    private static unsafe void DrawWindow(List<DebuggerWindow> windows, ref bool firstRun)
     {
         const ImGuiDockNodeFlags dockSpaceFlags = ImGuiDockNodeFlags.None;
 
@@ -305,7 +303,7 @@ public static class Program
         //ImGui.End();
     }
 
-    private static unsafe void DrawMainMenu(DebuggerWindow[] debuggerWindows)
+    private static unsafe void DrawMainMenu(List<DebuggerWindow> debuggerWindows)
     {
         if (ImGui.BeginMainMenuBar())
         {
@@ -313,9 +311,9 @@ public static class Program
             {
                 foreach (var debuggerWindow in debuggerWindows)
                 {
-                    if (ImGui.MenuItem(debuggerWindow.DisplayName, (byte*)null, debuggerWindow.IsVisible, true))
+                    if (ImGui.MenuItem(debuggerWindow.DisplayName, (byte*)null, debuggerWindow.IsOpen, true))
                     {
-                        debuggerWindow.IsVisible = true;
+                        debuggerWindow.IsOpen = true;
 
                         ImGui.SetWindowFocus(debuggerWindow.Name);
                     }
@@ -327,84 +325,4 @@ public static class Program
             ImGui.EndMainMenuBar();
         }
     }
-}
-
-public static class ImGuiExtra
-{
-    public static unsafe void DockBuilderDockWindow(string window_name, uint node_id)
-    {
-        var windowNameByteCount = Encoding.UTF8.GetByteCount(window_name);
-        byte* windowNamePtr;
-        if (windowNameByteCount > 2048)
-        {
-            windowNamePtr = (byte*)Marshal.AllocHGlobal(windowNameByteCount);
-        }
-        else
-        {
-            byte* stackPtr = stackalloc byte[windowNameByteCount + 1];
-            windowNamePtr = stackPtr;
-        }
-
-        var windowNameSpan = new Span<byte>(windowNamePtr, windowNameByteCount + 1);
-        Encoding.UTF8.GetBytes(window_name, windowNameSpan);
-
-        ImGuiNativeExtra.igDockBuilderDockWindow(windowNamePtr, node_id);
-
-        if (windowNameByteCount > 2048)
-        {
-            Marshal.FreeHGlobal((IntPtr)windowNamePtr);
-        }
-    }
-
-    public static uint DockBuilderAddNode(uint id, ImGuiDockNodeFlags flags)
-    {
-        return ImGuiNativeExtra.igDockBuilderAddNode(id, flags);
-    }
-
-    public static void DockBuilderRemoveNode(uint id)
-    {
-        ImGuiNativeExtra.igDockBuilderRemoveNode(id);
-    }
-
-    public static void DockBuilderSetNodeSize(uint id, Vector2 size)
-    {
-        ImGuiNativeExtra.igDockBuilderSetNodeSize(id, size);
-    }
-
-    public static unsafe uint DockBuilderSplitNode(uint nodeId, ImGuiDir split_dir, float size_ratio_for_node_at_dir, out uint out_id_at_dir, out uint out_id_at_opposite_dir)
-    {
-        fixed (uint* out_id_at_dir_ptr = &out_id_at_dir)
-        fixed (uint* out_id_at_opposite_dir_ptr = &out_id_at_opposite_dir)
-        {
-            return ImGuiNativeExtra.igDockBuilderSplitNode(nodeId, split_dir, size_ratio_for_node_at_dir, out_id_at_dir_ptr, out_id_at_opposite_dir_ptr);
-        }
-    }
-
-    public static void DockBuilderFinish(uint id)
-    {
-        ImGuiNativeExtra.igDockBuilderFinish(id);
-    }
-
-    public const ImGuiDockNodeFlags ImGuiDockNodeFlags_DockSpace = (ImGuiDockNodeFlags)(1 << 10);
-}
-
-internal static class ImGuiNativeExtra
-{
-    [DllImport("cimgui", CallingConvention = CallingConvention.Cdecl)]
-    public unsafe static extern void igDockBuilderDockWindow(byte* window_name, uint node_id);
-
-    [DllImport("cimgui", CallingConvention = CallingConvention.Cdecl)]
-    public unsafe static extern uint igDockBuilderAddNode(uint id, ImGuiDockNodeFlags flags);
-
-    [DllImport("cimgui", CallingConvention = CallingConvention.Cdecl)]
-    public unsafe static extern void igDockBuilderRemoveNode(uint id);
-
-    [DllImport("cimgui", CallingConvention = CallingConvention.Cdecl)]
-    public unsafe static extern void igDockBuilderSetNodeSize(uint id, Vector2 size);
-
-    [DllImport("cimgui", CallingConvention = CallingConvention.Cdecl)]
-    public unsafe static extern uint igDockBuilderSplitNode(uint node_id, ImGuiDir split_dir, float size_ratio_for_node_at_dir, uint* out_id_at_dir, uint* out_id_at_opposite_dir);
-
-    [DllImport("cimgui", CallingConvention = CallingConvention.Cdecl)]
-    public unsafe static extern void igDockBuilderFinish(uint id);
 }

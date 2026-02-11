@@ -25,7 +25,7 @@ public sealed class Atari2600System : EmulatedSystem
 
     private ushort _lastPC;
 
-    private Cartridge _cartridge;
+    private Cartridge? _cartridge;
 
     internal Mos6507 Cpu => _cpu;
     //internal VideoOutput VideoOutput => _videoOutput;
@@ -215,17 +215,11 @@ public sealed class Atari2600System : EmulatedSystem
         return new Atari2600Debugger(this);
     }
 
-    internal IEnumerable<DebuggerWindow> CreateDebuggerWindows()
+    internal void CreateDebuggerWindows(List<DebuggerWindow> result)
     {
-        foreach (var debuggerWindow in Cpu.CreateDebuggerWindows())
-        {
-            yield return debuggerWindow;
-        }
+        Cpu.CreateDebuggerWindows(result);
 
-        foreach (var debuggerWindow in _tia.CreateDebuggerWindows())
-        {
-            yield return debuggerWindow;
-        }
+        _tia.CreateDebuggerWindows(result);
     }
 
     protected override void OnDispose()

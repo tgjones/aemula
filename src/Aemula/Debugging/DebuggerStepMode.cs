@@ -2,16 +2,9 @@
 
 namespace Aemula.Debugging;
 
-public readonly struct DebuggerStepMode
+public readonly struct DebuggerStepMode(string label, Func<bool> shouldStop, Action? setup = null)
 {
-    public readonly string Label;
-    public readonly Action? Setup;
-    public readonly Func<bool> ShouldStop;
-
-    public DebuggerStepMode(string label, Func<bool> shouldStop, Action? setup = null)
-    {
-        Label = label;
-        Setup = setup;
-        ShouldStop = shouldStop;
-    }
+    public readonly string Label = label;
+    public readonly Action? Setup = setup;
+    public readonly Func<bool> ShouldStop = shouldStop;
 }

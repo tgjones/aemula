@@ -6,16 +6,13 @@ using Hexa.NET.SDL3;
 
 namespace Aemula.Emulation.Systems.Nes.UI;
 
-internal sealed class PatternTableWindow : DebuggerWindow
+internal sealed class PatternTableWindow(NesSystem nes) : DebuggerWindow
 {
     private const int PatternTableSize = 128;
     private const int Scale = 2;
     private const int TransferBufferSizeInBytes = PatternTableSize * PatternTableSize * RgbaByte.SizeInBytes;
 
     private static readonly TimeSpan TextureUpdateInterval = TimeSpan.FromMilliseconds(200);
-
-    private readonly NesSystem _nes;
-
     private readonly RgbaByte[] _pixelData0 = new RgbaByte[PatternTableSize * PatternTableSize];
     private readonly RgbaByte[] _pixelData1 = new RgbaByte[PatternTableSize * PatternTableSize];
 
@@ -30,11 +27,6 @@ internal sealed class PatternTableWindow : DebuggerWindow
     public override string DisplayName => "NES PPU Pattern Table";
 
     public override Pane PreferredPane => Pane.Bottom;
-
-    public PatternTableWindow(NesSystem nes)
-    {
-        _nes = nes;
-    }
 
     public override void CreateGraphicsResources(SDLGPUDevicePtr graphicsDevice)
     {
@@ -125,8 +117,8 @@ internal sealed class PatternTableWindow : DebuggerWindow
                 var addressPlane0 = (ushort)baseAddress;
                 var addressPlane1 = (ushort)(baseAddress + 8);
 
-                var dataPlane0 = _nes.ReadChrRom(addressPlane0);
-                var dataPlane1 = _nes.ReadChrRom(addressPlane1);
+                var dataPlane0 = nes.ReadChrRom(addressPlane0);
+                var dataPlane1 = nes.ReadChrRom(addressPlane1);
 
                 for (var column = 0; column < 8; column++)
                 {

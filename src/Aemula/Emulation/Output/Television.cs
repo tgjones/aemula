@@ -7,17 +7,9 @@ public class Television
 
 }
 
-public class Oscillator
+public class Oscillator(float freeRunFrequency, int resolution)
 {
-    private readonly double _deltaPerSecond;
-
-    private float _timeSinceLastReset;
-    private float _value;
-
-    public Oscillator(float freeRunFrequency, int resolution)
-    {
-        _deltaPerSecond = (1.0f / freeRunFrequency) / resolution;
-    }
+    private readonly double _deltaPerSecond = (1.0f / freeRunFrequency) / resolution;
 
     public OscillatorUpdateResult Update(float deltaTime)
     {
@@ -31,7 +23,9 @@ public class Oscillator
         throw new System.NotImplementedException();
     }
 
+#pragma warning disable CA1822 // Mark members as static
     public void OnSyncSignalDetected()
+#pragma warning restore CA1822 // Mark members as static
     {
         // If the oscillator's current state is close to the point where it
         // would naturally trigger a retrace, trigger a retrace at this

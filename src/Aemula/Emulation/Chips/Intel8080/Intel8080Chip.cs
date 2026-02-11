@@ -2727,8 +2727,8 @@ public sealed partial class Intel8080Chip
         return ((byte)machineCycleType << 8) | (byte)state;
     }
 
-    public IEnumerable<DebuggerWindow> CreateDebuggerWindows()
+    internal void CreateDebuggerWindows(List<DebuggerWindow> result)
     {
-        yield return new CpuStateWindow(this);
+        result.Add(new CpuStateWindow(this));
     }
 }

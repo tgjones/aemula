@@ -6,10 +6,9 @@ using Hexa.NET.ImGui;
 
 namespace Aemula.UI;
 
-public sealed class DisassemblyWindow : DebuggerWindow
+public sealed class DisassemblyWindow(Debugger debugger) : DebuggerWindow
 {
-    private readonly Debugger _debugger;
-    private readonly List<DisassemblyLine> _disassembly;
+    private readonly List<DisassemblyLine> _disassembly = [];
 
     private int _previousPC;
 
@@ -17,16 +16,9 @@ public sealed class DisassemblyWindow : DebuggerWindow
 
     public override Pane PreferredPane => Pane.Right;
 
-    public DisassemblyWindow(Debugger debugger)
-    {
-        _disassembly = new List<DisassemblyLine>();
-
-        _debugger = debugger;
-    }
-
     protected override unsafe void DrawOverride(EmulatorTime time)
     {
-        if (_debugger.Disassembler.Changed)
+        if (debugger.Disassembler.Changed)
         {
             _disassembly.Clear();
 
@@ -42,9 +34,9 @@ public sealed class DisassemblyWindow : DebuggerWindow
                 }
             }
 
-            for (var i = 0; i < _debugger.Disassembler.Cache.Length; i++)
+            for (var i = 0; i < debugger.Disassembler.Cache.Length; i++)
             {
-                ref readonly var entry = ref _debugger.Disassembler.Cache[i];
+                ref readonly var entry = ref debugger.Disassembler.Cache[i];
 
                 if (entry.Instruction != null)
                 {
@@ -58,7 +50,7 @@ public sealed class DisassemblyWindow : DebuggerWindow
                         _disassembly.Add(new DisassemblyLine(DisassemblyLineType.Text, null, $"{entry.Label}:"));
                     }
 
-                    _disassembly.Add(new DisassemblyLine(DisassemblyLineType.Instruction, entry.Instruction, null));
+                    _disassembly.Add(new DisassemblyLine(DisassemblyLineType.Instruction, entry.Instruction, ""));
 
                     unknownStart = i + entry.Instruction.Value.InstructionSizeInBytes;
                 }
@@ -69,43 +61,43 @@ public sealed class DisassemblyWindow : DebuggerWindow
                 AddUnknownLines(0x10000);
             }
 
-            _debugger.Disassembler.Changed = false;
+            debugger.Disassembler.Changed = false;
         }
 
-        if (!_debugger.Stopped)
+        if (!debugger.Stopped)
         {
             if (ImGui.Button("Break"u8))
             {
-                _debugger.ActiveStepModeIndex = -1;
-                _debugger.Stopped = true;
+                debugger.ActiveStepModeIndex = -1;
+                debugger.Stopped = true;
             }
         }
         else
         {
             if (ImGui.Button("Continue"u8))
             {
-                _debugger.ActiveStepModeIndex = -1;
-                _debugger.Stopped = false;
+                debugger.ActiveStepModeIndex = -1;
+                debugger.Stopped = false;
             }
 
-            for (var i = 0; i < _debugger.StepModes.Count; i++)
+            for (var i = 0; i < debugger.StepModes.Count; i++)
             {
-                var stepMode = _debugger.StepModes[i];
+                var stepMode = debugger.StepModes[i];
 
                 ImGui.SameLine();
 
                 if (ImGui.Button(stepMode.Label))
                 {
                     stepMode.Setup?.Invoke();
-                    _debugger.ActiveStepModeIndex = i;
-                    _debugger.Stopped = false;
+                    debugger.ActiveStepModeIndex = i;
+                    debugger.Stopped = false;
                 }
             }
         }
 
         ImGui.Separator();
 
-        var lastPC = _debugger.LastPC;
+        var lastPC = debugger.LastPC;
 
         Vector2 availableSize = default;
         if (ImGui.BeginChild("##disassembly_listing"u8, Vector2.Zero, ImGuiChildFlags.None))
@@ -135,19 +127,19 @@ public sealed class DisassemblyWindow : DebuggerWindow
                     switch (line.Type)
                     {
                         case DisassemblyLineType.Instruction:
-                            var instruction = line.Instruction.Value;
+                            var instruction = line.Instruction!.Value;
                             ImGui.PushID(instruction.AddressNumeric);
                             if (ImGui.InvisibleButton("##breakpoint", new Vector2(16, lineHeight)))
                             {
-                                _debugger.Breakpoints.ToggleExecutionBreakpoint(instruction.AddressNumeric);
+                                debugger.Breakpoints.ToggleExecutionBreakpoint(instruction.AddressNumeric);
                             }
                             ImGui.PopID();
 
                             var breakpointCircleMiddle = new Vector2(pos.X + 7, pos.Y + lineHeightDiv2);
-                            var breakpointIndex = _debugger.Breakpoints.FindIndex(BreakpointManager.ExecutionTypeLabel, instruction.AddressNumeric);
+                            var breakpointIndex = debugger.Breakpoints.FindIndex(BreakpointManager.ExecutionTypeLabel, instruction.AddressNumeric);
                             if (breakpointIndex >= 0)
                             {
-                                var breakpoint = _debugger.Breakpoints.GetBreakpoint(breakpointIndex);
+                                var breakpoint = debugger.Breakpoints.GetBreakpoint(breakpointIndex);
                                 var breakpointColor = breakpoint.Enabled
                                     ? 0xFF0000FF
                                     : 0xFF000088;

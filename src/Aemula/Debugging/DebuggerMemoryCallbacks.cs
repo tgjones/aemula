@@ -2,18 +2,12 @@
 
 namespace Aemula.Debugging;
 
-public readonly struct DebuggerMemoryCallbacks
+public readonly struct DebuggerMemoryCallbacks(
+    Func<ushort, byte> read,
+    Action<ushort, byte> write)
 {
-    public readonly Func<ushort, byte> Read;
-    public readonly Action<ushort, byte> Write;
-
-    public DebuggerMemoryCallbacks(
-        Func<ushort, byte> read,
-        Action<ushort, byte> write)
-    {
-        Read = read;
-        Write = write;
-    }
+    public readonly Func<ushort, byte> Read = read;
+    public readonly Action<ushort, byte> Write = write;
 
     public ushort ReadWord(ushort address)
     {

@@ -54,27 +54,15 @@ public sealed class NesDebugger : Debugger
         }
     }
 
-    public override IEnumerable<DebuggerWindow> CreateDebuggerWindows()
+    public override void CreateDebuggerWindows(List<DebuggerWindow> result)
     {
-        foreach (var debuggerWindow in base.CreateDebuggerWindows())
-        {
-            yield return debuggerWindow;
-        }
+        base.CreateDebuggerWindows(result);
 
-        foreach (var debuggerWindow in _nes.Cpu.CreateDebuggerWindows())
-        {
-            yield return debuggerWindow;
-        }
+        _nes.Cpu.CreateDebuggerWindows(result);
+        _nes.Ppu.CreateDebuggerWindows(result);
 
-        foreach (var debuggerWindow in _nes.Ppu.CreateDebuggerWindows())
-        {
-            yield return debuggerWindow;
-        }
-
-        yield return new BreakpointsWindow(this);
-
-        yield return new MemoryEditor(1, address => _nes.ReadByteDebug((ushort)address), (address, data) => _nes.WriteByteDebug((ushort)address, data));
-
-        yield return new PatternTableWindow(_nes);
+        result.Add(new BreakpointsWindow(this));
+        result.Add(new MemoryEditor(1, address => _nes.ReadByteDebug((ushort)address), (address, data) => _nes.WriteByteDebug((ushort)address, data)));
+        result.Add(new PatternTableWindow(_nes));
     }
 }

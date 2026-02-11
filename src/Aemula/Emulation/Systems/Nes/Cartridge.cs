@@ -11,11 +11,9 @@ public sealed partial class Cartridge
     /// </summary>
     public static Cartridge FromFile(string filePath)
     {
-        using (var stream = File.OpenRead(filePath))
-        using (var reader = new BinaryReader(stream))
-        {
-            return new Cartridge(reader);
-        }
+        using var stream = File.OpenRead(filePath);
+        using var reader = new BinaryReader(stream);
+        return new Cartridge(reader);
     }
 
     private readonly byte[] _prgMemory;

@@ -96,7 +96,7 @@ public sealed partial class Ricoh2A03Chip
 
     public bool M2 => _m2;
 
-    public bool RW => _cpuCore.RW;
+    public bool RW => _rw ?? _cpuCore.RW;
 
     public ushort Address => _address ?? _cpuCore.Address;
 
@@ -123,10 +123,11 @@ public sealed partial class Ricoh2A03Chip
 
     public Ricoh2A03Chip()
     {
-        _cpuCore = new Mos6502Chip(new Mos6502Options(false));
-
-        _cpuCore.X = 0x00;
-        _cpuCore.SP = 0x00;
+        _cpuCore = new Mos6502Chip(new Mos6502Options(false))
+        {
+            X = 0x00,
+            SP = 0x00
+        };
         _cpuCore.P.Z = true;
 
         _dmaUnit = new DmaUnit();
@@ -186,11 +187,8 @@ public sealed partial class Ricoh2A03Chip
         }
     }
 
-    public IEnumerable<DebuggerWindow> CreateDebuggerWindows()
+    public void CreateDebuggerWindows(List<DebuggerWindow> result)
     {
-        foreach (var debuggerWindow in _cpuCore.CreateDebuggerWindows())
-        {
-            yield return debuggerWindow;
-        }
+        _cpuCore.CreateDebuggerWindows(result);
     }
 }

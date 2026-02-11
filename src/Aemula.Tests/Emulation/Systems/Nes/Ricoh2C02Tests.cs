@@ -15,7 +15,7 @@ internal class Ricoh2C02Tests
         Flawless2C02.NodeIds.pclk1,
     ]);
 
-    //[Test]
+    [Test, Skip("Not working yet")]
     public async Task TestPpuDump()
     {
         var ppuDumpLines = File.ReadAllLines("Assets/tracelog.txt");

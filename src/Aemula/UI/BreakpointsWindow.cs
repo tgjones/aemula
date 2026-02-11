@@ -4,34 +4,27 @@ using Hexa.NET.ImGui;
 
 namespace Aemula.UI;
 
-public sealed class BreakpointsWindow : DebuggerWindow
+public sealed class BreakpointsWindow(Debugger debugger) : DebuggerWindow
 {
-    private readonly Debugger _debugger;
-
     public override string DisplayName => "Breakpoints";
-
-    public BreakpointsWindow(Debugger debugger)
-    {
-        _debugger = debugger;
-    }
 
     protected override void DrawOverride(EmulatorTime time)
     {
         if (ImGui.Button("Add..."))
         {
-            _debugger.Breakpoints.AddExecutionBreakpoint(false, _debugger.LastPC);
+            debugger.Breakpoints.AddExecutionBreakpoint(false, debugger.LastPC);
         }
         ImGui.SameLine();
 
         if (ImGui.Button("Disable All"))
         {
-            _debugger.Breakpoints.DisableAll();
+            debugger.Breakpoints.DisableAll();
         }
         ImGui.SameLine();
 
         if (ImGui.Button("Delete All"))
         {
-            _debugger.Breakpoints.DeleteAll();
+            debugger.Breakpoints.DeleteAll();
         }
 
         ImGui.Separator();
@@ -39,11 +32,11 @@ public sealed class BreakpointsWindow : DebuggerWindow
         ImGui.BeginChild("##breakpoint_list", Vector2.Zero, ImGuiChildFlags.None);
 
         var deleteIndex = -1;
-        for (var i = 0; i < _debugger.Breakpoints.NumBreakpoints; i++)
+        for (var i = 0; i < debugger.Breakpoints.NumBreakpoints; i++)
         {
             ImGui.PushID(i);
 
-            ref var breakpoint = ref _debugger.Breakpoints.GetBreakpoint(i);
+            ref var breakpoint = ref debugger.Breakpoints.GetBreakpoint(i);
 
             ImGui.Checkbox("##enabled", ref breakpoint.Enabled);
             ImGui.SameLine();
@@ -58,7 +51,7 @@ public sealed class BreakpointsWindow : DebuggerWindow
 
             ImGui.PopItemWidth();
 
-            var breakpointType = _debugger.Breakpoints.BreakpointTypeDefinitions[breakpoint.Type];
+            var breakpointType = debugger.Breakpoints.BreakpointTypeDefinitions[breakpoint.Type];
 
             if (breakpointType.ShowAddress)
             {
@@ -119,7 +112,7 @@ public sealed class BreakpointsWindow : DebuggerWindow
 
         if (deleteIndex != -1)
         {
-            _debugger.Breakpoints.RemoveAt(deleteIndex);
+            debugger.Breakpoints.RemoveAt(deleteIndex);
         }
 
         ImGui.EndChild();
@@ -127,6 +120,6 @@ public sealed class BreakpointsWindow : DebuggerWindow
 
     private bool ImGuiComboBreakpointType(ref int type)
     {
-        return ImGuiUtility.Combo("##type", ref type, _debugger.Breakpoints.BreakpointTypeNames);
+        return ImGuiUtility.Combo("##type", ref type, debugger.Breakpoints.BreakpointTypeNames);
     }
 }

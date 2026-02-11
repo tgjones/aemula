@@ -6,7 +6,7 @@ namespace Aemula;
 
 public abstract class EmulatedSystem : IDisposable
 {
-    public event EventHandler ProgramLoaded;
+    public event EventHandler? ProgramLoaded;
 
     protected void RaiseProgramLoaded()
     {
@@ -33,7 +33,7 @@ public abstract class EmulatedSystem : IDisposable
 
     public virtual void OnKeyEvent(SDLKeyboardEvent keyEvent) { }
 
-    public virtual Debugger CreateDebugger() => null;
+    public virtual Debugger? CreateDebugger() => null;
 
     public void Dispose()
     {
