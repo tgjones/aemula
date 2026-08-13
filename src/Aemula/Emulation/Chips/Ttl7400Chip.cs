@@ -1,5 +1,8 @@
 namespace Aemula.Emulation.Chips;
 
+/// <summary>
+/// Quad 2-input NAND gate.
+/// </summary>
 public sealed class Ttl7400Chip
 {
     public bool A1 { private get; set; }
