@@ -334,3 +334,6 @@ ASALocalRun/
 
 # C64 test suite
 !src/Aemula.Tests/Emulation/Chips/Mos6502/Assets/C64TestSuite/bin/
+
+# macOS
+.DS_Store
