@@ -1,5 +1,8 @@
 namespace Aemula.Emulation.Chips;
 
+/// <summary>
+/// Quad 2-input NOR gate.
+/// </summary>
 public sealed class Ttl7402Chip
 {
     public bool A1 { private get; set; }
