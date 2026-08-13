@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using Aemula.Emulation.Systems.AppleII;
 using Aemula.Emulation.Systems.Atari2600;
 using Aemula.Emulation.Systems.Chip8;
 using Aemula.Emulation.Systems.Nes;
@@ -18,6 +19,7 @@ public static class Program
 {
     private static readonly Dictionary<string, Func<EmulatedSystem>> Systems = new()
     {
+        { "appleii", () => new AppleIISystem() },
         { "atari2600", () => new Atari2600System() },
         { "chip8", () => new Chip8System() },
         { "nes", () => new NesSystem() },
