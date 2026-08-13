@@ -100,14 +100,17 @@ public sealed class DisassemblyWindow(Debugger debugger) : DebuggerWindow
         var lastPC = debugger.LastPC;
 
         Vector2 availableSize = default;
+        float lineHeight = 0;
         if (ImGui.BeginChild("##disassembly_listing"u8, Vector2.Zero, ImGuiChildFlags.None))
         {
             availableSize = ImGui.GetContentRegionAvail();
 
             ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(8, 3));
 
-            var lineHeight = ImGui.GetTextLineHeightWithSpacing();
-            var lineHeightDiv2 = (int)(lineHeight / 2.0f);
+            lineHeight = ImGui.GetTextLineHeightWithSpacing();
+
+            var rowHeight = ImGui.GetTextLineHeight();
+            var rowHeightDiv2 = (int)(rowHeight / 2.0f);
 
             var clipper = new ImGuiListClipper();
             clipper.Begin(_disassembly.Count, lineHeight);
@@ -129,13 +132,13 @@ public sealed class DisassemblyWindow(Debugger debugger) : DebuggerWindow
                         case DisassemblyLineType.Instruction:
                             var instruction = line.Instruction!.Value;
                             ImGui.PushID(instruction.AddressNumeric);
-                            if (ImGui.InvisibleButton("##breakpoint", new Vector2(16, lineHeight)))
+                            if (ImGui.InvisibleButton("##breakpoint", new Vector2(16, rowHeight)))
                             {
                                 debugger.Breakpoints.ToggleExecutionBreakpoint(instruction.AddressNumeric);
                             }
                             ImGui.PopID();
 
-                            var breakpointCircleMiddle = new Vector2(pos.X + 7, pos.Y + lineHeightDiv2);
+                            var breakpointCircleMiddle = new Vector2(pos.X + 7, pos.Y + rowHeightDiv2);
                             var breakpointIndex = debugger.Breakpoints.FindIndex(BreakpointManager.ExecutionTypeLabel, instruction.AddressNumeric);
                             if (breakpointIndex >= 0)
                             {
@@ -153,8 +156,8 @@ public sealed class DisassemblyWindow(Debugger debugger) : DebuggerWindow
                             if (instruction.AddressNumeric == lastPC)
                             {
                                 var a = new Vector2(pos.X + 2, pos.Y);
-                                var b = new Vector2(pos.X + 12, pos.Y + lineHeightDiv2);
-                                var c = new Vector2(pos.X + 2, pos.Y + lineHeight);
+                                var b = new Vector2(pos.X + 12, pos.Y + rowHeightDiv2);
+                                var c = new Vector2(pos.X + 2, pos.Y + rowHeight);
                                 drawList.AddTriangleFilled(a, b, c, 0xFF00FFFF);
                             }
 
@@ -199,9 +202,21 @@ public sealed class DisassemblyWindow(Debugger debugger) : DebuggerWindow
             // TODONT: Don't search whole array.
             var indexToScrollTo = _disassembly.FindIndex(x => x.Instruction?.AddressNumeric == lastPC);
 
-            ImGui.BeginChild("##disassembly_listing"u8);
-            ImGui.SetScrollY(indexToScrollTo * ImGui.GetTextLineHeight() - availableSize.Y * 0.5f);
-            ImGui.EndChild();
+            if (indexToScrollTo >= 0)
+            {
+                ImGui.BeginChild("##disassembly_listing"u8);
+
+                var lineTop = indexToScrollTo * lineHeight;
+                var lineBottom = lineTop + lineHeight;
+                var scrollY = ImGui.GetScrollY();
+
+                if (lineTop < scrollY || lineBottom > scrollY + availableSize.Y)
+                {
+                    ImGui.SetScrollY(lineTop - availableSize.Y * 0.5f);
+                }
+
+                ImGui.EndChild();
+            }
 
             _previousPC = lastPC;
         }
