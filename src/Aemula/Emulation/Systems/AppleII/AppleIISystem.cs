@@ -52,6 +52,16 @@ public sealed partial class AppleIISystem : EmulatedSystem
         _phase0FlipFlops = new Ttl74175Chip();
         _phase0Mux = new Ttl74153Chip();
 
+        _videoAddressAdder = new Ttl74283Chip();
+        _textVideoShiftRegister = new Ttl74166Chip();
+        _textVideoXor = new Ttl7486Chip();
+        _invertTextLatch = new Ttl7474Chip();
+
+        Display = new DisplayBuffer(280, 192);
+
+        _keyboardEncoder = new Ay53600Chip();
+        _keyboardStrobeLatch = new Ttl7474Chip();
+
         Cpu.Res = false;
         Cpu.Res = true;
     }
@@ -84,6 +94,7 @@ public sealed partial class AppleIISystem : EmulatedSystem
     public override void Tick()
     {
         TickVideoTiming();
+        TickKeyboard();
     }
 
     private void DoCpuMemoryAccess()
@@ -119,8 +130,23 @@ public sealed partial class AppleIISystem : EmulatedSystem
     {
         if (!_highMemoryDecoder.Y0 || !_highMemoryDecoder.Y1)
         {
-            // $C000-$CFFF: I/O space (soft switches, slot ROM). Not wired up
-            // yet, so it reads as open bus.
+            if (address is >= 0xC000 and <= 0xC00F)
+            {
+                // Keyboard data: bits 0-6 from the AY-5-3600, bit 7 the
+                // latched strobe flag.
+                return ReadKeyboardData();
+            }
+
+            if (address is >= 0xC010 and <= 0xC01F)
+            {
+                // Clear keyboard strobe. Any of these 16 addresses does the
+                // same thing (Table 7-6).
+                ClearKeyboardStrobe();
+                return 0xFF;
+            }
+
+            // Remaining $C000-$CFFF I/O space (game I/O, speaker, slot ROM,
+            // etc.) not wired up yet, so it reads as open bus.
             return 0xFF;
         }
 
@@ -139,7 +165,12 @@ public sealed partial class AppleIISystem : EmulatedSystem
     {
         if (!_highMemoryDecoder.Y0 || !_highMemoryDecoder.Y1)
         {
-            // I/O space - not wired up yet.
+            if (address is >= 0xC010 and <= 0xC01F)
+            {
+                ClearKeyboardStrobe();
+            }
+
+            // Remaining I/O space - not wired up yet.
             return;
         }
 

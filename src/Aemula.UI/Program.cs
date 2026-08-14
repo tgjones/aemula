@@ -137,7 +137,8 @@ public static class Program
             ImGuiP.AddSettingsHandler(ref settingsHandler);
         }
 
-        system.LoadProgram(args[1]);
+        var programFilePath = args.Length > 1 ? args[1] : null;
+        system.LoadProgram(programFilePath ?? "");
 
         Vector4 clearColor = new(0.45f, 0.55f, 0.60f, 1.00f);
 

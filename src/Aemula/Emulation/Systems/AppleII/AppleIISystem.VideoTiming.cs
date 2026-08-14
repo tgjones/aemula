@@ -76,9 +76,20 @@ public sealed partial class AppleIISystem
     // of the 65 horizontal states.
     private bool HpeBar => _videoScannerD13.Qc;
 
+    private bool V0 => _videoScannerD12.Qc;
+    private bool V1 => _videoScannerD12.Qd;
     private bool V2 => _videoScannerD11.Qa;
     private bool V3 => _videoScannerD11.Qb;
     private bool V4 => _videoScannerD11.Qc;
+    private bool V5 => _videoScannerD11.Qd;
+
+    // The sub-scanline counter: increments once per raster line within an
+    // 8-line text row (0-7), rolling into V0 (as part of the shared 9-bit
+    // vertical count) rather than being part of the DRAM address itself -
+    // it addresses the character ROM's row-within-glyph instead (phase 4).
+    private bool VA => _videoScannerD13.Qd;
+    private bool VB => _videoScannerD12.Qa;
+    private bool VC => _videoScannerD12.Qb;
 
     /// <summary>
     /// The raw video scanner state, formatted to match the binary strings
@@ -123,6 +134,7 @@ public sealed partial class AppleIISystem
             // LDPS' occurs toward the end of PHASE0; approximated here as
             // coincident with PHASE0's rising edge.
             TickVideoScanner();
+            TickVideo();
         }
 
         Cpu.Phi0 = Phase0;
