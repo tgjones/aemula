@@ -79,6 +79,10 @@ public static class Program
             ImGuiConfigFlags.NavEnableKeyboard
             | ImGuiConfigFlags.NavEnableGamepad
             | ImGuiConfigFlags.DockingEnable;
+        // Without this, WantCaptureKeyboard is true any time a window has nav focus (i.e. almost
+        // always), since ImGui itself wants keyboard for nav. That leaves no way for key events to
+        // reach the emulated system.
+        io.ConfigNavCaptureKeyboard = false;
 
         ImGui.StyleColorsDark();
         var style = ImGui.GetStyle();
