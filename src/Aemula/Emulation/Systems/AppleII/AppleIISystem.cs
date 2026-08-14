@@ -7,7 +7,7 @@ using Aemula.Emulation.Systems.AppleII.Debugging;
 
 namespace Aemula.Emulation.Systems.AppleII;
 
-public sealed class AppleIISystem : EmulatedSystem
+public sealed partial class AppleIISystem : EmulatedSystem
 {
     // The Apple II's master oscillator: 4x the NTSC color subcarrier (3.579545MHz).
     // The CPU clock, video dot clock, and color subcarrier are all synchronous
@@ -35,19 +35,22 @@ public sealed class AppleIISystem : EmulatedSystem
     private readonly Ttl7404Chip _addressDecodeInverters;
     private readonly Ttl74138Chip _highMemoryDecoder;
 
-    // Placeholder divider bringing the 14.31818MHz master clock down to the
-    // CPU's ~1.023MHz rate (7 master ticks low, 7 high). This isn't the real
-    // hardware's non-uniform /13-with-one-stretched-cycle division - that
-    // requires the video timing counter chain, which is phase 3's job. This
-    // divider exists only so the CPU can run at all before then.
-    private byte _cpuClockDivider;
-
     public AppleIISystem()
     {
         Cpu = new Mos6502Chip(Mos6502Options.Default);
 
         _addressDecodeInverters = new Ttl7404Chip();
         _highMemoryDecoder = new Ttl74138Chip();
+
+        _videoScannerD14 = new Ttl74161Chip();
+        _videoScannerD13 = new Ttl74161Chip();
+        _videoScannerD12 = new Ttl74161Chip();
+        _videoScannerD11 = new Ttl74161Chip();
+
+        _clockSequencer = new Ttl74S195Chip();
+
+        _phase0FlipFlops = new Ttl74175Chip();
+        _phase0Mux = new Ttl74153Chip();
 
         Cpu.Res = false;
         Cpu.Res = true;
@@ -80,23 +83,7 @@ public sealed class AppleIISystem : EmulatedSystem
 
     public override void Tick()
     {
-        switch (_cpuClockDivider)
-        {
-            case 0:
-                Cpu.Phi0 = false;
-                break;
-
-            case 7:
-                Cpu.Phi0 = true;
-                DoCpuMemoryAccess();
-                break;
-        }
-
-        _cpuClockDivider++;
-        if (_cpuClockDivider == 14)
-        {
-            _cpuClockDivider = 0;
-        }
+        TickVideoTiming();
     }
 
     private void DoCpuMemoryAccess()
