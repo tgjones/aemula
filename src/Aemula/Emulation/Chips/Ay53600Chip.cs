@@ -147,7 +147,7 @@ public sealed class Ay53600Chip
             (0, 6) => Punct('9', '9'),
             (0, 7) => Punct('0', '0'),
             (0, 8) => Punct(':', '*'),
-            (0, 9) => Punct('-', '-'),
+            (0, 9) => Punct('-', '='),
 
             // X1: QWERTYUIOP.
             (1, 0) => Letter('Q'),
