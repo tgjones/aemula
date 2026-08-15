@@ -57,7 +57,11 @@ public sealed partial class AppleIISystem : EmulatedSystem
         _textVideoXor = new Ttl7486Chip();
         _invertTextLatch = new Ttl7474Chip();
 
+        _modeSwitchLatch = new Ttl74259Chip();
+        _hiresVideoShiftRegister = new Ttl74166Chip();
+
         Display = new DisplayBuffer(280, 192);
+        HiresColorPhase = new byte[280 * 192];
 
         _keyboardEncoder = new Ay53600Chip();
         _keyboardStrobeLatch = new Ttl7474Chip();
@@ -145,6 +149,17 @@ public sealed partial class AppleIISystem : EmulatedSystem
                 return 0xFF;
             }
 
+            if (address is >= 0xC050 and <= 0xC05F)
+            {
+                // Screen mode soft switches (and, at $C058-$C05F, the
+                // annunciators - latched here too since it's the same
+                // physical 74LS259, but not consumed until a later phase).
+                // Reads and writes both just address-decode, so either
+                // toggles the switch the same way.
+                UpdateModeSwitches(address);
+                return 0xFF;
+            }
+
             // Remaining $C000-$CFFF I/O space (game I/O, speaker, slot ROM,
             // etc.) not wired up yet, so it reads as open bus.
             return 0xFF;
@@ -168,6 +183,11 @@ public sealed partial class AppleIISystem : EmulatedSystem
             if (address is >= 0xC010 and <= 0xC01F)
             {
                 ClearKeyboardStrobe();
+            }
+
+            if (address is >= 0xC050 and <= 0xC05F)
+            {
+                UpdateModeSwitches(address);
             }
 
             // Remaining I/O space - not wired up yet.
