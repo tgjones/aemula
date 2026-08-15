@@ -47,6 +47,55 @@ public class AppleIISystemVideoModesTests
     }
 
     [Test]
+    public async Task ModeSwitchesSurviveInterleavedUnrelatedAccesses()
+    {
+        // The address-decode chain now drives the mode-switch latch's
+        // A0-A2/D/G pins on *every* CPU access, not just ones in
+        // $C050-$C05F (SetModeSwitchLatchAddress in AppleIISystem.Video.cs)
+        // - unrelated accesses must leave the latch alone. This is the
+        // specific hazard the "disable G first" ordering in that method
+        // guards against: without it, an unrelated access's address bits
+        // could transiently glitch through while G was still asserted from
+        // a previous $C050-$C05F access.
+        var system = new AppleIISystem();
+        system.LoadProgram("");
+
+        BootToIdle(system);
+
+        system.WriteByteDebug(0xC050, 0); // GRAPHICS
+        system.WriteByteDebug(0xC057, 0); // HIRES
+        system.WriteByteDebug(0xC055, 0); // PAGE2
+
+        for (var address = 0; address < 0x100; address++)
+        {
+            system.ReadByteDebug((ushort)address); // RAM
+            system.WriteByteDebug((ushort)address, 0);
+            system.ReadByteDebug((ushort)(0xD000 + address)); // ROM
+            system.ReadByteDebug((ushort)(0xC800 + address)); // "seventh ROM" / open bus
+        }
+
+        var (textMode, _, page2Mode, hiresMode) = system.GetModeSwitchesForTests();
+
+        await Assert.That(textMode).IsFalse();
+        await Assert.That(hiresMode).IsTrue();
+        await Assert.That(page2Mode).IsTrue();
+    }
+
+    [Test]
+    public async Task SeventhRomRangeReadsAsOpenBus()
+    {
+        // $C800-$CFFF is F12's Y1 - a separate signal from the I/O Section
+        // (Y0) that the mode-switch/keyboard checks live under. No slot
+        // cards are implemented, so it should just be open bus, distinctly
+        // from (not accidentally aliased with) the I/O Section handling.
+        var system = new AppleIISystem();
+        system.LoadProgram("");
+
+        await Assert.That(system.ReadByteDebug(0xC800)).IsEqualTo((byte)0xFF);
+        await Assert.That(system.ReadByteDebug(0xCFFF)).IsEqualTo((byte)0xFF);
+    }
+
+    [Test]
     public async Task LoresColorBlockRendersFromScreenNibbles()
     {
         var system = new AppleIISystem();

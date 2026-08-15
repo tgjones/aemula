@@ -26,7 +26,8 @@ public sealed partial class AppleIISystem
     // eight off/on soft switches by the LS259 at F14." CPU A1-A3 select
     // which of the 8 latches; A0 is the D input (low address of a pair =
     // off, high = on), matching the GRAPHICS/TEXT, NOMIX/MIX, PAGE1/PAGE2,
-    // LORES/HIRES ordering of Table 7.1.
+    // LORES/HIRES ordering of Table 7.1. Enabled (G) by the address decoder
+    // chain's F13/_ioControlDecoder.Y5 - see AppleIISystem.cs.
     private readonly Ttl74259Chip _modeSwitchLatch;
 
     // GRAPHICS mode still shows TEXT for the bottom four text rows once
@@ -46,17 +47,30 @@ public sealed partial class AppleIISystem
     private bool ShowText => TextMode || (MixMode && V4 && V2);
     private bool ShowHires => !ShowText && HiresMode;
 
-    private void UpdateModeSwitches(ushort address)
+    // Continuously wired from the CPU address bus on every access, the same
+    // way SetHighMemoryDecoderAddress wires the other decode chips - no
+    // "is this address relevant" branch of its own. G is disabled first so
+    // the address-bit updates below can't glitch a stale selection through
+    // while G is still asserted from whatever the previous access was; only
+    // the final G assignment (from the real decoder output) can commit a
+    // write, and only when this access's address actually decodes to
+    // $C050-$C05F.
+    internal (bool TextMode, bool MixMode, bool Page2Mode, bool HiresMode) GetModeSwitchesForTests()
     {
-        var select = (address >> 1) & 0x7;
-        var value = (address & 1) != 0;
+        return (TextMode, MixMode, Page2Mode, HiresMode);
+    }
 
-        _modeSwitchLatch.D = value;
+    private void SetModeSwitchLatchAddress(ushort address)
+    {
+        _modeSwitchLatch.G = true;
+
+        var select = (address >> 1) & 0x7;
+
+        _modeSwitchLatch.D = (address & 1) != 0;
         _modeSwitchLatch.A0 = (select & 1) != 0;
         _modeSwitchLatch.A1 = (select & 2) != 0;
         _modeSwitchLatch.A2 = (select & 4) != 0;
-        _modeSwitchLatch.G = false;
-        _modeSwitchLatch.G = true;
+        _modeSwitchLatch.G = _ioControlDecoder.Y5;
     }
 
     // Shifts the character ROM's dot pattern out onto the display, MSB

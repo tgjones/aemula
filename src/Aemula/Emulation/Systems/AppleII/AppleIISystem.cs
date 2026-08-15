@@ -26,14 +26,38 @@ public sealed partial class AppleIISystem : EmulatedSystem
     // Character generator ROM (Signetics 2513 / Apple 341-0036).
     private readonly byte[] _characterRom = new byte[0x800];
 
-    // Decodes the CPU address bus for everything from $C000 up: two enable
-    // inverters feeding a single 3-to-8 decoder, addressed by A11-A13 and
-    // qualified by A14/A15. This mirrors how the real board gets both the
-    // I/O select and the six individual 2K ROM chip-selects (D0/D8/E0/E8/
-    // F0/F8) out of one 74LS138, since $D000-$FFFF happens to be exactly
-    // six 2K-aligned blocks. $0000-$BFFF (RAM) is simply "decoder disabled".
+    // Decodes the CPU address bus for everything from $C000 up. Four
+    // chained 74LS138s plus a hex inverter (Sather ch. 7, "Address Decoding
+    // and Input/Output", Figures 7.1-7.3) - all four of the plan's budgeted
+    // 74LS138s are used here:
+    //
+    //   F12 (_highMemoryDecoder): A11-A13, qualified by A14/A15, into eight
+    //   2K sections: Y0 = the I/O Section ($C000-$C7FF), Y1 = the "seventh
+    //   ROM" / I/O STROBE' range ($C800-$CFFF, peripheral expansion ROM),
+    //   Y2-Y7 = the six 2K ROM chips (D0/D8/E0/E8/F0/F8, $D000-$FFFF).
+    //   $0000-$BFFF (RAM) is simply "decoder disabled".
+    //
+    //   H12 (_ioSectionDecoder): further divides F12's Y0 ($C000-$C7FF, via
+    //   A8-A10) into eight 256-byte blocks: Y0 = $C000-$C0FF (motherboard
+    //   control, divided further below), Y1-Y7 = the seven slots'
+    //   $C1XX-$C7XX I/O SELECT' ranges (not wired up - no slot cards yet).
+    //
+    //   H12's Y0 is itself split by A7/A7' (the third inverter gate on
+    //   _addressDecodeInverters) into two 128-byte halves:
+    //
+    //   H2 (_deviceSelectDecoder): the A7 (high) half, $C080-$C0FF, into
+    //   eight 16-byte DEVICE SELECT' ranges (Table 7.1) - not wired up.
+    //
+    //   F13 (_ioControlDecoder): the A7' (low) half, $C000-$C07F, into
+    //   eight 16-byte motherboard control ranges - keyboard data ($C00X),
+    //   clear strobe ($C01X), cassette out ($C02X), speaker ($C03X), C040
+    //   STROBE' ($C04X), screen mode/annunciator switches ($C05X), serial
+    //   input mux ($C06X), paddle trigger ($C07X).
     private readonly Ttl7404Chip _addressDecodeInverters;
     private readonly Ttl74138Chip _highMemoryDecoder;
+    private readonly Ttl74138Chip _ioSectionDecoder;
+    private readonly Ttl74138Chip _deviceSelectDecoder;
+    private readonly Ttl74138Chip _ioControlDecoder;
 
     public AppleIISystem()
     {
@@ -41,6 +65,9 @@ public sealed partial class AppleIISystem : EmulatedSystem
 
         _addressDecodeInverters = new Ttl7404Chip();
         _highMemoryDecoder = new Ttl74138Chip();
+        _ioSectionDecoder = new Ttl74138Chip();
+        _deviceSelectDecoder = new Ttl74138Chip();
+        _ioControlDecoder = new Ttl74138Chip();
 
         _videoScannerD14 = new Ttl74161Chip();
         _videoScannerD13 = new Ttl74161Chip();
@@ -106,6 +133,8 @@ public sealed partial class AppleIISystem : EmulatedSystem
         var address = Cpu.Address;
 
         SetHighMemoryDecoderAddress(address);
+        SetIoControlDecoderAddress(address);
+        SetModeSwitchLatchAddress(address);
 
         if (Cpu.RW)
         {
@@ -130,18 +159,51 @@ public sealed partial class AppleIISystem : EmulatedSystem
         _highMemoryDecoder.G2B = _addressDecodeInverters.Y2; // NOT(A14)
     }
 
+    private void SetIoControlDecoderAddress(ushort address)
+    {
+        // H12: eight 256-byte blocks of the I/O Section (F12's Y0).
+        _ioSectionDecoder.A = (address & 0x100) != 0; // A8
+        _ioSectionDecoder.B = (address & 0x200) != 0; // A9
+        _ioSectionDecoder.C = (address & 0x400) != 0; // A10
+        _ioSectionDecoder.G1 = true; // Tied high.
+        _ioSectionDecoder.G2A = _highMemoryDecoder.Y0;
+        _ioSectionDecoder.G2B = false; // Tied low.
+
+        _addressDecodeInverters.A3 = (address & 0x80) != 0; // A7
+
+        // H2: the A7 (high) half of H12's Y0, $C080-$C0FF - eight 16-byte
+        // DEVICE SELECT' ranges.
+        _deviceSelectDecoder.A = (address & 0x10) != 0; // A4
+        _deviceSelectDecoder.B = (address & 0x20) != 0; // A5
+        _deviceSelectDecoder.C = (address & 0x40) != 0; // A6
+        _deviceSelectDecoder.G1 = true; // Tied high.
+        _deviceSelectDecoder.G2A = _ioSectionDecoder.Y0;
+        _deviceSelectDecoder.G2B = _addressDecodeInverters.Y3; // NOT(A7)
+
+        // F13: the A7' (low) half of H12's Y0, $C000-$C07F - eight 16-byte
+        // motherboard control ranges.
+        _ioControlDecoder.A = (address & 0x10) != 0; // A4
+        _ioControlDecoder.B = (address & 0x20) != 0; // A5
+        _ioControlDecoder.C = (address & 0x40) != 0; // A6
+        _ioControlDecoder.G1 = true; // Tied high.
+        _ioControlDecoder.G2A = _ioSectionDecoder.Y0;
+        _ioControlDecoder.G2B = (address & 0x80) != 0; // A7 directly (asserted when A7=0)
+    }
+
     private byte ReadByte(ushort address)
     {
-        if (!_highMemoryDecoder.Y0 || !_highMemoryDecoder.Y1)
+        if (!_highMemoryDecoder.Y0)
         {
-            if (address is >= 0xC000 and <= 0xC00F)
+            // The I/O Section ($C000-$C7FF; Y1, $C800-$CFFF, is the
+            // separate "seventh ROM"/I-O-STROBE' range, handled below).
+            if (!_ioControlDecoder.Y0)
             {
                 // Keyboard data: bits 0-6 from the AY-5-3600, bit 7 the
                 // latched strobe flag.
                 return ReadKeyboardData();
             }
 
-            if (address is >= 0xC010 and <= 0xC01F)
+            if (!_ioControlDecoder.Y1)
             {
                 // Clear keyboard strobe. Any of these 16 addresses does the
                 // same thing (Table 7-6).
@@ -149,19 +211,26 @@ public sealed partial class AppleIISystem : EmulatedSystem
                 return 0xFF;
             }
 
-            if (address is >= 0xC050 and <= 0xC05F)
+            if (!_ioControlDecoder.Y5)
             {
                 // Screen mode soft switches (and, at $C058-$C05F, the
                 // annunciators - latched here too since it's the same
                 // physical 74LS259, but not consumed until a later phase).
-                // Reads and writes both just address-decode, so either
-                // toggles the switch the same way.
-                UpdateModeSwitches(address);
+                // SetModeSwitchLatchAddress already updated the latch for
+                // this access, regardless of read or write.
                 return 0xFF;
             }
 
-            // Remaining $C000-$CFFF I/O space (game I/O, speaker, slot ROM,
-            // etc.) not wired up yet, so it reads as open bus.
+            // Remaining I/O Section (cassette, speaker, C040 strobe, serial
+            // mux, paddle trigger, slot I/O SELECT'/DEVICE SELECT') not
+            // wired up yet, so it reads as open bus.
+            return 0xFF;
+        }
+
+        if (!_highMemoryDecoder.Y1)
+        {
+            // $C800-$CFFF: peripheral card expansion ROM. No slot cards
+            // implemented, so open bus.
             return 0xFF;
         }
 
@@ -178,19 +247,22 @@ public sealed partial class AppleIISystem : EmulatedSystem
 
     private void WriteByte(ushort address, byte value)
     {
-        if (!_highMemoryDecoder.Y0 || !_highMemoryDecoder.Y1)
+        if (!_highMemoryDecoder.Y0)
         {
-            if (address is >= 0xC010 and <= 0xC01F)
+            if (!_ioControlDecoder.Y1)
             {
                 ClearKeyboardStrobe();
             }
 
-            if (address is >= 0xC050 and <= 0xC05F)
-            {
-                UpdateModeSwitches(address);
-            }
+            // $C05X (mode switches) and the rest of the I/O Section - not
+            // wired up for writes beyond what SetModeSwitchLatchAddress
+            // already did for this access.
+            return;
+        }
 
-            // Remaining I/O space - not wired up yet.
+        if (!_highMemoryDecoder.Y1)
+        {
+            // $C800-$CFFF: can't write to expansion ROM (no slot cards).
             return;
         }
 
@@ -207,6 +279,8 @@ public sealed partial class AppleIISystem : EmulatedSystem
     internal byte ReadByteDebug(ushort address)
     {
         SetHighMemoryDecoderAddress(address);
+        SetIoControlDecoderAddress(address);
+        SetModeSwitchLatchAddress(address);
 
         return ReadByte(address);
     }
@@ -214,6 +288,8 @@ public sealed partial class AppleIISystem : EmulatedSystem
     internal void WriteByteDebug(ushort address, byte value)
     {
         SetHighMemoryDecoderAddress(address);
+        SetIoControlDecoderAddress(address);
+        SetModeSwitchLatchAddress(address);
 
         WriteByte(address, value);
     }
