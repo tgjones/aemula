@@ -20,6 +20,7 @@ public sealed class OscilloscopeWindow : DebuggerWindow
     private readonly ScopeRecorder _recorder;
     private readonly Dictionary<ScopeChannel, int> _channelIndex;
     private readonly bool[] _channelVisible;
+    private readonly List<ScopeChannel> _visibleDigitalChannels = [];
 
     public override string DisplayName => "Oscilloscope";
 
@@ -97,6 +98,21 @@ public sealed class OscilloscopeWindow : DebuggerWindow
 
     private unsafe void DrawWaveforms()
     {
+        _visibleDigitalChannels.Clear();
+        foreach (var channel in _recorder.Channels)
+        {
+            if (channel.Kind == ScopeChannelKind.Digital && _channelVisible[_channelIndex[channel]])
+            {
+                _visibleDigitalChannels.Add(channel);
+            }
+        }
+
+        if (_visibleDigitalChannels.Count == 0)
+        {
+            ImGui.TextDisabled("No channels selected.");
+            return;
+        }
+
         // One sample = one pixel, fixed zoom for now - see phase 3 in the plan for
         // proper zoom/pan. Since new samples always land at the right edge (index
         // visibleCount - 1) and we recompute this range every frame, the view is
@@ -106,17 +122,21 @@ public sealed class OscilloscopeWindow : DebuggerWindow
         var plotWidth = (int)MathF.Max(1f, ImGui.GetContentRegionAvail().X);
         var visibleCount = Math.Min(availableSamples, plotWidth);
 
-        if (!ImPlot.BeginPlot("##oscilloscope_plot"u8, ImGui.GetContentRegionAvail(), ImPlotFlags.NoLegend))
+        // One subplot row per channel, its title sitting right above that row's
+        // waveform, with LinkAllX keeping every row's time axis in lockstep - the
+        // layout the plan (and Saleae/Logic-style analyzers) actually call for,
+        // rather than folding every channel into one plot via ImPlot's own digital-
+        // signal auto-stacking, which left channel names stranded in the sidebar
+        // with no visible link to which band was which.
+        if (!ImPlot.BeginSubplots(
+            "##oscilloscope_subplots"u8,
+            _visibleDigitalChannels.Count,
+            1,
+            ImGui.GetContentRegionAvail(),
+            ImPlotSubplotFlags.LinkAllX | ImPlotSubplotFlags.NoMenus))
         {
             return;
         }
-
-        ImPlot.SetupAxes(
-            "Sample"u8,
-            ""u8,
-            ImPlotAxisFlags.None,
-            ImPlotAxisFlags.NoTickLabels | ImPlotAxisFlags.NoGridLines);
-        ImPlot.SetupAxesLimits(0, Math.Max(visibleCount - 1, 1), 0, 1, ImPlotCond.Always);
 
         if (visibleCount > 0)
         {
@@ -128,12 +148,19 @@ public sealed class OscilloscopeWindow : DebuggerWindow
 
             Span<double> ys = visibleCount <= 4096 ? stackalloc double[visibleCount] : new double[visibleCount];
 
-            foreach (var channel in _recorder.Channels)
+            foreach (var channel in _visibleDigitalChannels)
             {
-                if (channel.Kind != ScopeChannelKind.Digital || !_channelVisible[_channelIndex[channel]])
+                if (!ImPlot.BeginPlot(channel.Name, default, ImPlotFlags.NoLegend | ImPlotFlags.NoMenus))
                 {
                     continue;
                 }
+
+                ImPlot.SetupAxes(
+                    ""u8,
+                    ""u8,
+                    ImPlotAxisFlags.NoTickLabels | ImPlotAxisFlags.NoGridLines,
+                    ImPlotAxisFlags.NoTickLabels | ImPlotAxisFlags.NoGridLines);
+                ImPlot.SetupAxesLimits(0, Math.Max(visibleCount - 1, 1), 0, 1, ImPlotCond.Always);
 
                 FillVisibleSamples(channel, visibleCount, ys);
 
@@ -142,10 +169,12 @@ public sealed class OscilloscopeWindow : DebuggerWindow
                 {
                     ImPlot.PlotDigital(channel.Name, xsPtr, ysPtr, visibleCount);
                 }
+
+                ImPlot.EndPlot();
             }
         }
 
-        ImPlot.EndPlot();
+        ImPlot.EndSubplots();
     }
 
     private void FillVisibleSamples(ScopeChannel channel, int visibleCount, Span<double> destination)
