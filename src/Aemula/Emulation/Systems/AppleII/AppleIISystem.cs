@@ -4,6 +4,7 @@ using Aemula.Debugging;
 using Aemula.Emulation.Chips;
 using Aemula.Emulation.Chips.Mos6502;
 using Aemula.Emulation.Systems.AppleII.Debugging;
+using Aemula.UI.Oscilloscope;
 
 namespace Aemula.Emulation.Systems.AppleII;
 
@@ -297,5 +298,20 @@ public sealed partial class AppleIISystem : EmulatedSystem
     public override Debugger CreateDebugger()
     {
         return new AppleIIDebugger(this);
+    }
+
+    internal ScopeChannelGroup CreateScopeChannelGroup()
+    {
+        return new ScopeChannelGroup("Apple II",
+        [
+            Cpu.CreateScopeChannelGroup(),
+            new ScopeChannelGroup("Video Timing",
+            [
+                ScopeChannel.Digital("HBL", () => Hbl),
+                ScopeChannel.Digital("VBL", () => Vbl),
+                ScopeChannel.Digital("Color Burst Gate", () => ColorBurstGate),
+                ScopeChannel.Digital("Phase 0", () => Phase0),
+            ]),
+        ]);
     }
 }

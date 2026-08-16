@@ -4,6 +4,7 @@
 
     <PackageReference Include="Hexa.NET.ImGui" />
     <PackageReference Include="Hexa.NET.ImGui.Backends.SDL3" />
+    <PackageReference Include="Hexa.NET.ImPlot" />
     <PackageReference Include="Hexa.NET.SDL3" />
 
     <InternalsVisibleTo Include="Aemula.Tests" />

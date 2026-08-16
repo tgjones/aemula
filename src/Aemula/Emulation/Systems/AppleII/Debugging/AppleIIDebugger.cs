@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using Aemula.Debugging;
 using Aemula.Emulation.Chips.Mos6502.Debugging;
 using Aemula.UI;
+using Aemula.UI.Oscilloscope;
 
 namespace Aemula.Emulation.Systems.AppleII.Debugging;
 
@@ -48,5 +49,6 @@ public sealed class AppleIIDebugger : Debugger
         result.Add(new BreakpointsWindow(this));
         result.Add(new MemoryEditor(1, address => _appleII.ReadByteDebug((ushort)address), (address, data) => _appleII.WriteByteDebug((ushort)address, data)));
         result.Add(new ScreenDisplayWindow(_appleII.Display));
+        result.Add(new OscilloscopeWindow(this, _appleII.CreateScopeChannelGroup()));
     }
 }
