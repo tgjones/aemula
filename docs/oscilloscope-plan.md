@@ -8,6 +8,18 @@ time: CPU pins, bus values, and other "interesting" points per system.
 Start digital/bus-only and simple; grow channel coverage, rendering
 fidelity, and controls incrementally.
 
+## Status
+
+**Phase 0 and Phase 1 are done** (see git log for `Aemula.UI` — "Implement
+oscilloscope phase 0", "Implement oscilloscope phase 1", and a follow-up
+"label rows to the left" rework driven by review feedback). Everything
+below is written in the present tense for what's actually built; phases
+2+ are still ahead. If you're picking this up in a new session, the
+**Rendering** and **Window layout** sections below describe the current
+`OscilloscopeWindow.cs` accurately — read those before changing anything,
+since the layout went through two false starts before landing (see
+"Layout false starts" under Rendering).
+
 ## Design decisions
 
 These were confirmed up front since they shape the core data model:
@@ -46,26 +58,51 @@ system from that system's `Debugger.CreateDebuggerWindows`, same as
 Waveform rendering uses [Hexa.NET.ImPlot](https://www.nuget.org/packages/Hexa.NET.ImPlot/),
 pinned to **2.2.9** to match the existing `Hexa.NET.ImGui` version, added
 to `Directory.Packages.props` and referenced from `Aemula.csproj` next to
-the other `Hexa.NET.*` packages. This is a new dependency — nothing in the
-project uses ImPlot today, so Phase 1 should budget a short spike to learn
-its API/idioms (multi-axis stacking, custom draw-list access for the bus
-bands) before committing to the final render structure.
+the other `Hexa.NET.*` packages, plus context setup/teardown in
+`Aemula.UI/Program.cs` (`ImPlot.CreateContext()` /
+`ImPlot.SetImGuiContext(ctx)` alongside the existing ImGui context,
+`ImPlot.DestroyContext()` at shutdown).
 
-Using ImPlot instead of hand-rolled `ImDrawList` calls (the style
-`TiaWindow`/`ScreenDisplayWindow` otherwise use) means:
+Digital channels render via **`ImPlot.PlotStairs`** (a plain step-line),
+not `PlotDigital` — see "Layout false starts" below for why. Each
+channel's y-axis uses **`ImPlot.SetupAxisTicks(ImAxis.Y1, [0,1], 2, ["L","H"])`**
+so it reads "L"/"H" instead of raw 0/1. Axis limits are pinned every
+frame via `SetupAxesLimits(..., ImPlotCond.Always)` rather than left to
+auto-fit or interactive zoom — see the Phase 3 note below on why that'll
+need revisiting.
 
-- Digital channels render as step-line plots (`PlotStairs` or equivalent)
-  instead of manually computing pixel transitions.
-- Pan/zoom/scroll on the time axis comes from ImPlot's own axis
-  interaction (drag to pan, scroll/box-select to zoom) instead of
-  hand-written pixel math — our job is mostly constraining it (clamp
-  panning to what the ring buffer actually retains, format the axis in
-  time units via `CyclesPerSecond`, and a "jump to now" button that resets
-  the x-axis to the live edge).
-- Bus (hex-band) rows are the one part ImPlot doesn't give us out of the
-  box — those still need custom drawing via ImPlot's own plot draw list
-  (drawing into plot space, not screen space, so it stays aligned with the
-  shared time axis), covered in Phase 2.
+Each row also implements its own hover tooltip: `ImPlotFlags.NoMouseText`
+turns off ImPlot's built-in reticle (not useful — it just showed raw plot
+coordinates), and instead, after the `PlotStairs` call and still inside
+`BeginPlot`/`EndPlot`, `ImPlot.IsPlotHovered()` + `ImPlot.GetPlotMousePos()`
+find the nearest sample index and `ImGui.SetTooltip($"{channel.Name}: {H or L}")`
+shows its value. This pattern is meant to carry into Phase 2 for bus
+channels (showing the hex value under the cursor instead of H/L).
+
+#### Layout false starts
+
+Worth reading before touching this again — the render structure went
+through two rejected designs before landing on the current one:
+
+1. **One shared `ImPlot` plot, every channel via repeated `PlotDigital`
+   calls** (ImPlot's own digital-signal auto-stacking, with its legend
+   disabled). Compiled and ran fine, but there was no visible link between
+   a channel's name (in a separate sidebar) and which stacked band was
+   its data — rejected on review.
+2. **`ImPlot.BeginSubplots`, one row per channel, each row's `BeginPlot`
+   titled with the channel name.** Fixed the "which band is which"
+   problem — each row now had its own title — but the title sits *above*
+   the row's plot, not to its left, which wasn't the layout being asked
+   for (a Saleae/Logic-style left-hand label column).
+3. **Current: one `ImGui.BeginTable` (2 columns: Channel, Waveform), with
+   `ScopeChannelGroup`s as tree rows** (`ImGui.TreeNodeEx(...,
+   ImGuiTreeNodeFlags.DefaultOpen | ImGuiTreeNodeFlags.SpanAllColumns)`,
+   the standard ImGui "tree in a table" pattern) **and each leaf channel
+   as its own row: name in column 0, an independent `BeginPlot`/`EndPlot`
+   sized into column 1.** This is what actually gives a left-hand label
+   column regardless of tree nesting depth, since the table enforces a
+   consistent column 0 width. The tradeoff: dropping Subplots also means
+   dropping its automatic `LinkAllX` — see the Phase 3 note below.
 
 ### Channel model
 
@@ -76,15 +113,17 @@ ScopeChannelNode              (abstract: shared Name)
 │    BitWidth: int             (1 for Digital, e.g. 8/16 for Bus)
 │    Read: Func<ulong>         (digital reads back as 0/1)
 └─ ScopeChannelGroup           (composite: ordered List<ScopeChannelNode>)
-                                (renders as a collapsible header in the
-                                 sidebar; collapsing hides member rows,
-                                 it doesn't stop recording them)
+                                (renders as a collapsible tree row;
+                                 collapsing only hides member rows, it
+                                 doesn't stop recording them)
 ```
 
 Keeping the sample type as a single `ulong` regardless of `Kind` lets the
 recorder and ring buffer stay generic — `Kind`/`BitWidth` only matter to
-the renderer (step-trace vs. hex band) and to the UI (checkbox per leaf
-node to show/hide its row).
+the renderer (step-line vs. hex band). There's no per-channel show/hide
+any more (removed on review — see Window layout below): every channel is
+always recorded and always rendered, so `Kind`/`BitWidth` are the only
+thing the UI branches on.
 
 ### Recording
 
@@ -108,17 +147,24 @@ subscribe/unsubscribe lifecycle to manage.
 
 ### Window layout
 
-- Left sidebar: the channel tree (`ScopeChannelGroup` as a
-  `CollapsingHeader`/`TreeNode`, `ScopeChannel` leaves as rows with a
-  show/hide checkbox).
-- Main pane: one horizontal row per visible leaf channel.
-  - Digital rows: classic high/low step trace.
-  - Bus rows: horizontal hex-value bands, edges where the value changes
-    (Saleae-style parallel bus view), value shown as text inside each
-    constant-value segment.
-- Toolbar: zoom (samples/pixel) and a time ruler derived from
-  `EmulatedSystem.CyclesPerSecond`, plus a "jump to now" button for after
-  you've panned back through history while paused.
+One merged view — no separate sidebar. A single `ImGui.BeginTable` (2
+columns: "Channel", "Waveform") holds the whole tree:
+
+- `ScopeChannelGroup`s are tree rows (`TreeNodeEx(...,
+  ImGuiTreeNodeFlags.DefaultOpen | ImGuiTreeNodeFlags.SpanAllColumns)`),
+  expanded by default, spanning both columns.
+- `ScopeChannel` leaves are rows with the name in column 0 and, for
+  `Digital` channels, an independent `ImPlot` step-line plot filling
+  column 1 (see Rendering above). `Bus` channels currently render a
+  `"(bus rendering - phase 2)"` placeholder in column 1 instead of a
+  plot — Phase 2's job to replace.
+- No per-channel show/hide control — removed on review in favor of
+  "just show everything," since the channel counts so far (a dozen or
+  so) don't need it. Worth revisiting if/when channel lists grow large
+  enough that scrolling past unwanted ones becomes annoying.
+- No toolbar yet. Zoom is still fixed (Phase 3), and there's no time
+  ruler on screen yet either — see the Phase 3 section for what's still
+  needed there.
 
 ### Chips own their channel group; systems compose
 
@@ -194,17 +240,22 @@ event, `Mos6502Chip.CreateScopeChannelGroup()` and
 minimal `OscilloscopeWindow` that just lists channel names (no waveform
 drawing yet) to prove the plumbing end to end. Wire into `AppleIIDebugger`.
 
-**Phase 1 — Digital waveform rendering**
-Spike on `Hexa.NET.ImPlot` basics (a plot per channel row vs. one shared
-plot with linked/stacked axes — whichever gives cleaner synced pan/zoom
-across all rows), then draw real step-trace rows for `Digital` channels
-via `PlotStairs` (or equivalent). Right-anchored to "now" while the
-debugger runs, holding still when it's stopped. Sidebar show/hide
-checkboxes and group collapse/expand.
+**Phase 1 — Digital waveform rendering (done)**
+Landed as: one `ImGui` table (channel name column + waveform column),
+`ScopeChannelGroup`s as expanded-by-default tree rows spanning both
+columns, `Digital` channels as their own `PlotStairs` step-line plot with
+"L"/"H" y-axis ticks and a per-row hover tooltip. Went through two other
+layouts first — see "Layout false starts" above. Right-anchored to "now"
+while the debugger runs, holding still when it's stopped, for free, same
+mechanism as originally planned. No show/hide control (removed on
+review — see Window layout).
 
 **Phase 2 — Bus channel rendering**
-Hex-banded display for `Bus` channels (Address/Data), edges at
-value-change points, hover tooltip with the exact value.
+Hex-banded display for `Bus` channels (Address/Data), replacing the
+current `"(bus rendering - phase 2)"` placeholder row. Edges at
+value-change points, hover tooltip with the exact value (reuse the
+`IsPlotHovered`/`GetPlotMousePos`/`SetTooltip` pattern already
+implemented for digital rows).
 
 **Phase 3 — Timescale controls**
 Most of this comes from ImPlot's own x-axis interaction; the work here is
@@ -212,11 +263,22 @@ constraining/formatting it — time-unit axis labels (derived from
 `CyclesPerSecond`), clamping pan to what the ring buffer retains, and a
 "jump to now" button that resets the axis to the live edge.
 
+**Note for whoever picks this up:** axis limits are currently pinned every
+frame via `ImPlotCond.Always` on each row's *independent* plot (Phase 1
+dropped `ImPlot.BeginSubplots`, which would have given synced axes across
+rows for free via `ImPlotSubplotFlags.LinkAllX` — see "Layout false
+starts"). The moment this phase lets a user interactively drag/zoom one
+row's x-axis instead of forcing it every frame, that interaction won't
+propagate to sibling rows unless axis linking is added back explicitly
+(`ImPlot.SetupAxisLinks`/`SetNextAxisLinks` with a shared link-range
+field on `OscilloscopeWindow`, set identically on every row's `BeginPlot`
+call). Budget for that rather than being surprised each row zooms
+independently.
+
 **Phase 4 — Polish**
-Measurement cursors (stretch), persisting per-channel visibility/group
-collapse state across sessions (via the existing `ImGuiSettingsHandler`
-plumbing already used for window open/closed state in `Program.cs`),
-per-channel trace colors.
+Measurement cursors (stretch), persisting group collapse state across
+sessions (via the existing `ImGuiSettingsHandler` plumbing already used
+for window open/closed state in `Program.cs`), per-channel trace colors.
 
 **Phase 5 (stretch, later) — Analog channels**
 Add the float-sampled `Analog` channel kind once composite video/
@@ -234,12 +296,16 @@ chip class — worth checking when this phase starts.
 
 ## Open risks
 
-- This is the project's first use of ImPlot — budget the Phase 1 spike
-  seriously rather than assuming the API maps 1:1 onto the hand-rolled
-  `ImDrawList` patterns used elsewhere in the codebase.
-- Ring buffer capacity is a guessed starting constant; if it's too short
-  to be useful when zoomed out, or too large for no benefit, tune it once
-  Phase 1 is actually on screen rather than guessing further now.
+- ~~This is the project's first use of ImPlot~~ — resolved: Phase 1 spiked
+  it (see "Layout false starts" above). The API doesn't map 1:1 onto the
+  hand-rolled `ImDrawList` patterns elsewhere in the codebase, and its
+  "obvious" digital-signal feature (`PlotDigital`'s auto-stacking) turned
+  out to be the wrong tool for a labeled-row layout — worth remembering
+  before reaching for another ImPlot "does this for you" feature without
+  checking it actually fits.
+- Ring buffer capacity is still a guessed starting constant (`ScopeRecorder.DefaultCapacity`);
+  now that Phase 1 is actually on screen, it's worth revisiting whether
+  it's too short to be useful zoomed out, or larger than it needs to be.
 - Bus-band rendering (Phase 2) is the fiddliest drawing code here — it's
   also the one piece ImPlot doesn't hand us for free (custom draw calls
   into plot space). Worth prototyping against just the Data bus (8-bit,
