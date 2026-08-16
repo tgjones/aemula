@@ -378,11 +378,12 @@ public static class Program
         var debuggerWindow = (DebuggerWindow)GCHandle.FromIntPtr((nint)entry).Target!;
 
         var lineString = Marshal.PtrToStringAnsi((nint)line);
-
-        if (lineString == "IsOpen=1")
+        if (lineString == null)
         {
-            debuggerWindow.IsOpen = true;
+            return;
         }
+
+        debuggerWindow.ApplyPersistedSettingsLine(lineString);
     }
 
     private static unsafe void ImGuiSettingsWriteAll(ImGuiContext* context, ImGuiSettingsHandler* handler, ImGuiTextBuffer* buffer)
@@ -400,9 +401,10 @@ public static class Program
             buffer->append("]["u8);
             buffer->append(debuggerWindow.Name);
             buffer->append("]\n"u8);
-            if (debuggerWindow.IsOpen)
+            foreach (var line in debuggerWindow.GetPersistedSettingsLines())
             {
-                buffer->append("IsOpen=1\n"u8);
+                buffer->append(line);
+                buffer->append("\n"u8);
             }
         }
     }

@@ -41,6 +41,12 @@ public sealed class OscilloscopeWindow : DebuggerWindow
     private readonly double _cyclesPerSecond;
     private readonly ImPlotFormatter _timeAxisFormatter;
 
+    // Group tree collapse state, keyed by "/"-joined name path from the root
+    // (e.g. "Apple II/MOS6502"). Absence means expanded (the default); persisted
+    // across sessions via GetPersistedSettingsLines/ApplyPersistedSettingsLine,
+    // the same ImGuiSettingsHandler plumbing Program.cs already uses for IsOpen.
+    private readonly HashSet<string> _collapsedGroupPaths = new();
+
     // Shared x-axis view range (absolute sample index units), backing every row's
     // (and the timescale ruler's) linked axis while stopped - see class remarks.
     private double _viewMin;
@@ -194,9 +200,30 @@ public sealed class OscilloscopeWindow : DebuggerWindow
 
         DrawTimescaleRow(stopped, oldestRetained, axisUpperBound);
 
-        DrawChannelNode(_root, stopped, oldestRetained, axisUpperBound);
+        DrawChannelNode(_root, string.Empty, stopped, oldestRetained, axisUpperBound);
 
         ImGui.EndTable();
+    }
+
+    protected override IEnumerable<KeyValuePair<string, string>> GetPersistedSettings()
+    {
+        if (_collapsedGroupPaths.Count > 0)
+        {
+            yield return new("CollapsedGroups", string.Join(';', _collapsedGroupPaths));
+        }
+    }
+
+    protected override void ApplyPersistedSetting(string key, string value)
+    {
+        if (key != "CollapsedGroups")
+        {
+            return;
+        }
+
+        foreach (var path in value.Split(';', StringSplitOptions.RemoveEmptyEntries))
+        {
+            _collapsedGroupPaths.Add(path);
+        }
     }
 
     private void ClampView(double oldestRetained, double axisUpperBound)
@@ -275,7 +302,7 @@ public sealed class OscilloscopeWindow : DebuggerWindow
         }
     }
 
-    private void DrawChannelNode(ScopeChannelNode node, bool stopped, double oldestRetained, double axisUpperBound)
+    private void DrawChannelNode(ScopeChannelNode node, string parentPath, bool stopped, double oldestRetained, double axisUpperBound)
     {
         switch (node)
         {
@@ -284,16 +311,32 @@ public sealed class OscilloscopeWindow : DebuggerWindow
                 break;
 
             case ScopeChannelGroup group:
+                var path = parentPath.Length == 0 ? group.Name : $"{parentPath}/{group.Name}";
+
                 ImGui.TableNextRow();
                 ImGui.TableNextColumn();
-                if (ImGui.TreeNodeEx(group.Name, ImGuiTreeNodeFlags.DefaultOpen | ImGuiTreeNodeFlags.SpanAllColumns))
+
+                // Applies persisted state the first time this ID is seen this
+                // session; a manual toggle afterward takes over as normal,
+                // reflected back into _collapsedGroupPaths below so it's what
+                // gets written out again on save.
+                ImGui.SetNextItemOpen(!_collapsedGroupPaths.Contains(path), ImGuiCond.FirstUseEver);
+
+                var isOpen = ImGui.TreeNodeEx(group.Name, ImGuiTreeNodeFlags.SpanAllColumns);
+                if (isOpen)
                 {
+                    _collapsedGroupPaths.Remove(path);
+
                     foreach (var child in group.Children)
                     {
-                        DrawChannelNode(child, stopped, oldestRetained, axisUpperBound);
+                        DrawChannelNode(child, path, stopped, oldestRetained, axisUpperBound);
                     }
 
                     ImGui.TreePop();
+                }
+                else
+                {
+                    _collapsedGroupPaths.Add(path);
                 }
                 break;
         }
@@ -312,6 +355,13 @@ public sealed class OscilloscopeWindow : DebuggerWindow
         ImGui.TableNextColumn();
 
         var isDigital = channel.Kind == ScopeChannelKind.Digital;
+
+        // Deterministic per-channel color, distinct from every other channel's own
+        // independent plot (each row is its own BeginPlot, so ImPlot's normal
+        // per-plot color cycling would otherwise hand every row the same first
+        // color) - GetColormapColor wraps by channel count, so this stays stable
+        // and theme-independent regardless of how many channels are recorded.
+        var color = ImPlot.GetColormapColor(_channelIndex[channel], ImPlotColormap.Deep);
 
         if (!ImPlot.BeginPlot(
             $"##{channel.Name}",
@@ -352,24 +402,28 @@ public sealed class OscilloscopeWindow : DebuggerWindow
 
             if (isDigital)
             {
-                DrawDigitalTrace(channel, visStart, visibleCount, xs, ys);
+                DrawDigitalTrace(channel, color, visStart, visibleCount, xs, ys);
             }
             else
             {
-                DrawBusTrace(channel, visStart, visibleCount, ys);
+                DrawBusTrace(channel, color, visStart, visibleCount, ys);
             }
         }
 
         ImPlot.EndPlot();
     }
 
-    private static unsafe void DrawDigitalTrace(ScopeChannel channel, long visStart, int visibleCount, ReadOnlySpan<double> xs, ReadOnlySpan<double> ys)
+    private static unsafe void DrawDigitalTrace(ScopeChannel channel, Vector4 color, long visStart, int visibleCount, ReadOnlySpan<double> xs, ReadOnlySpan<double> ys)
     {
+        ImPlot.PushStyleColor(ImPlotCol.Line, color);
+
         fixed (double* xsPtr = xs)
         fixed (double* ysPtr = ys)
         {
             ImPlot.PlotStairs("##data"u8, xsPtr, ysPtr, visibleCount);
         }
+
+        ImPlot.PopStyleColor();
 
         if (ImPlot.IsPlotHovered())
         {
@@ -388,14 +442,14 @@ public sealed class OscilloscopeWindow : DebuggerWindow
     // centered in the rectangle when there's room for it. ImPlot has no built-in
     // "bus" mark, so this draws directly into plot pixel space via
     // GetPlotDrawList()/PlotToPixels() - see "Open risks" in the plan doc.
-    private static void DrawBusTrace(ScopeChannel channel, long visStart, int visibleCount, ReadOnlySpan<double> ys)
+    private static void DrawBusTrace(ScopeChannel channel, Vector4 color, long visStart, int visibleCount, ReadOnlySpan<double> ys)
     {
         const double BandTop = 0.85;
         const double BandBottom = 0.15;
 
         var nibbles = (channel.BitWidth + 3) / 4;
-        var fillColor = ImGui.GetColorU32(ImGuiCol.PlotHistogram, 0.35f);
-        var borderColor = ImGui.GetColorU32(ImGuiCol.PlotHistogram);
+        var fillColor = ImGui.GetColorU32(new Vector4(color.X, color.Y, color.Z, 0.35f));
+        var borderColor = ImGui.GetColorU32(color);
         var textColor = ImGui.GetColorU32(ImGuiCol.Text);
 
         var drawList = ImPlot.GetPlotDrawList();

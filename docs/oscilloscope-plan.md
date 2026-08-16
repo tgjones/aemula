@@ -10,12 +10,14 @@ fidelity, and controls incrementally.
 
 ## Status
 
-**Phases 0 through 3 are done** (see git log for `Aemula.UI` — "Implement
+**Phases 0 through 4 are done** (see git log for `Aemula.UI` — "Implement
 oscilloscope phase 0", "Implement oscilloscope phase 1", a follow-up
 "label rows to the left" rework driven by review feedback, "Implement
-oscilloscope phase 2", and "Implement phase 3 of oscilloscope plan").
-Everything below is written in the present tense for what's actually
-built; phases 4+ are still ahead. If you're picking this up in a new
+oscilloscope phase 2", "Implement phase 3 of oscilloscope plan", and
+"Implement phase 4"), except for measurement cursors, which were
+deliberately left out of Phase 4 — see the Phase 4 writeup below for why,
+and Phase 5/6 are still ahead. Everything below is written in the present
+tense for what's actually built. If you're picking this up in a new
 session, the **Rendering** and **Window layout** sections below describe
 the current `OscilloscopeWindow.cs` accurately — read those before
 changing anything, since the layout went through two false starts before
@@ -352,10 +354,48 @@ frame via `SetupSharedXAxis`, which is what keeps rows in sync without
   ≥ 0) — this is what lets a row actually show anything other than the
   fixed trailing window Phases 1/2 hardcoded.
 
-**Phase 4 — Polish**
-Measurement cursors (stretch), persisting group collapse state across
-sessions (via the existing `ImGuiSettingsHandler` plumbing already used
-for window open/closed state in `Program.cs`), per-channel trace colors.
+**Phase 4 — Polish (done, minus cursors)**
+Landed group-collapse persistence and per-channel trace colors; measurement
+cursors were left as the still-open stretch item (no design work done here —
+deferred rather than attempted and cut).
+
+- **Group collapse persistence** generalizes the existing `ImGuiSettingsHandler`
+  wiring in `Program.cs`, which previously only ever wrote/read a hardcoded
+  `IsOpen=1` line per window. `DebuggerWindow` gained two virtual hooks,
+  `GetPersistedSettingsLines()` / `ApplyPersistedSettingsLine(string)`, so any
+  window can persist its own extra state through the same `[Aemula][<window
+  name>]` ini section without `Program.cs` needing to know what that state
+  means. `ImGuiSettingsWriteAll` appends each window's extra lines after
+  `IsOpen=1`; `ImGuiSettingsReadLine` forwards any line that isn't `IsOpen=1`
+  to `ApplyPersistedSettingsLine`.
+- `OscilloscopeWindow` tracks collapsed groups as a `HashSet<string>` of
+  `/`-joined name paths from the root (e.g. `"Apple II/MOS6502"`), serialized
+  as one `CollapsedGroups=path;path;...` line. Absence from the set means
+  expanded, matching the existing default. Each group row applies its
+  persisted state via `ImGui.SetNextItemOpen(open, ImGuiCond.FirstUseEver)`
+  before `TreeNodeEx`, then mirrors `TreeNodeEx`'s return back into the set
+  every frame — so a live toggle both drives that frame's rendering and is
+  what gets written out next time the ini saves. No escaping of `/` or `;` in
+  group names — not needed for the names in use today, worth revisiting if a
+  group name ever needs either character.
+- **Per-channel trace colors** replace the flat `ImGuiCol.PlotHistogram`
+  theme color every bus channel shared (and digital rows' unstyled default,
+  which was invisible as a distinguishing feature since each row is its own
+  independent `BeginPlot` and so always restarts ImPlot's color cycle at the
+  same first color). Each leaf channel now gets
+  `ImPlot.GetColormapColor(channelIndex, ImPlotColormap.Deep)` — a
+  deterministic, theme-independent color keyed to the channel's position in
+  the flattened channel list (the same index `_channelIndex` already tracked
+  for buffer lookups), wrapping automatically if the channel count exceeds
+  the colormap's size. Digital rows apply it via
+  `ImPlot.PushStyleColor(ImPlotCol.Line, color)` /`PopStyleColor()` around
+  `PlotStairs`; bus rows convert it to fill (35% alpha) and border `ImU32`
+  via `ImGui.GetColorU32` instead of reading the `PlotHistogram` theme slot.
+  No UI to customize colors and nothing persisted — this is the "auto-assigned
+  palette" option from the two considered when this phase started, chosen
+  over a persisted per-channel color picker since it needed no new UI surface
+  and still solves the actual problem (channels being visually
+  indistinguishable from each other).
 
 **Phase 5 (stretch, later) — Analog channels**
 Add the float-sampled `Analog` channel kind once composite video/
