@@ -10,15 +10,15 @@ fidelity, and controls incrementally.
 
 ## Status
 
-**Phase 0 and Phase 1 are done** (see git log for `Aemula.UI` — "Implement
-oscilloscope phase 0", "Implement oscilloscope phase 1", and a follow-up
-"label rows to the left" rework driven by review feedback). Everything
-below is written in the present tense for what's actually built; phases
-2+ are still ahead. If you're picking this up in a new session, the
-**Rendering** and **Window layout** sections below describe the current
-`OscilloscopeWindow.cs` accurately — read those before changing anything,
-since the layout went through two false starts before landing (see
-"Layout false starts" under Rendering).
+**Phases 0 through 2 are done** (see git log for `Aemula.UI` — "Implement
+oscilloscope phase 0", "Implement oscilloscope phase 1", a follow-up
+"label rows to the left" rework driven by review feedback, and "Implement
+oscilloscope phase 2"). Everything below is written in the present tense
+for what's actually built; phases 3+ are still ahead. If you're picking
+this up in a new session, the **Rendering** and **Window layout** sections
+below describe the current `OscilloscopeWindow.cs` accurately — read those
+before changing anything, since the layout went through two false starts
+before landing (see "Layout false starts" under Rendering).
 
 ## Design decisions
 
@@ -76,8 +76,27 @@ turns off ImPlot's built-in reticle (not useful — it just showed raw plot
 coordinates), and instead, after the `PlotStairs` call and still inside
 `BeginPlot`/`EndPlot`, `ImPlot.IsPlotHovered()` + `ImPlot.GetPlotMousePos()`
 find the nearest sample index and `ImGui.SetTooltip($"{channel.Name}: {H or L}")`
-shows its value. This pattern is meant to carry into Phase 2 for bus
-channels (showing the hex value under the cursor instead of H/L).
+shows its value. `Bus` rows reuse the same hover pattern (see below),
+showing the hex value under the cursor instead of H/L.
+
+`Bus` channels render as a **hex-banded trace** instead of `PlotStairs` —
+one filled+outlined rectangle per run of consecutive equal-valued samples,
+so the rectangle edges land exactly at value-change points, with the hex
+value (`X2`/`X4`, sized off `BitWidth`) centered in the rectangle when
+there's room for it (skipped below some width, per `ImGui.CalcTextSize`).
+This is custom draw-list code, not an ImPlot mark — ImPlot has no built-in
+"bus" primitive (see Open risks, resolved) — done via
+`ImPlot.GetPlotDrawList()` returning an `ImDrawListPtr`, and
+`ImPlot.PlotToPixels(x, y)` to convert plot-space coordinates (sample
+index, and a fixed band of y ∈ [0.15, 0.85]) into the screen pixels that
+draw-list calls need. The whole per-row draw loop is wrapped in
+`ImPlot.PushPlotClipRect()`/`PopPlotClipRect()`, which both keeps rects
+from bleeding outside the row's plot and makes it safe to let the last
+run's right edge run one sample past the visible window (avoids that
+run — often just one sample wide, right at "now" — collapsing to a
+zero-width band). Colors come from the `PlotHistogram` theme slot
+(`ImGui.GetColorU32(ImGuiCol.PlotHistogram[, alpha])`) rather than a
+hardcoded color, so it tracks the active ImGui theme.
 
 #### Layout false starts
 
@@ -153,11 +172,10 @@ columns: "Channel", "Waveform") holds the whole tree:
 - `ScopeChannelGroup`s are tree rows (`TreeNodeEx(...,
   ImGuiTreeNodeFlags.DefaultOpen | ImGuiTreeNodeFlags.SpanAllColumns)`),
   expanded by default, spanning both columns.
-- `ScopeChannel` leaves are rows with the name in column 0 and, for
-  `Digital` channels, an independent `ImPlot` step-line plot filling
-  column 1 (see Rendering above). `Bus` channels currently render a
-  `"(bus rendering - phase 2)"` placeholder in column 1 instead of a
-  plot — Phase 2's job to replace.
+- `ScopeChannel` leaves are rows with the name in column 0 and an
+  independent `ImPlot` filling column 1: `Digital` channels as a
+  step-line plot, `Bus` channels as a hex-banded trace (see Rendering
+  above for both).
 - No per-channel show/hide control — removed on review in favor of
   "just show everything," since the channel counts so far (a dozen or
   so) don't need it. Worth revisiting if/when channel lists grow large
@@ -250,12 +268,16 @@ while the debugger runs, holding still when it's stopped, for free, same
 mechanism as originally planned. No show/hide control (removed on
 review — see Window layout).
 
-**Phase 2 — Bus channel rendering**
-Hex-banded display for `Bus` channels (Address/Data), replacing the
-current `"(bus rendering - phase 2)"` placeholder row. Edges at
-value-change points, hover tooltip with the exact value (reuse the
-`IsPlotHovered`/`GetPlotMousePos`/`SetTooltip` pattern already
-implemented for digital rows).
+**Phase 2 — Bus channel rendering (done)**
+Landed as: one filled+outlined rectangle per run of equal samples (edges
+at value-change points by construction), drawn via
+`ImPlot.GetPlotDrawList()`/`PlotToPixels()` since ImPlot has no built-in
+bus mark, with the hex value centered in the rectangle when it fits. Hover
+tooltip reuses the `IsPlotHovered`/`GetPlotMousePos`/`SetTooltip` pattern
+from digital rows, with `Math.Floor` instead of `Math.Round` for the
+nearest-sample lookup (a bus value spans `[i, i+1)`, not a point at `i`)
+and the value formatted as hex instead of H/L. See Rendering above for
+the rest of the detail (clip rect, color source, last-run-width handling).
 
 **Phase 3 — Timescale controls**
 Most of this comes from ImPlot's own x-axis interaction; the work here is
@@ -306,10 +328,13 @@ chip class — worth checking when this phase starts.
 - Ring buffer capacity is still a guessed starting constant (`ScopeRecorder.DefaultCapacity`);
   now that Phase 1 is actually on screen, it's worth revisiting whether
   it's too short to be useful zoomed out, or larger than it needs to be.
-- Bus-band rendering (Phase 2) is the fiddliest drawing code here — it's
-  also the one piece ImPlot doesn't hand us for free (custom draw calls
-  into plot space). Worth prototyping against just the Data bus (8-bit,
-  narrower) before Address (16-bit).
+- ~~Bus-band rendering (Phase 2) is the fiddliest drawing code here~~ —
+  resolved: landed as per-run filled/outlined rectangles via
+  `GetPlotDrawList()`/`PlotToPixels()` (see Rendering above), used
+  directly for both the 8-bit Data bus and 16-bit Address bus rather than
+  prototyping one width first. Still needs a manual look in-app (narrow
+  1-2 sample runs at high activity, and the 16-bit Address column at the
+  default row height) before calling the visual result settled.
 - `Debugger.Ticked` fires every tick the emulator executes, including
   fast-forwarded/non-stepped runs — if that turns out to add measurable
   overhead even with `OscilloscopeWindow` closed (it shouldn't, since the
