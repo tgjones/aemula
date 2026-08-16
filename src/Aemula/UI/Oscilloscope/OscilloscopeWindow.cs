@@ -8,19 +8,21 @@ using Hexa.NET.ImPlot;
 namespace Aemula.UI.Oscilloscope;
 
 /// <summary>
-/// Logic-analyzer-style debugger window: a channel sidebar (grouped, collapsible,
-/// per-channel show/hide) next to a waveform pane. Digital channels only for now -
-/// see docs/oscilloscope-plan.md for the phased plan (bus/hex-band rendering,
+/// Logic-analyzer-style debugger window: one merged tree/waveform view, channel
+/// name to the left of its own row's trace, grouped under collapsible headers
+/// (expanded by default). All channels are always recorded and shown - no
+/// per-channel hide toggle. Digital channels only for now - see
+/// docs/oscilloscope-plan.md for the phased plan (bus/hex-band rendering,
 /// timescale controls, etc. come later).
 /// </summary>
 public sealed class OscilloscopeWindow : DebuggerWindow
 {
+    private static readonly string[] DigitalTickLabels = ["L", "H"];
+
     private readonly Debugger _debugger;
     private readonly ScopeChannelNode _root;
     private readonly ScopeRecorder _recorder;
     private readonly Dictionary<ScopeChannel, int> _channelIndex;
-    private readonly bool[] _channelVisible;
-    private readonly List<ScopeChannel> _visibleDigitalChannels = [];
 
     public override string DisplayName => "Oscilloscope";
 
@@ -38,9 +40,6 @@ public sealed class OscilloscopeWindow : DebuggerWindow
             _channelIndex[_recorder.Channels[i]] = i;
         }
 
-        _channelVisible = new bool[_recorder.Channels.Length];
-        Array.Fill(_channelVisible, true);
-
         _debugger.Ticked += OnTicked;
     }
 
@@ -56,38 +55,56 @@ public sealed class OscilloscopeWindow : DebuggerWindow
 
     protected override void DrawOverride(EmulatorTime time)
     {
-        var sidebarWidth = ImGui.GetFontSize() * 12f;
+        var labelColumnWidth = ImGui.GetFontSize() * 10f;
 
-        ImGui.BeginChild("##oscilloscope_channels"u8, new Vector2(sidebarWidth, 0), ImGuiChildFlags.Borders);
-        DrawChannelTree(_root);
-        ImGui.EndChild();
+        // One sample = one pixel, fixed zoom for now - see phase 3 in the plan for
+        // proper zoom/pan. Since new samples always land at the right edge (index
+        // visibleCount - 1) and we recompute this range every frame, the view is
+        // right-anchored to "now" while running and holds still for free once the
+        // debugger stops (no more ticks means no more samples to show).
+        var availableSamples = (int)Math.Min(_recorder.TotalSamples, _recorder.Capacity);
+        var plotWidth = (int)MathF.Max(1f, ImGui.GetContentRegionAvail().X - labelColumnWidth);
+        var visibleCount = Math.Min(availableSamples, plotWidth);
 
-        ImGui.SameLine();
+        Span<double> xs = visibleCount <= 4096 ? stackalloc double[visibleCount] : new double[visibleCount];
+        for (var i = 0; i < visibleCount; i++)
+        {
+            xs[i] = i;
+        }
 
-        ImGui.BeginChild("##oscilloscope_waveforms"u8);
-        DrawWaveforms();
-        ImGui.EndChild();
+        if (!ImGui.BeginTable(
+            "##oscilloscope_table"u8,
+            2,
+            ImGuiTableFlags.BordersInnerV | ImGuiTableFlags.Resizable | ImGuiTableFlags.ScrollY,
+            ImGui.GetContentRegionAvail()))
+        {
+            return;
+        }
+
+        ImGui.TableSetupColumn("Channel"u8, ImGuiTableColumnFlags.WidthFixed, labelColumnWidth);
+        ImGui.TableSetupColumn("Waveform"u8, ImGuiTableColumnFlags.WidthStretch);
+
+        DrawChannelNode(_root, visibleCount, xs);
+
+        ImGui.EndTable();
     }
 
-    private void DrawChannelTree(ScopeChannelNode node)
+    private void DrawChannelNode(ScopeChannelNode node, int visibleCount, ReadOnlySpan<double> xs)
     {
         switch (node)
         {
             case ScopeChannel channel:
-                var index = _channelIndex[channel];
-                var visible = _channelVisible[index];
-                if (ImGui.Checkbox(channel.Name, ref visible))
-                {
-                    _channelVisible[index] = visible;
-                }
+                DrawChannelRow(channel, visibleCount, xs);
                 break;
 
             case ScopeChannelGroup group:
-                if (ImGui.TreeNodeEx(group.Name, ImGuiTreeNodeFlags.DefaultOpen))
+                ImGui.TableNextRow();
+                ImGui.TableNextColumn();
+                if (ImGui.TreeNodeEx(group.Name, ImGuiTreeNodeFlags.DefaultOpen | ImGuiTreeNodeFlags.SpanAllColumns))
                 {
                     foreach (var child in group.Children)
                     {
-                        DrawChannelTree(child);
+                        DrawChannelNode(child, visibleCount, xs);
                     }
 
                     ImGui.TreePop();
@@ -96,85 +113,72 @@ public sealed class OscilloscopeWindow : DebuggerWindow
         }
     }
 
-    private unsafe void DrawWaveforms()
+    private unsafe void DrawChannelRow(ScopeChannel channel, int visibleCount, ReadOnlySpan<double> xs)
     {
-        _visibleDigitalChannels.Clear();
-        foreach (var channel in _recorder.Channels)
-        {
-            if (channel.Kind == ScopeChannelKind.Digital && _channelVisible[_channelIndex[channel]])
-            {
-                _visibleDigitalChannels.Add(channel);
-            }
-        }
+        var rowHeight = ImGui.GetTextLineHeightWithSpacing() * 3.5f;
 
-        if (_visibleDigitalChannels.Count == 0)
+        ImGui.TableNextRow(ImGuiTableRowFlags.None, rowHeight);
+
+        ImGui.TableNextColumn();
+        ImGui.AlignTextToFramePadding();
+        ImGui.Text(channel.Name);
+
+        ImGui.TableNextColumn();
+
+        if (channel.Kind != ScopeChannelKind.Digital)
         {
-            ImGui.TextDisabled("No channels selected.");
+            ImGui.TextDisabled("(bus rendering - phase 2)");
             return;
         }
 
-        // One sample = one pixel, fixed zoom for now - see phase 3 in the plan for
-        // proper zoom/pan. Since new samples always land at the right edge (index
-        // visibleCount - 1) and we recompute this range every frame, the view is
-        // right-anchored to "now" while running and holds still for free once the
-        // debugger stops (no more ticks means no more samples to show).
-        var availableSamples = (int)Math.Min(_recorder.TotalSamples, _recorder.Capacity);
-        var plotWidth = (int)MathF.Max(1f, ImGui.GetContentRegionAvail().X);
-        var visibleCount = Math.Min(availableSamples, plotWidth);
+        Span<double> ys = visibleCount <= 4096 ? stackalloc double[visibleCount] : new double[visibleCount];
+        if (visibleCount > 0)
+        {
+            FillVisibleSamples(channel, visibleCount, ys);
+        }
 
-        // One subplot row per channel, its title sitting right above that row's
-        // waveform, with LinkAllX keeping every row's time axis in lockstep - the
-        // layout the plan (and Saleae/Logic-style analyzers) actually call for,
-        // rather than folding every channel into one plot via ImPlot's own digital-
-        // signal auto-stacking, which left channel names stranded in the sidebar
-        // with no visible link to which band was which.
-        if (!ImPlot.BeginSubplots(
-            "##oscilloscope_subplots"u8,
-            _visibleDigitalChannels.Count,
-            1,
-            ImGui.GetContentRegionAvail(),
-            ImPlotSubplotFlags.LinkAllX | ImPlotSubplotFlags.NoMenus))
+        if (!ImPlot.BeginPlot(
+            $"##{channel.Name}",
+            new Vector2(-1, rowHeight),
+            ImPlotFlags.NoLegend | ImPlotFlags.NoMenus | ImPlotFlags.NoMouseText))
         {
             return;
+        }
+
+        ImPlot.SetupAxes(
+            ""u8,
+            ""u8,
+            ImPlotAxisFlags.NoTickLabels | ImPlotAxisFlags.NoGridLines,
+            ImPlotAxisFlags.NoGridLines);
+        ImPlot.SetupAxesLimits(0, Math.Max(visibleCount - 1, 1), -0.1, 1.1, ImPlotCond.Always);
+
+        Span<double> digitalTicks = stackalloc double[] { 0.0, 1.0 };
+        fixed (double* digitalTicksPtr = digitalTicks)
+        {
+            ImPlot.SetupAxisTicks(ImAxis.Y1, digitalTicksPtr, 2, DigitalTickLabels);
         }
 
         if (visibleCount > 0)
         {
-            Span<double> xs = visibleCount <= 4096 ? stackalloc double[visibleCount] : new double[visibleCount];
-            for (var i = 0; i < visibleCount; i++)
+            fixed (double* xsPtr = xs)
+            fixed (double* ysPtr = ys)
             {
-                xs[i] = i;
+                ImPlot.PlotStairs("##data"u8, xsPtr, ysPtr, visibleCount);
             }
 
-            Span<double> ys = visibleCount <= 4096 ? stackalloc double[visibleCount] : new double[visibleCount];
-
-            foreach (var channel in _visibleDigitalChannels)
+            if (ImPlot.IsPlotHovered())
             {
-                if (!ImPlot.BeginPlot(channel.Name, default, ImPlotFlags.NoLegend | ImPlotFlags.NoMenus))
+                var mouse = ImPlot.GetPlotMousePos();
+                var index = (int)Math.Round(mouse.X);
+                if (index >= 0 && index < visibleCount)
                 {
-                    continue;
+                    var value = ys[index];
+                    ImGui.SetTooltip($"{channel.Name}: {(value != 0 ? "H" : "L")}");
                 }
-
-                ImPlot.SetupAxes(
-                    ""u8,
-                    ""u8,
-                    ImPlotAxisFlags.NoTickLabels | ImPlotAxisFlags.NoGridLines,
-                    ImPlotAxisFlags.NoTickLabels | ImPlotAxisFlags.NoGridLines);
-                ImPlot.SetupAxesLimits(0, Math.Max(visibleCount - 1, 1), 0, 1, ImPlotCond.Always);
-
-                FillVisibleSamples(channel, visibleCount, ys);
-
-                fixed (double* xsPtr = xs)
-                fixed (double* ysPtr = ys)
-                {
-                    ImPlot.PlotDigital(channel.Name, xsPtr, ysPtr, visibleCount);
-                }
-
-                ImPlot.EndPlot();
             }
         }
 
-        ImPlot.EndSubplots();
+        ImPlot.EndPlot();
     }
 
     private void FillVisibleSamples(ScopeChannel channel, int visibleCount, Span<double> destination)
