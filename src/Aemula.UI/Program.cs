@@ -11,6 +11,7 @@ using Aemula.Emulation.Systems.Nes;
 using Aemula.Emulation.Systems.SpaceInvaders;
 using Hexa.NET.ImGui;
 using Hexa.NET.ImGui.Backends.SDL3;
+using Hexa.NET.ImPlot;
 using Hexa.NET.SDL3;
 
 namespace Aemula.UI;
@@ -74,6 +75,11 @@ public static class Program
 
         var ctx = ImGui.CreateContext();
         ImGui.SetCurrentContext(ctx);
+
+        var imPlotCtx = ImPlot.CreateContext();
+        ImPlot.SetCurrentContext(imPlotCtx);
+        ImPlot.SetImGuiContext(ctx);
+
         ImGuiIOPtr io = ImGui.GetIO();
         io.ConfigFlags |=
             ImGuiConfigFlags.NavEnableKeyboard
@@ -278,6 +284,7 @@ public static class Program
         SDL.WaitForGPUIdle(gpuDevice);
         ImGuiImplSDL3.Shutdown();
         ImGuiImplSDL3.SDLGPU3Shutdown();
+        ImPlot.DestroyContext();
         ImGui.DestroyContext();
 
         SDL.ReleaseWindowFromGPUDevice(gpuDevice, window);
