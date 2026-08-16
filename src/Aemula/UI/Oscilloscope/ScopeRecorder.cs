@@ -35,7 +35,7 @@ public sealed class ScopeRecorder
     /// Index of the next sample slot to be written - i.e. the oldest retained
     /// sample once the buffer has wrapped.
     /// </summary>
-    public int WriteIndex { get; private set; }
+    private int WriteIndex { get; set; }
 
     /// <summary>
     /// Total number of samples ever recorded, which keeps counting past

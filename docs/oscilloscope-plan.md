@@ -10,15 +10,16 @@ fidelity, and controls incrementally.
 
 ## Status
 
-**Phases 0 through 2 are done** (see git log for `Aemula.UI` — "Implement
+**Phases 0 through 3 are done** (see git log for `Aemula.UI` — "Implement
 oscilloscope phase 0", "Implement oscilloscope phase 1", a follow-up
-"label rows to the left" rework driven by review feedback, and "Implement
-oscilloscope phase 2"). Everything below is written in the present tense
-for what's actually built; phases 3+ are still ahead. If you're picking
-this up in a new session, the **Rendering** and **Window layout** sections
-below describe the current `OscilloscopeWindow.cs` accurately — read those
-before changing anything, since the layout went through two false starts
-before landing (see "Layout false starts" under Rendering).
+"label rows to the left" rework driven by review feedback, "Implement
+oscilloscope phase 2", and "Implement phase 3 of oscilloscope plan").
+Everything below is written in the present tense for what's actually
+built; phases 4+ are still ahead. If you're picking this up in a new
+session, the **Rendering** and **Window layout** sections below describe
+the current `OscilloscopeWindow.cs` accurately — read those before
+changing anything, since the layout went through two false starts before
+landing (see "Layout false starts" under Rendering).
 
 ## Design decisions
 
@@ -66,10 +67,14 @@ the other `Hexa.NET.*` packages, plus context setup/teardown in
 Digital channels render via **`ImPlot.PlotStairs`** (a plain step-line),
 not `PlotDigital` — see "Layout false starts" below for why. Each
 channel's y-axis uses **`ImPlot.SetupAxisTicks(ImAxis.Y1, [0,1], 2, ["L","H"])`**
-so it reads "L"/"H" instead of raw 0/1. Axis limits are pinned every
-frame via `SetupAxesLimits(..., ImPlotCond.Always)` rather than left to
-auto-fit or interactive zoom — see the Phase 3 note below on why that'll
-need revisiting.
+so it reads "L"/"H" instead of raw 0/1. The x-axis is in absolute
+sample-index units (one tick = one `Debugger.Ticked` call) and, since Phase
+3, is only forced every frame via `SetupAxisLimits(..., ImPlotCond.Always)`
+while the debugger is running; once stopped it hands off to ImPlot's own
+pan/zoom via `SetupAxisLinks` — see the Phase 3 writeup below for the full
+mechanism. Rows themselves carry `ImPlotAxisFlags.NoTickLabels` on X and
+draw no time text of their own; the ruler above the table
+(`DrawTimescaleRow`) is the single place tick labels render.
 
 Each row also implements its own hover tooltip: `ImPlotFlags.NoMouseText`
 turns off ImPlot's built-in reticle (not useful — it just showed raw plot
@@ -279,23 +284,73 @@ nearest-sample lookup (a bus value spans `[i, i+1)`, not a point at `i`)
 and the value formatted as hex instead of H/L. See Rendering above for
 the rest of the detail (clip rect, color source, last-run-width handling).
 
-**Phase 3 — Timescale controls**
-Most of this comes from ImPlot's own x-axis interaction; the work here is
-constraining/formatting it — time-unit axis labels (derived from
-`CyclesPerSecond`), clamping pan to what the ring buffer retains, and a
-"jump to now" button that resets the axis to the live edge.
+**Phase 3 — Timescale controls (done)**
+Landed as: the x-axis is absolute sample-index units throughout (one tick
+= one `Debugger.Ticked` call, i.e. one `ScopeRecorder.Sample()` call), not
+a window-relative 0-based index like Phases 1/2 used. `OscilloscopeWindow`
+holds a shared `_viewMin`/`_viewMax` pair (absolute sample-index units)
+that every row's independent `BeginPlot` reads/writes identically each
+frame via `SetupSharedXAxis`, which is what keeps rows in sync without
+`ImPlot.BeginSubplots` (Phase 1 dropped Subplots, and with it
+`ImPlotSubplotFlags.LinkAllX` — see "Layout false starts"):
 
-**Note for whoever picks this up:** axis limits are currently pinned every
-frame via `ImPlotCond.Always` on each row's *independent* plot (Phase 1
-dropped `ImPlot.BeginSubplots`, which would have given synced axes across
-rows for free via `ImPlotSubplotFlags.LinkAllX` — see "Layout false
-starts"). The moment this phase lets a user interactively drag/zoom one
-row's x-axis instead of forcing it every frame, that interaction won't
-propagate to sibling rows unless axis linking is added back explicitly
-(`ImPlot.SetupAxisLinks`/`SetNextAxisLinks` with a shared link-range
-field on `OscilloscopeWindow`, set identically on every row's `BeginPlot`
-call). Budget for that rather than being surprised each row zooms
-independently.
+- **While the debugger is running:** `_viewMin`/`_viewMax` are recomputed
+  every frame as a fixed-width window ending at the live edge and forced
+  onto each row via `SetupAxisLimits(X1, _viewMin, _viewMax,
+  ImPlotCond.Always)`. No interaction while running, same as before.
+- **While stopped:** `SetupSharedXAxis` instead calls
+  `SetupAxisLimitsConstraints(X1, oldestRetained, now)` (clamps panning to
+  what the ring buffer still retains), `SetupAxisZoomConstraints(X1, 2,
+  retainedRange)` (can't zoom tighter than 2 samples), and
+  `SetupAxisLinks(X1, ref _viewMin, ref _viewMax)` — this last call is
+  what both reads the shared range into the row's axis *and* writes back
+  whatever the user just dragged/scroll-zoomed, so the next row drawn the
+  same frame (and every row next frame) picks up the same range. This is
+  the explicit axis-linking the note below used to warn about.
+- The first frame after the debugger stops (or a "Jump to Now" button
+  above the table is clicked) snaps `_viewMin`/`_viewMax` back to the
+  live-edge-anchored default window, then leaves it alone so the user's
+  subsequent pan/zoom sticks.
+- **The time ruler is drawn exactly once**, not per-row — a first review
+  pass flagged that per-row tick labels were visual clutter once every row
+  shares the same axis range anyway. `DrawTimescaleRow` renders it as a
+  zero-data `ImPlot` (just axis chrome, `SetupAxisFormat(X1,
+  _timeAxisFormatter)`) occupying row 0 of the same `Channel`/`Waveform`
+  table the channels use, with `ImGui.TableSetupScrollFreeze(0, 1)`
+  freezing that row so it stays pinned above the channel rows during
+  vertical scroll — normal ImGui table header-freeze behavior, not
+  anything oscilloscope-specific. Being the same table column guarantees
+  its pixel width (and thus tick alignment) matches the channel rows
+  exactly. Channel rows keep `ImPlotAxisFlags.NoTickLabels` on X and no
+  longer call `SetupAxisFormat` at all.
+- `FormatTimeAxisTick` (the `ImPlotFormatter` callback backing the ruler)
+  converts the sample index to seconds via `CyclesPerSecond` and picks
+  s/ms/us/ns based on magnitude, reused for `FormatDuration`'s console-facing
+  string too.
+- **Zoom control**, Saleae Logic-style: a toolbar row above the table has
+  "Jump to Now", "-"/"+" buttons, and an editable "ms / 100px" textbox
+  (`ImGui.InputText` bound to `_zoomInputBuffer`, refreshed from
+  `_millisecondsPer100Px` only while the field isn't focused, so typing
+  isn't clobbered mid-edit). `_millisecondsPer100Px` is the source of
+  truth for window width whenever the toolbar drives a change (live
+  follow, "Jump to Now", a button click, or a committed textbox edit);
+  otherwise (an ordinary stopped frame with no toolbar interaction) it's
+  resynced *from* `_viewMin`/`_viewMax` so it reflects whatever the user
+  just dragged or scroll-zoomed directly on a row — two-way binding
+  between the textbox and the interactive axes. That resync is skipped
+  while `TotalSamples == 0`: with no data yet, `axisUpperBound` is padded
+  to a degenerate 1-sample range just to keep the axis calls well-formed,
+  and reading that back corrupted the zoom readout to ~0 before real data
+  existed (caught by launching the app and checking the toolbar, not by
+  reading the code — worth remembering that this class's arithmetic is
+  easy to get subtly wrong in ways that only show up on screen).
+- Sample fetch (`FillVisibleSamples`) and the bus-band draw loop
+  (`DrawBusTrace`) both moved from a fixed window-relative index to
+  reading `ImPlot.GetPlotLimits(X1)` per row per frame and mapping
+  absolute sample index → ring buffer slot via plain `% Capacity` (no
+  negative-wraparound handling needed, since absolute indices are always
+  ≥ 0) — this is what lets a row actually show anything other than the
+  fixed trailing window Phases 1/2 hardcoded.
 
 **Phase 4 — Polish**
 Measurement cursors (stretch), persisting group collapse state across
@@ -341,3 +396,11 @@ chip class — worth checking when this phase starts.
   handler no-ops on `!IsOpen`, but worth a sanity check once real channel
   counts exist), it's an easy escape hatch to only subscribe while open
   instead of always-subscribed-but-no-op.
+- Phase 3's per-row sample fetch (`FillVisibleSamples`) allocates a fresh
+  heap array once the visible range exceeds 4096 samples (same threshold
+  Phases 1/2 used, just hit far more often now that zooming out while
+  stopped can show the full ring buffer instead of a fixed pixel-width
+  window) — one `new double[]` pair per channel per frame while zoomed
+  out. Not addressed here since it's debug-UI-only and no stutter was
+  observed manually, but worth pooling/reusing the buffers if it turns out
+  to matter with more channels or a larger `DefaultCapacity`.

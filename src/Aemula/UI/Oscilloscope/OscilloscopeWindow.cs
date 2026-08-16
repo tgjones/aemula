@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Numerics;
+using System.Text;
 using Aemula.Debugging;
 using Hexa.NET.ImGui;
 using Hexa.NET.ImPlot;
@@ -11,28 +13,61 @@ namespace Aemula.UI.Oscilloscope;
 /// Logic-analyzer-style debugger window: one merged tree/waveform view, channel
 /// name to the left of its own row's trace, grouped under collapsible headers
 /// (expanded by default). All channels are always recorded and shown - no
-/// per-channel hide toggle. Digital channels only for now - see
-/// docs/oscilloscope-plan.md for the phased plan (bus/hex-band rendering,
-/// timescale controls, etc. come later).
+/// per-channel hide toggle. See docs/oscilloscope-plan.md for the phased plan.
+///
+/// X-axis is in absolute sample index units (one tick = one <see cref="Debugger.Ticked"/>
+/// call). The time ruler is drawn exactly once, as a frozen header row above the
+/// scrolling channel rows (<see cref="DrawTimescaleRow"/>) rather than per-row -
+/// individual channel rows plot data against the same range but hide their own
+/// axis labels. While the debugger runs, the axis is pinned to the live edge every
+/// frame (no interaction); once stopped, <see cref="_viewMin"/>/<see cref="_viewMax"/>
+/// back ImPlot's own pan/zoom via SetupAxisLinks (see <see cref="SetupSharedXAxis"/>),
+/// shared across every row's independent BeginPlot so they stay in sync without
+/// ImPlot.BeginSubplots (see "Layout false starts" in the plan doc). The zoom level
+/// can also be driven directly via the +/- buttons or the "ms / 100px" textbox in
+/// the toolbar, Saleae Logic-style.
 /// </summary>
 public sealed class OscilloscopeWindow : DebuggerWindow
 {
     private static readonly string[] DigitalTickLabels = ["L", "H"];
 
+    private const double ZoomFactor = 1.5;
+    private const double MinWindowWidthSamples = 2.0;
+
     private readonly Debugger _debugger;
     private readonly ScopeChannelNode _root;
     private readonly ScopeRecorder _recorder;
     private readonly Dictionary<ScopeChannel, int> _channelIndex;
+    private readonly double _cyclesPerSecond;
+    private readonly ImPlotFormatter _timeAxisFormatter;
+
+    // Shared x-axis view range (absolute sample index units), backing every row's
+    // (and the timescale ruler's) linked axis while stopped - see class remarks.
+    private double _viewMin;
+    private double _viewMax;
+    private bool _wasStopped;
+
+    // Saleae-style zoom readout/control, kept in sync with _viewMin/_viewMax (see
+    // DrawOverride) but editable independently via the toolbar's +/- buttons and
+    // textbox.
+    private double _millisecondsPer100Px;
+    private string _zoomInputBuffer = string.Empty;
+    private bool _zoomInputWasActive;
 
     public override string DisplayName => "Oscilloscope";
 
     public override Pane PreferredPane => Pane.Bottom;
 
-    public OscilloscopeWindow(Debugger debugger, ScopeChannelNode channels)
+    public unsafe OscilloscopeWindow(Debugger debugger, ScopeChannelNode channels)
     {
         _debugger = debugger;
         _root = channels;
         _recorder = new ScopeRecorder(channels);
+        _cyclesPerSecond = debugger.System.CyclesPerSecond;
+        _timeAxisFormatter = FormatTimeAxisTick;
+        // One sample per pixel, matching the fixed zoom phases 1/2 used as a
+        // starting point.
+        _millisecondsPer100Px = 100_000.0 / _cyclesPerSecond;
 
         _channelIndex = new Dictionary<ScopeChannel, int>();
         for (var i = 0; i < _recorder.Channels.Length; i++)
@@ -57,19 +92,91 @@ public sealed class OscilloscopeWindow : DebuggerWindow
     {
         var labelColumnWidth = ImGui.GetFontSize() * 10f;
 
-        // One sample = one pixel, fixed zoom for now - see phase 3 in the plan for
-        // proper zoom/pan. Since new samples always land at the right edge (index
-        // visibleCount - 1) and we recompute this range every frame, the view is
-        // right-anchored to "now" while running and holds still for free once the
-        // debugger stops (no more ticks means no more samples to show).
-        var availableSamples = (int)Math.Min(_recorder.TotalSamples, _recorder.Capacity);
-        var plotWidth = (int)MathF.Max(1f, ImGui.GetContentRegionAvail().X - labelColumnWidth);
-        var visibleCount = Math.Min(availableSamples, plotWidth);
+        var jumpToNow = ImGui.Button("Jump to Now"u8);
+        ImGui.SameLine();
+        ImGui.TextUnformatted("Zoom:"u8);
+        ImGui.SameLine();
+        var zoomOutClicked = ImGui.Button("-"u8);
+        ImGui.SameLine();
 
-        Span<double> xs = visibleCount <= 4096 ? stackalloc double[visibleCount] : new double[visibleCount];
-        for (var i = 0; i < visibleCount; i++)
+        if (!_zoomInputWasActive)
         {
-            xs[i] = i;
+            _zoomInputBuffer = _millisecondsPer100Px.ToString("0.###", CultureInfo.InvariantCulture);
+        }
+        ImGui.SetNextItemWidth(ImGui.GetFontSize() * 6f);
+        var zoomCommitted = ImGui.InputText(
+            "##zoomMsPer100Px"u8,
+            ref _zoomInputBuffer,
+            32,
+            ImGuiInputTextFlags.CharsDecimal | ImGuiInputTextFlags.EnterReturnsTrue);
+        _zoomInputWasActive = ImGui.IsItemActive();
+
+        ImGui.SameLine();
+        var zoomInClicked = ImGui.Button("+"u8);
+        ImGui.SameLine();
+        ImGui.TextUnformatted("ms / 100px"u8);
+
+        var stopped = _debugger.Stopped;
+        var justStopped = stopped && !_wasStopped;
+        _wasStopped = stopped;
+
+        var total = _recorder.TotalSamples;
+        var capacity = _recorder.Capacity;
+        var oldestRetained = Math.Max(0, total - capacity);
+        var liveEdge = (double)total;
+        // Padded so axis constraints/limits never collapse to a zero-width range
+        // before any samples have been recorded.
+        var axisUpperBound = Math.Max(liveEdge, oldestRetained + 1);
+
+        var plotWidthPixels = Math.Max(1.0, ImGui.GetContentRegionAvail().X - labelColumnWidth);
+
+        var zoomChanged = zoomOutClicked || zoomInClicked;
+        if (zoomOutClicked)
+        {
+            _millisecondsPer100Px *= ZoomFactor;
+        }
+        if (zoomInClicked)
+        {
+            _millisecondsPer100Px /= ZoomFactor;
+        }
+        if (zoomCommitted && double.TryParse(_zoomInputBuffer, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedZoom) && parsedZoom > 0)
+        {
+            _millisecondsPer100Px = parsedZoom;
+            zoomChanged = true;
+        }
+        _millisecondsPer100Px = Math.Max(1e-6, _millisecondsPer100Px);
+
+        var windowWidthSamples = Math.Max(
+            MinWindowWidthSamples,
+            _millisecondsPer100Px / 1000.0 * _cyclesPerSecond / 100.0 * plotWidthPixels);
+
+        if (!stopped || justStopped || jumpToNow)
+        {
+            _viewMax = liveEdge;
+            _viewMin = liveEdge - windowWidthSamples;
+        }
+        else if (zoomChanged)
+        {
+            var center = (_viewMin + _viewMax) * 0.5;
+            _viewMin = center - windowWidthSamples * 0.5;
+            _viewMax = center + windowWidthSamples * 0.5;
+        }
+        else if (total > 0)
+        {
+            // Steady stopped frame: reflect whatever the user just dragged or
+            // scroll-zoomed via the linked axes back into the zoom readout. Skipped
+            // while the buffer is still empty, since the view is then pinned to a
+            // degenerate 1-sample span just to keep the axis calls well-formed (see
+            // axisUpperBound above) - reading that back would corrupt the zoom
+            // readout to ~0 before any real data exists.
+            _millisecondsPer100Px = (_viewMax - _viewMin) / plotWidthPixels * 100.0 / _cyclesPerSecond * 1000.0;
+        }
+
+        ClampView(oldestRetained, axisUpperBound);
+
+        if (_viewMax <= _viewMin)
+        {
+            _viewMax = _viewMin + 1;
         }
 
         if (!ImGui.BeginTable(
@@ -83,18 +190,97 @@ public sealed class OscilloscopeWindow : DebuggerWindow
 
         ImGui.TableSetupColumn("Channel"u8, ImGuiTableColumnFlags.WidthFixed, labelColumnWidth);
         ImGui.TableSetupColumn("Waveform"u8, ImGuiTableColumnFlags.WidthStretch);
+        ImGui.TableSetupScrollFreeze(0, 1);
 
-        DrawChannelNode(_root, visibleCount, xs);
+        DrawTimescaleRow(stopped, oldestRetained, axisUpperBound);
+
+        DrawChannelNode(_root, stopped, oldestRetained, axisUpperBound);
 
         ImGui.EndTable();
     }
 
-    private void DrawChannelNode(ScopeChannelNode node, int visibleCount, ReadOnlySpan<double> xs)
+    private void ClampView(double oldestRetained, double axisUpperBound)
+    {
+        var span = _viewMax - _viewMin;
+        var maxSpan = axisUpperBound - oldestRetained;
+        if (span > maxSpan)
+        {
+            span = maxSpan;
+        }
+
+        if (_viewMin < oldestRetained)
+        {
+            _viewMin = oldestRetained;
+            _viewMax = _viewMin + span;
+        }
+        else if (_viewMax > axisUpperBound)
+        {
+            _viewMax = axisUpperBound;
+            _viewMin = _viewMax - span;
+        }
+    }
+
+    // Renders the shared time ruler once, as a frozen table header row (see
+    // ImGui.TableSetupScrollFreeze in DrawOverride) so it stays pinned above the
+    // channel rows while they scroll, instead of every row drawing its own
+    // tick labels.
+    private void DrawTimescaleRow(bool stopped, double oldestRetained, double axisUpperBound)
+    {
+        var rowHeight = ImGui.GetTextLineHeightWithSpacing() * 2f;
+
+        ImGui.TableNextRow(ImGuiTableRowFlags.None, rowHeight);
+
+        ImGui.TableNextColumn();
+
+        ImGui.TableNextColumn();
+
+        if (!ImPlot.BeginPlot(
+            "##timescale"u8,
+            new Vector2(-1, rowHeight),
+            ImPlotFlags.NoLegend | ImPlotFlags.NoMenus | ImPlotFlags.NoMouseText))
+        {
+            return;
+        }
+
+        ImPlot.SetupAxes(
+            ""u8,
+            ""u8,
+            ImPlotAxisFlags.NoGridLines,
+            ImPlotAxisFlags.NoGridLines | ImPlotAxisFlags.NoTickLabels);
+        ImPlot.SetupAxisFormat(ImAxis.X1, _timeAxisFormatter);
+        ImPlot.SetupAxisLimits(ImAxis.Y1, 0, 1, ImPlotCond.Always);
+
+        SetupSharedXAxis(stopped, oldestRetained, axisUpperBound);
+
+        ImPlot.EndPlot();
+    }
+
+    // Shared X1 setup used by both the timescale ruler and every channel row, so
+    // they all resolve to the same axis range each frame - see class remarks for
+    // why SetupAxisLinks is what keeps independently-BeginPlot'd rows in sync.
+    private void SetupSharedXAxis(bool stopped, double oldestRetained, double axisUpperBound)
+    {
+        if (stopped)
+        {
+            ImPlot.SetupAxisLimitsConstraints(ImAxis.X1, oldestRetained, axisUpperBound);
+            if (axisUpperBound - oldestRetained >= 4.0)
+            {
+                ImPlot.SetupAxisZoomConstraints(ImAxis.X1, 2.0, axisUpperBound - oldestRetained);
+            }
+            ImPlot.SetupAxisLinks(ImAxis.X1, ref _viewMin, ref _viewMax);
+        }
+        else
+        {
+            ImPlot.SetupAxisLimits(ImAxis.X1, _viewMin, _viewMax, ImPlotCond.Always);
+        }
+    }
+
+    private void DrawChannelNode(ScopeChannelNode node, bool stopped, double oldestRetained, double axisUpperBound)
     {
         switch (node)
         {
             case ScopeChannel channel:
-                DrawChannelRow(channel, visibleCount, xs);
+                DrawChannelRow(channel, stopped, oldestRetained, axisUpperBound);
                 break;
 
             case ScopeChannelGroup group:
@@ -104,7 +290,7 @@ public sealed class OscilloscopeWindow : DebuggerWindow
                 {
                     foreach (var child in group.Children)
                     {
-                        DrawChannelNode(child, visibleCount, xs);
+                        DrawChannelNode(child, stopped, oldestRetained, axisUpperBound);
                     }
 
                     ImGui.TreePop();
@@ -113,7 +299,7 @@ public sealed class OscilloscopeWindow : DebuggerWindow
         }
     }
 
-    private unsafe void DrawChannelRow(ScopeChannel channel, int visibleCount, ReadOnlySpan<double> xs)
+    private unsafe void DrawChannelRow(ScopeChannel channel, bool stopped, double oldestRetained, double axisUpperBound)
     {
         var rowHeight = ImGui.GetTextLineHeightWithSpacing() * 3.5f;
 
@@ -126,12 +312,6 @@ public sealed class OscilloscopeWindow : DebuggerWindow
         ImGui.TableNextColumn();
 
         var isDigital = channel.Kind == ScopeChannelKind.Digital;
-
-        Span<double> ys = visibleCount <= 4096 ? stackalloc double[visibleCount] : new double[visibleCount];
-        if (visibleCount > 0)
-        {
-            FillVisibleSamples(channel, visibleCount, ys);
-        }
 
         if (!ImPlot.BeginPlot(
             $"##{channel.Name}",
@@ -146,7 +326,9 @@ public sealed class OscilloscopeWindow : DebuggerWindow
             ""u8,
             ImPlotAxisFlags.NoTickLabels | ImPlotAxisFlags.NoGridLines,
             isDigital ? ImPlotAxisFlags.NoGridLines : ImPlotAxisFlags.NoGridLines | ImPlotAxisFlags.NoTickLabels);
-        ImPlot.SetupAxesLimits(0, Math.Max(visibleCount - 1, 1), -0.1, 1.1, ImPlotCond.Always);
+        ImPlot.SetupAxisLimits(ImAxis.Y1, -0.1, 1.1, ImPlotCond.Always);
+
+        SetupSharedXAxis(stopped, oldestRetained, axisUpperBound);
 
         if (isDigital)
         {
@@ -157,22 +339,31 @@ public sealed class OscilloscopeWindow : DebuggerWindow
             }
         }
 
+        var limits = ImPlot.GetPlotLimits(ImAxis.X1);
+        var visStart = (long)Math.Max(0, Math.Floor(limits.X.Min));
+        var visEndExclusive = Math.Min(_recorder.TotalSamples, (long)Math.Ceiling(limits.X.Max));
+        var visibleCount = (int)Math.Max(0, visEndExclusive - visStart);
+
         if (visibleCount > 0)
         {
+            Span<double> xs = visibleCount <= 4096 ? stackalloc double[visibleCount] : new double[visibleCount];
+            Span<double> ys = visibleCount <= 4096 ? stackalloc double[visibleCount] : new double[visibleCount];
+            FillVisibleSamples(channel, visStart, visibleCount, xs, ys);
+
             if (isDigital)
             {
-                DrawDigitalTrace(channel, visibleCount, xs, ys);
+                DrawDigitalTrace(channel, visStart, visibleCount, xs, ys);
             }
             else
             {
-                DrawBusTrace(channel, visibleCount, ys);
+                DrawBusTrace(channel, visStart, visibleCount, ys);
             }
         }
 
         ImPlot.EndPlot();
     }
 
-    private static unsafe void DrawDigitalTrace(ScopeChannel channel, int visibleCount, ReadOnlySpan<double> xs, ReadOnlySpan<double> ys)
+    private static unsafe void DrawDigitalTrace(ScopeChannel channel, long visStart, int visibleCount, ReadOnlySpan<double> xs, ReadOnlySpan<double> ys)
     {
         fixed (double* xsPtr = xs)
         fixed (double* ysPtr = ys)
@@ -183,7 +374,7 @@ public sealed class OscilloscopeWindow : DebuggerWindow
         if (ImPlot.IsPlotHovered())
         {
             var mouse = ImPlot.GetPlotMousePos();
-            var index = (int)Math.Round(mouse.X);
+            var index = (int)Math.Round(mouse.X - visStart);
             if (index >= 0 && index < visibleCount)
             {
                 var value = ys[index];
@@ -197,7 +388,7 @@ public sealed class OscilloscopeWindow : DebuggerWindow
     // centered in the rectangle when there's room for it. ImPlot has no built-in
     // "bus" mark, so this draws directly into plot pixel space via
     // GetPlotDrawList()/PlotToPixels() - see "Open risks" in the plan doc.
-    private static void DrawBusTrace(ScopeChannel channel, int visibleCount, ReadOnlySpan<double> ys)
+    private static void DrawBusTrace(ScopeChannel channel, long visStart, int visibleCount, ReadOnlySpan<double> ys)
     {
         const double BandTop = 0.85;
         const double BandBottom = 0.15;
@@ -226,8 +417,8 @@ public sealed class OscilloscopeWindow : DebuggerWindow
             // window for the last run - PushPlotClipRect() above clips it back
             // to the axis limit, and it avoids the last (possibly one-sample-wide)
             // run collapsing to a zero-width band.
-            var pMin = ImPlot.PlotToPixels(runStart, BandTop);
-            var pMax = ImPlot.PlotToPixels(runEnd, BandBottom);
+            var pMin = ImPlot.PlotToPixels(visStart + runStart, BandTop);
+            var pMax = ImPlot.PlotToPixels(visStart + runEnd, BandBottom);
 
             drawList.AddRectFilled(pMin, pMax, fillColor);
             drawList.AddRect(pMin, pMax, borderColor);
@@ -251,7 +442,7 @@ public sealed class OscilloscopeWindow : DebuggerWindow
         if (ImPlot.IsPlotHovered())
         {
             var mouse = ImPlot.GetPlotMousePos();
-            var index = (int)Math.Floor(mouse.X);
+            var index = (int)Math.Floor(mouse.X - visStart);
             if (index >= 0 && index < visibleCount)
             {
                 var value = (ulong)ys[index];
@@ -260,18 +451,59 @@ public sealed class OscilloscopeWindow : DebuggerWindow
         }
     }
 
-    private void FillVisibleSamples(ScopeChannel channel, int visibleCount, Span<double> destination)
+    private void FillVisibleSamples(ScopeChannel channel, long visStart, int visibleCount, Span<double> xs, Span<double> ys)
     {
         var channelIndex = _channelIndex[channel];
         var buffer = _recorder.GetChannelBuffer(channelIndex);
         var capacity = _recorder.Capacity;
-        var writeIndex = _recorder.WriteIndex;
 
         for (var i = 0; i < visibleCount; i++)
         {
-            var bufferIndex = (((writeIndex - visibleCount + i) % capacity) + capacity) % capacity;
-            destination[i] = buffer[bufferIndex];
+            var absoluteIndex = visStart + i;
+            xs[i] = absoluteIndex;
+            ys[i] = buffer[(int)(absoluteIndex % capacity)];
         }
+    }
+
+    // ImPlot tick-label formatter: converts an x-axis value (absolute sample
+    // index, i.e. tick count since recording started) to a time string, with
+    // the unit adapted to magnitude since the visible span usually ranges from
+    // a handful of microseconds (zoomed in) up to however long the ring buffer
+    // retains (zoomed all the way out).
+    private unsafe int FormatTimeAxisTick(double sampleIndex, byte* buff, int size, void* userData)
+    {
+        var text = FormatDuration(sampleIndex / _cyclesPerSecond);
+        if (text.Length >= size)
+        {
+            text = text[..(size - 1)];
+        }
+
+        var destination = new Span<byte>(buff, size);
+        var written = Encoding.ASCII.GetBytes(text, destination);
+        destination[written] = 0;
+        return written;
+    }
+
+    private static string FormatDuration(double seconds)
+    {
+        var abs = Math.Abs(seconds);
+
+        if (abs >= 1.0)
+        {
+            return $"{seconds:0.###} s";
+        }
+
+        if (abs >= 0.001)
+        {
+            return $"{seconds * 1_000:0.###} ms";
+        }
+
+        if (abs >= 0.000_001)
+        {
+            return $"{seconds * 1_000_000:0.###} us";
+        }
+
+        return $"{seconds * 1_000_000_000:0.###} ns";
     }
 
     public override void Dispose()
