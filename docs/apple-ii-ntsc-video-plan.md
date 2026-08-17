@@ -113,14 +113,16 @@ functions of state that's already pin-level simulated upstream), these
 should be added the same way: new `=>` boolean properties in
 `AppleIISystem.VideoTiming.cs`, not new chip classes.
 
-**Known open item**: an RFI-revision fix changes the vertical serration term
-from `(H5+H4)` to `(H5+H4+H8)` per the research pass — but "H8" doesn't fit
-the existing 6-bit (`H0`–`H5`) horizontal counter, so this is very likely an
-OCR error or a reference to some other internal signal, not a literal H8
-bit. **Don't implement this term from prose** — re-derive it directly from
-the RFI schematic image (link below) when this phase is implemented, the
-same lesson already learned the hard way on the long-cycle direction and the
-video-scrambling-PROM claim (see memory `appleii-plan-corrections`).
+**Resolved**: the RFI-revision fix changes the vertical serration term from
+`(H5+H4)` to `(H5+H4+H3)` — not `(H5+H4+H8)` as an earlier OCR pass read it.
+"H8" doesn't fit the 6-bit (`H0`–`H5`) horizontal counter and turned out to
+be a 3/8 OCR misread; confirmed against a second, independently-worded
+passage in the same book (discussing the "Eurapple" variant of the same
+equation) where the OCR renders the digit cleanly as "H3". `H3` is already a
+real, in-use signal (it's the same bit the Rev.7+ `HSync` equation uses),
+which also makes physical sense as the fix: Rev.7 narrowed `HSync` by adding
+an `H3`-dependent term, which is exactly what the vertical serration term
+needed re-added to stay aligned.
 
 ### Color burst gating and duration
 
@@ -302,16 +304,20 @@ Revisit which (if either) this plugs into once decoder work actually starts.
 
 ## Phased implementation plan
 
-**Phase 1 — Composite SYNC (digital, new)**
-Add `HSyncPulse`, `VSyncPulse`, `SyncBit` boolean properties to
-`AppleIISystem.VideoTiming.cs`, following the existing `Hbl`/`Vbl`/
-`ColorBurstGate` pattern exactly (plain expressions over `H0`–`H5`/`V0`–`V5`).
-Re-derive the vertical serration term from the RFI schematic image directly
-rather than trusting the "(H5+H4+H8)" prose (see open item above). **Done
-when:** a unit test confirms the pulse timing/width matches the documented
-equations and lines up correctly relative to the already-implemented
-`ColorBurstGate` window (immediately after `HSyncPulse`, per the existing
-code comment).
+**Phase 1 — Composite SYNC (digital, new) (done)**
+Landed as `HSyncPulse`, `VSyncPulse`, `CompositeSyncPulse`, `SyncBit`
+boolean properties in `AppleIISystem.VideoTiming.cs`, following the existing
+`Hbl`/`Vbl`/`ColorBurstGate` pattern exactly (plain expressions over
+`H0`–`H5`/`V0`–`V5`). The vertical serration term landed as `(H5+H4+H3)`,
+resolved from Sather's text directly (see "Resolved" above) rather than
+needing the schematic image after all — the OCR ambiguity turned out to be
+settleable from a second passage in the same book. Verified by two new
+tests in `AppleIISystemVideoTimingTests.cs`:
+`HSyncPulseIsFourHCountsImmediatelyBeforeColorBurstGate` (width=4, and
+`ColorBurstGate` starts exactly where `HSyncPulse` ends) and
+`HSyncAndVSyncPulsesMatchDocumentedEquations` (both signals cross-checked
+against the documented boolean equations, independently re-derived from the
+packed scanner state, across a full run through the vertical sync region).
 
 **Phase 2 — Blanking-gated VIDEO DATA line**
 Capture the per-dot bit `TickVideo()` already computes (currently only

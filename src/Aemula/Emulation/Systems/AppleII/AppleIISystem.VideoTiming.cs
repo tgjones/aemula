@@ -65,6 +65,31 @@ public sealed partial class AppleIISystem
     // window, once per scanline, starting right after HSync.
     public bool ColorBurstGate => !H5 && !H4 && H3 && H2;
 
+    // HSync (Rev.7+/RFI board, matching the Autostart Monitor target
+    // config): a 4-H-count pulse immediately preceding ColorBurstGate's
+    // window (docs/apple-ii-ntsc-video-plan.md, "Composite sync").
+    public bool HSyncPulse => Hbl && H3 && !H2;
+
+    // VSync (RFI revision): the pre-Rev.7 pulse V4.V3.V2.V1'.V0'.VC'.(H5+H4)
+    // gets serrated at the horizontal rate by the (H5+H4) term. Revision 7's
+    // narrower HSync (H3.H2' instead of plain H3) turned those serrations
+    // into double pulses; the RFI board fixes it by widening the serration
+    // term to (H5+H4+H3) - confirmed directly against Sather's text (see
+    // docs/apple-ii-ntsc-video-plan.md's "Composite sync" section for the
+    // OCR-correction story: an earlier read of this as "H8" was a 3/8
+    // misread, not a real signal - the machine's horizontal counter only
+    // goes up to H5).
+    public bool VSyncPulse => V4 && V3 && V2 && !V1 && !V0 && !VC && (H5 || H4 || H3);
+
+    // Composite SYNC: HSync OR'd with VSync, matching the schematic's
+    // "SYNC = C13-C + C13-D". This is the pulse itself (active high); the
+    // R8 input to the analog video-summing stage
+    // (docs/apple-ii-ntsc-video-plan.md) is its inverse - high except during
+    // the actual pulse.
+    public bool CompositeSyncPulse => HSyncPulse || VSyncPulse;
+
+    public bool SyncBit => !CompositeSyncPulse;
+
     private bool H0 => _videoScannerD14.Qa;
     private bool H1 => _videoScannerD14.Qb;
     private bool H2 => _videoScannerD14.Qc;

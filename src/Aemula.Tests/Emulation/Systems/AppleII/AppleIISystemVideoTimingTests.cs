@@ -170,4 +170,109 @@ public class AppleIISystemVideoTimingTests
         var expectedLongCycles = cycleLengths.Count / 65;
         await Assert.That(longCount).IsEqualTo(expectedLongCycles);
     }
+
+    [Test]
+    public async Task HSyncPulseIsFourHCountsImmediatelyBeforeColorBurstGate()
+    {
+        // docs/apple-ii-ntsc-video-plan.md, "Composite sync": HSync is a
+        // 4-H-count pulse, immediately followed by the already-implemented
+        // ColorBurstGate window.
+        var system = new AppleIISystem();
+        system.LoadProgram("");
+
+        var hsyncStates = new List<bool>();
+        var burstStates = new List<bool>();
+        var wasPhase0 = system.Phase0;
+
+        for (var i = 0; i < 2000; i++)
+        {
+            system.Tick();
+            var isPhase0 = system.Phase0;
+
+            if (isPhase0 && !wasPhase0)
+            {
+                hsyncStates.Add(system.HSyncPulse);
+                burstStates.Add(system.ColorBurstGate);
+            }
+
+            wasPhase0 = isPhase0;
+        }
+
+        var start = hsyncStates.FindIndex(v => v);
+        await Assert.That(start).IsGreaterThanOrEqualTo(0);
+
+        var end = start;
+        while (end < hsyncStates.Count && hsyncStates[end])
+        {
+            end++;
+        }
+
+        await Assert.That(end - start).IsEqualTo(4);
+        await Assert.That(burstStates[end]).IsTrue();
+
+        for (var i = start; i < end; i++)
+        {
+            await Assert.That(burstStates[i]).IsFalse();
+        }
+    }
+
+    [Test]
+    public async Task HSyncAndVSyncPulsesMatchDocumentedEquations()
+    {
+        // docs/apple-ii-ntsc-video-plan.md, "Composite sync": cross-checks
+        // HSyncPulse/VSyncPulse against the documented boolean equations
+        // (RFI-revision: vertical serration term (H5+H4+H3)) independently
+        // re-derived from the packed scanner state, across a real run long
+        // enough to pass through the vertical sync region (V=480-483, ~480
+        // lines from a cold reset).
+        var system = new AppleIISystem();
+        system.LoadProgram("");
+
+        var wasPhase0 = system.Phase0;
+        var sawHSyncTrue = false;
+        var sawVSyncTrue = false;
+        var mismatches = 0;
+
+        for (var i = 0; i < 560_000; i++)
+        {
+            system.Tick();
+            var isPhase0 = system.Phase0;
+
+            if (isPhase0 && !wasPhase0)
+            {
+                var (h, v) = system.GetVideoScannerStateForTests();
+
+                var h5 = (h & 0b0_100000) != 0;
+                var h4 = (h & 0b0_010000) != 0;
+                var h3 = (h & 0b0_001000) != 0;
+                var h2 = (h & 0b0_000100) != 0;
+
+                var v4 = (v & 0b0_1000_0000) != 0;
+                var v3 = (v & 0b0_0100_0000) != 0;
+                var v2 = (v & 0b0_0010_0000) != 0;
+                var v1 = (v & 0b0_0001_0000) != 0;
+                var v0 = (v & 0b0_0000_1000) != 0;
+                var vc = (v & 0b0_0000_0100) != 0;
+
+                var expectedHSync = !h5 && !h4 && h3 && !h2;
+                var expectedVSync = v4 && v3 && v2 && !v1 && !v0 && !vc && (h5 || h4 || h3);
+
+                if (system.HSyncPulse != expectedHSync || system.VSyncPulse != expectedVSync)
+                {
+                    mismatches++;
+                }
+
+                sawHSyncTrue |= expectedHSync;
+                sawVSyncTrue |= expectedVSync;
+            }
+
+            wasPhase0 = isPhase0;
+        }
+
+        // Sanity checks that the equality checks above weren't vacuous.
+        await Assert.That(sawHSyncTrue).IsTrue();
+        await Assert.That(sawVSyncTrue).IsTrue();
+
+        await Assert.That(mismatches).IsEqualTo(0);
+    }
 }
