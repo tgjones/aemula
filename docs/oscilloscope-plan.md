@@ -398,9 +398,12 @@ deferred rather than attempted and cut).
   indistinguishable from each other).
 
 **Phase 5 (stretch, later) — Analog channels**
-Add the float-sampled `Analog` channel kind once composite video/
-`Television` produces a real signal to sample. Not started until that
-groundwork exists.
+Add the `Analog` channel kind once composite video produces a real signal to
+sample. Not started until that groundwork exists — now planned in detail as
+its own phase in `docs/apple-ii-ntsc-video-plan.md`, which also found this
+doesn't need a new float sample type after all: the encoder's byte-valued
+signal fits the existing `ulong`-per-sample model, so `Analog` ends up being
+a rendering distinction (a continuous line trace), not a storage one.
 
 **Phase 6 (stretch, later) — More systems**
 Same framework is already system-agnostic by Phase 0 — add a system-level
