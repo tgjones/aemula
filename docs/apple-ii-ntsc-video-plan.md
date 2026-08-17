@@ -319,11 +319,43 @@ tests in `AppleIISystemVideoTimingTests.cs`:
 against the documented boolean equations, independently re-derived from the
 packed scanner state, across a full run through the vertical sync region).
 
-**Phase 2 — Blanking-gated VIDEO DATA line**
-Capture the per-dot bit `TickVideo()` already computes (currently only
-passed to `WritePixel`) as a reusable `VideoDataBit`, forced low whenever
-`Hbl || Vbl` (matching Gayler's "A9" gate). No new chip/state — this is
-just retaining a value that's already computed.
+**Phase 2 — Blanking-gated VIDEO DATA line (done)**
+Landed as a private 7-element `_videoDataBits` array in
+`AppleIISystem.Video.cs`, holding the current cell's per-dot bit (phase 3
+still owns mapping tick → dot-within-cell, per "Sample rate" above), forced
+all-false whenever `Hbl || Vbl` (Gayler's "A9" gate).
+
+This phase's premise — "capture the bit `TickVideo()` already computes" —
+turned out to only hold for TEXT and HIRES, which already had a real
+per-dot bit from their shift registers. **LORES didn't**: `DrawLoresByte`
+only ever produced an already-decoded `RgbaByte` straight from
+`LoresPalette`, a deliberate shortcut the existing code comments already
+flagged as bypassing composite decoding entirely (real "RGB card" hardware
+behavior, not what a standard composite output does). Confirmed from
+Sather ch. 8 ("Video Generation", p.8-8) that real LORES hardware has a
+genuine bit-serial VIDEO DATA line too: the active nibble loads into a
+4-bit "end around" shift register that circulates continuously ("the 4-bit
+patterns are circulated... This creates colored patterns which seem like
+solid color blocks"). Implemented that directly: `_videoDataBits[dot] =
+(nibble >> (x & 3)) & 1`, indexed by absolute pixel `x` (not
+dot-within-cell) so the phase carries continuously across byte boundaries,
+matching "end around." `Display`'s LORES rendering is untouched (still the
+direct `LoresPalette` lookup) — this is purely a new, parallel bit-serial
+computation feeding `_videoDataBits`.
+
+**New open item**: which of the 4 nibble bits lines up with which `x % 4`
+phase isn't recoverable from the available schematic scan — an
+arbitrary-but-consistent choice, not a verified one. Doesn't affect this
+plan's encoder-only scope (any consistent, genuinely-periodic bit stream is
+electrically equivalent for the composite waveform itself), but matters for
+a future decoder trying to reproduce the *exact* real hue — same category
+of open item as `HiresColorPhase`'s.
+
+Verified by three new tests in `AppleIISystemVideoModesTests.cs`:
+`VideoDataBitIsForcedLowDuringBlanking`, `VideoDataBitMatchesHiresShiftedPattern`
+(cross-checked against the same byte pattern `HiresBitZeroIsLeftmostDot`
+uses), and `VideoDataBitMatchesLoresCirculatingNibblePattern` (checks the
+period-4 pattern lands correctly relative to absolute pixel `x`).
 
 **Phase 3 — Summing formula + sample buffer**
 Implement the weighted-sum-then-clamp formula from "Summing formula" above
@@ -400,16 +432,23 @@ New/corrected since `docs/apple-ii-plan.md` was written:
   `https://mirrors.apple2.org.za/ftp.apple.asimov.net/documentation/hardware/schematics/Schematic%20Diagram%20of%20the%20Apple%20II+.pdf`
   — the RFI-revision addendum (Apple part #031-0004-C), 12 legible pages,
   includes the full video-output stage schematic (Q3/R6/R7/R8/R9/R10/R11).
-  Use this to resolve the "(H5+H4+H8)" open item directly rather than from
-  OCR'd prose.
+  Not needed in the end for the vertical-serration term (resolved from
+  Sather's text directly, see phase 1) — still the best source if the
+  LORES nibble-bit-order open item (phase 2) ever needs settling.
 - `Emulation/Output/README.md` — already-collected generic NTSC/CRT decode
   references (crtsim, NTSC-CRT, svofski/CRT, etc.), relevant once decoder
   work starts but not needed for this plan's encoder-only scope.
 
 ## Open risks
 
-- The RFI-revision vertical-serration term ("(H5+H4+H8)") needs re-deriving
-  from the schematic image, not from prose — see phase 1.
+- ~~The RFI-revision vertical-serration term ("(H5+H4+H8)") needs
+  re-deriving from the schematic image, not from prose~~ — resolved in
+  phase 1: it's `(H5+H4+H3)`, confirmed from a second passage in Sather's
+  own text.
+- LORES's nibble-bit-to-subcarrier-phase mapping (which of the 4 nibble
+  bits lines up with which `x % 4` phase) is an arbitrary-but-consistent
+  choice, not verified against the schematic — see phase 2. Doesn't affect
+  this plan's encoder-only scope; matters for a future decoder.
 - Burst duration prose disagreement (9 vs. 14 cycles) is moot — the existing
   `ColorBurstGate` implementation is already the authoritative source, not
   either book's cycle count.

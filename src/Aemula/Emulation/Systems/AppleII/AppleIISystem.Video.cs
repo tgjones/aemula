@@ -149,6 +149,18 @@ public sealed partial class AppleIISystem
     // against actual scanline-to-scanline phase before relying on it.
     public readonly byte[] HiresColorPhase;
 
+    // docs/apple-ii-ntsc-video-plan.md phase 2: the real digital PICTURE/
+    // VIDEO DATA line for the 7 dots of whichever cell TickVideo() just
+    // scanned - one master-clock composite sample per dot clock still
+    // covers 2 master ticks each; phase 3 owns mapping tick -> dot index
+    // within a cell, this just retains what TEXT/LORES/HIRES already
+    // compute per dot (previously only ever passed straight to WritePixel
+    // and discarded). Forced all-false during HBL/VBL, matching Gayler's
+    // "A9" blanking-gated video-data selector.
+    private readonly bool[] _videoDataBits = new bool[7];
+
+    internal bool[] GetVideoDataBitsForTests() => _videoDataBits;
+
     private void TickVideo()
     {
         if (!HpeBar)
@@ -221,6 +233,11 @@ public sealed partial class AppleIISystem
 
         if (Hbl || Vbl)
         {
+            for (var i = 0; i < _videoDataBits.Length; i++)
+            {
+                _videoDataBits[i] = false;
+            }
+
             return;
         }
 
@@ -292,7 +309,9 @@ public sealed partial class AppleIISystem
             _textVideoXor.A1 = _textVideoShiftRegister.Qh;
             _textVideoXor.B1 = _invertTextLatch.Q1;
 
-            WritePixel(baseX + dot, _currentRasterLine, _textVideoXor.Y1);
+            var lit = _textVideoXor.Y1;
+            WritePixel(baseX + dot, _currentRasterLine, lit);
+            _videoDataBits[dot] = lit;
         }
     }
 
@@ -310,7 +329,28 @@ public sealed partial class AppleIISystem
 
         for (var dot = 0; dot < 7; dot++)
         {
-            WritePixel(baseX + dot, _currentRasterLine, color);
+            var x = baseX + dot;
+            WritePixel(x, _currentRasterLine, color);
+
+            // LORES's real VIDEO DATA line isn't "direct color" - like
+            // HIRES, it's a genuine bit stream, just a periodic one:
+            // Sather p.8-8 describes the active nibble as loaded into a
+            // 4-bit "end around" shift register that circulates
+            // continuously ("the 4-bit patterns are circulated... This
+            // creates colored patterns which seem like solid color
+            // blocks"). A period-4 bit pattern is exactly 2 subcarrier
+            // cycles (a dot is 180 degrees of subcarrier - see
+            // HiresColorPhase above), which is what makes the hue solid
+            // instead of flickering byte to byte. Indexed by absolute
+            // pixel x, not dot-within-cell, so the phase carries
+            // continuously across byte boundaries, matching "end around".
+            // Which nibble bit lines up with which x%4 phase isn't
+            // recoverable from the available schematic scan - an
+            // arbitrary-but-consistent choice, not a verified one. Doesn't
+            // affect the encoder itself (docs/apple-ii-ntsc-video-plan.md
+            // is encoder-only), only a future decoder trying to reproduce
+            // the exact real hue.
+            _videoDataBits[dot] = ((nibble >> (x & 3)) & 1) != 0;
         }
     }
 
@@ -342,7 +382,9 @@ public sealed partial class AppleIISystem
             }
 
             var x = baseX + dot;
-            WritePixel(x, _currentRasterLine, _hiresVideoShiftRegister.Qh);
+            var lit = _hiresVideoShiftRegister.Qh;
+            WritePixel(x, _currentRasterLine, lit);
+            _videoDataBits[dot] = lit;
 
             // Color-subcarrier phase quadrant for this dot, 0-3 meaning
             // 0/90/180/270 degrees relative to the color burst reference.

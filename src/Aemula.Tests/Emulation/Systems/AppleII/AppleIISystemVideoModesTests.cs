@@ -247,6 +247,142 @@ public class AppleIISystemVideoModesTests
     }
 
     [Test]
+    public async Task VideoDataBitIsForcedLowDuringBlanking()
+    {
+        // docs/apple-ii-ntsc-video-plan.md phase 2: matches Gayler's "A9"
+        // blanking-gated video-data selector - no mode setup needed, HBL
+        // occurs every line regardless of mode.
+        var system = new AppleIISystem();
+        system.LoadProgram("");
+
+        var wasPhase0 = system.Phase0;
+        var sampled = false;
+
+        for (var i = 0; i < 5000 && !sampled; i++)
+        {
+            system.Tick();
+            var isPhase0 = system.Phase0;
+
+            if (isPhase0 && !wasPhase0 && system.Hbl)
+            {
+                foreach (var bit in system.GetVideoDataBitsForTests())
+                {
+                    await Assert.That(bit).IsFalse();
+                }
+
+                sampled = true;
+            }
+
+            wasPhase0 = isPhase0;
+        }
+
+        await Assert.That(sampled).IsTrue();
+    }
+
+    [Test]
+    public async Task VideoDataBitMatchesHiresShiftedPattern()
+    {
+        // Cross-checks _videoDataBits against the same known byte pattern
+        // HiresBitZeroIsLeftmostDot uses for Display, since both are set
+        // from the same "lit" value in DrawHiresByte.
+        var system = new AppleIISystem();
+        system.LoadProgram("");
+
+        BootToIdle(system);
+
+        system.WriteByteDebug(0xC050, 0); // GRAPHICS
+        system.WriteByteDebug(0xC057, 0); // HIRES
+        system.WriteByteDebug(0xC054, 0); // PAGE1
+
+        for (var address = 0x2000; address <= 0x3FFF; address++)
+        {
+            system.WriteByteDebug((ushort)address, 0b0101_0101);
+        }
+
+        var expectedLit = new[] { true, false, true, false, true, false, true };
+        var wasPhase0 = system.Phase0;
+        var sampled = false;
+
+        for (var i = 0; i < 400_000 && !sampled; i++)
+        {
+            system.Tick();
+            var isPhase0 = system.Phase0;
+
+            if (isPhase0 && !wasPhase0 && !system.Hbl && !system.Vbl)
+            {
+                var bits = system.GetVideoDataBitsForTests();
+
+                for (var dot = 0; dot < 7; dot++)
+                {
+                    await Assert.That(bits[dot]).IsEqualTo(expectedLit[dot]);
+                }
+
+                sampled = true;
+            }
+
+            wasPhase0 = isPhase0;
+        }
+
+        await Assert.That(sampled).IsTrue();
+    }
+
+    [Test]
+    public async Task VideoDataBitMatchesLoresCirculatingNibblePattern()
+    {
+        // docs/apple-ii-ntsc-video-plan.md phase 2: LORES's real VIDEO DATA
+        // line is the active nibble circulated as a period-4 pattern,
+        // indexed by absolute pixel x (not dot-within-cell) so the phase
+        // carries continuously across byte boundaries (Sather p.8-8).
+        var system = new AppleIISystem();
+        system.LoadProgram("");
+
+        BootToIdle(system);
+
+        system.WriteByteDebug(0xC050, 0); // GRAPHICS
+        system.WriteByteDebug(0xC056, 0); // LORES
+        system.WriteByteDebug(0xC054, 0); // PAGE1
+
+        // Same nibble in both halves of the byte, so the sampled dot's
+        // expected pattern doesn't depend on which half (VC) is active.
+        const byte nibble = 0x5; // 0b0101
+        for (var address = 0x400; address <= 0x7FF; address++)
+        {
+            system.WriteByteDebug((ushort)address, (byte)(nibble | (nibble << 4)));
+        }
+
+        var wasPhase0 = system.Phase0;
+        var sampled = false;
+
+        for (var i = 0; i < 400_000 && !sampled; i++)
+        {
+            system.Tick();
+            var isPhase0 = system.Phase0;
+
+            if (isPhase0 && !wasPhase0 && !system.Hbl && !system.Vbl)
+            {
+                var (h, _) = system.GetVideoScannerStateForTests();
+                var rawH = h & 0b0_111111; // H0-H5, masking off HPE'
+                var baseX = (rawH - 24) * 7;
+
+                var bits = system.GetVideoDataBitsForTests();
+
+                for (var dot = 0; dot < 7; dot++)
+                {
+                    var x = baseX + dot;
+                    var expected = ((nibble >> (x & 3)) & 1) != 0;
+                    await Assert.That(bits[dot]).IsEqualTo(expected);
+                }
+
+                sampled = true;
+            }
+
+            wasPhase0 = isPhase0;
+        }
+
+        await Assert.That(sampled).IsTrue();
+    }
+
+    [Test]
     public async Task MixModeShowsTextForBottomFourRows()
     {
         var system = new AppleIISystem();
