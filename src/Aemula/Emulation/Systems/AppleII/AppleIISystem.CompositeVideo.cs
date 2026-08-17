@@ -1,0 +1,109 @@
+using System;
+
+namespace Aemula.Emulation.Systems.AppleII;
+
+// Phase 3 of docs/apple-ii-ntsc-video-plan.md: the analog composite video
+// summing stage. Real hardware: Q3, an NPN emitter follower with three
+// weighted resistor inputs (R7=1.5K VIDEO DATA, R8=2K SYNC, R6=2.7K COLOR
+// BURST). Modelled as a weighted-sum-then-clamp formula rather than
+// transistor-level simulation, calibrated directly against Gayler's
+// measured output levels - see the plan doc's "Summing formula" section
+// for the derivation this file implements.
+public sealed partial class AppleIISystem
+{
+    // Real resistor values (kΩ) from the video-summing circuit.
+    private const double R7Video = 1.5;
+    private const double R8Sync = 2.0;
+    private const double R6Burst = 2.7; // always part of the divider, even when idle
+
+    private const double GVideo = 1.0 / R7Video;
+    private const double GSync = 1.0 / R8Sync;
+    private const double GBurst = 1.0 / R6Burst;
+    private const double GSum = GVideo + GSync + GBurst;
+
+    private const double WVideo = GVideo / GSum;
+    private const double WSync = GSync / GSum;
+
+    private const double BlackVoltage = 0.5;
+    private const double WhiteVoltage = 2.0;
+
+    // Solved directly from Gayler's two measured non-burst levels, not
+    // assumed component tolerances: v_base(black) - Vbe = BlackVoltage and
+    // v_base(white) - Vbe = WhiteVoltage, where v_base = EffectiveLogicHigh
+    // * weight for whichever input is driven high. Comes out to a
+    // physically sensible ~3.46V logic-high and ~0.625V Vbe - an
+    // independent sanity check the model is right, not a curve-fit.
+    private const double EffectiveLogicHigh = (WhiteVoltage - BlackVoltage) / WVideo;
+    private const double TransistorVbe = EffectiveLogicHigh * WSync - BlackVoltage;
+
+    // Targets the measured 0.7Vpp burst window (Gayler Fig. 4-4), added on
+    // top of the digital-only baseline - which already lands exactly on
+    // BlackVoltage during the burst window, since VIDEO DATA is blanked
+    // and SYNC is high there (see the plan doc's "Composite sync" section).
+    private const double BurstAmplitudeVolts = 0.35;
+
+    // One byte sample per master tick; a fixed-capacity ring buffer sized
+    // comfortably over one frame's worth of samples (262 lines * up to 912
+    // ticks/line, the long-cycle line's worst case).
+    private const int CompositeVideoCapacity = 262 * 912;
+
+    public readonly byte[] CompositeVideo = new byte[CompositeVideoCapacity];
+
+    public int CompositeVideoWriteIndex { get; private set; }
+
+    // Ticks elapsed since the last PHASE0 rising edge, i.e. since
+    // TickVideo() last computed a fresh 7-dot cell. 2 ticks/dot covers the
+    // normal 14-tick cell exactly; the once-per-65-lines "long cycle"
+    // stretch adds 2 extra ticks that this simply holds the last dot
+    // through, rather than modelling exactly which of the 7 dots really
+    // gets stretched on real hardware - an accepted approximation, see
+    // docs/apple-ii-ntsc-video-plan.md's "Sample rate" section.
+    private int _ticksSincePhase0Edge;
+
+    // Free-running master-tick counter for the burst sine's phase - never
+    // reset per-scanline or per-frame, matching real hardware where the
+    // subcarrier is just a fixed division of the one free-running crystal.
+    // uint wraps every 2^32 ticks, itself a multiple of 4, so wraparound
+    // doesn't disturb the phase sequence.
+    private uint _masterTickCounter;
+
+    private void TickCompositeVideo(bool phase0RisingEdge)
+    {
+        if (phase0RisingEdge)
+        {
+            _ticksSincePhase0Edge = 0;
+        }
+        else
+        {
+            _ticksSincePhase0Edge++;
+        }
+
+        var dotIndex = Math.Min(_ticksSincePhase0Edge / 2, 6);
+
+        var videoBit = _videoDataBits[dotIndex] ? 1.0 : 0.0;
+        var syncBit = SyncBit ? 1.0 : 0.0;
+
+        var vBase = EffectiveLogicHigh * (WVideo * videoBit + WSync * syncBit);
+        var vOut = Math.Max(0.0, vBase - TransistorVbe);
+
+        if (ColorBurstGate)
+        {
+            // Only 4 samples/cycle are achievable at this sample rate (the
+            // subcarrier is exactly master/4 - see "Sample rate" in the
+            // plan doc). That lands every sample exactly on a
+            // zero-crossing or a peak (0, +1, 0, -1), not a smooth curve -
+            // still a real sine's *shape*, and a genuine step up from a
+            // flat square wave, which is what this replaces.
+            var phase = 2.0 * Math.PI * (_masterTickCounter % 4) / 4.0;
+            vOut += BurstAmplitudeVolts * Math.Sin(phase);
+        }
+
+        var clamped = Math.Clamp(vOut, 0.0, WhiteVoltage);
+        var sample = (byte)Math.Round(clamped / WhiteVoltage * 255.0);
+
+        CompositeVideo[CompositeVideoWriteIndex] = sample;
+        CompositeVideoWriteIndex = (CompositeVideoWriteIndex + 1) % CompositeVideoCapacity;
+
+        _masterTickCounter++;
+    }
+}

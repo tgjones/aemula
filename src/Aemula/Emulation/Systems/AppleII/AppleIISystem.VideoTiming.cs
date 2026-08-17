@@ -168,6 +168,8 @@ public sealed partial class AppleIISystem
         {
             DoCpuMemoryAccess();
         }
+
+        TickCompositeVideo(phase0RisingEdge);
     }
 
     private void TickClockSequencer()

@@ -248,6 +248,9 @@ software-NTSC-decoder ecosystem the `Emulation/Output/README.md` already
 references (Blargg-style filters, `NTSC-CRT`, etc.) for whenever decode work
 starts.
 
+*(Phase 3 update: the burst row's actual implemented range is `{19, 64,
+108}`, not a literal 13–102 span — see phase 3's write-up below for why.)*
+
 ## Sample rate
 
 **One sample per master-clock (14.31818MHz) tick** — not per dot (7M), not
@@ -357,15 +360,35 @@ Verified by three new tests in `AppleIISystemVideoModesTests.cs`:
 uses), and `VideoDataBitMatchesLoresCirculatingNibblePattern` (checks the
 period-4 pattern lands correctly relative to absolute pixel `x`).
 
-**Phase 3 — Summing formula + sample buffer**
-Implement the weighted-sum-then-clamp formula from "Summing formula" above
-as a plain calculation, producing one byte sample per master tick into a new
-`CompositeVideo` buffer sized per "Sample rate" above. Add the free-running
-subcarrier phase counter and burst sine synthesis, gated by
-`ColorBurstGate`. **Done when:** sampled output at known scanline positions
-matches the anchor table in "Signal representation" (sync=0, black≈64,
-white≈255, burst swinging ≈13–102) at the moments the digital signals say
-each level should be visible.
+**Phase 3 — Summing formula + sample buffer (done)**
+Landed as a new `AppleIISystem.CompositeVideo.cs` file: the weighted-sum
+constants (`WVideo`/`WSync`, `EffectiveLogicHigh`, `TransistorVbe`) are
+`const double`s derived directly from the resistor values and Gayler's two
+measured non-burst levels — the exact arithmetic from "Summing formula"
+above, not hand-rounded decimals, so tweaking a resistor value (e.g. the
+R6→4.7K burst-taming variant Sather mentions) would automatically
+recalibrate everything downstream. `TickCompositeVideo(phase0RisingEdge)`
+is called once per master tick from `TickVideoTiming()`, tracking
+`_ticksSincePhase0Edge` to map ticks → dot index (`/2`, clamped to 6 — the
+long-cycle's 2 extra ticks simply hold the last dot, the approximation
+"Sample rate" above already called out) and a free-running
+`_masterTickCounter` for the burst sine's phase. Output is a fixed
+`CompositeVideo` ring buffer (262×912 capacity, one frame's worst case)
+plus a `CompositeVideoWriteIndex`.
+
+Verified by 4 new tests in `AppleIISystemCompositeVideoTests.cs`, all
+passing on the first run (a good sign the hand-derived constants are
+exactly right, not just close): `SyncTipSamplesAsZero` (byte 0),
+`BlackLevelSamplesAsSixtyFour` (byte 64, exactly — the two anchor
+equations were solved to make this exact, not approximate),
+`WhiteLevelSamplesAsTwoFiftyFive` (byte 255, same), and
+`ColorBurstSwingsThroughExpectedLevels`, which found the burst cycles
+through exactly `{19, 64, 108}` — close to but not identical to the plan's
+original "13–102" estimate, because this formula centers the burst on
+`BlackVoltage` (0.5V) rather than Gayler's separately-measured 0.45V
+center; the ~6-byte offset is the "small offset differences acceptable"
+case "Summing formula" already flagged, now with the actual number on
+record instead of an estimate.
 
 **Phase 4 — Verification**
 Since there's no visual decode yet to eyeball, verify numerically:
