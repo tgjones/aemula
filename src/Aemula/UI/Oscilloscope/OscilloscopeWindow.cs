@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Numerics;
-using System.Text;
 using Aemula.Debugging;
 using Hexa.NET.ImGui;
 using Hexa.NET.ImPlot;
@@ -11,9 +10,10 @@ namespace Aemula.UI.Oscilloscope;
 
 /// <summary>
 /// Logic-analyzer-style debugger window: one merged tree/waveform view, channel
-/// name to the left of its own row's trace, grouped under collapsible headers
-/// (expanded by default). All channels are always recorded and shown - no
-/// per-channel hide toggle. See docs/oscilloscope-plan.md for the phased plan.
+/// name to the left of its own row's trace, grouped under non-collapsible
+/// headers (visual organization only). All channels are always recorded and
+/// shown - no per-channel hide toggle. See docs/oscilloscope-plan.md for the
+/// phased plan.
 ///
 /// X-axis is in absolute sample index units (one tick = one <see cref="Debugger.Ticked"/>
 /// call). The time ruler is drawn exactly once, as a frozen header row above the
@@ -35,6 +35,8 @@ public sealed class OscilloscopeWindow : DebuggerWindow
     // Y-axis tick labels.
     private static readonly (double Value, string Label)[] DigitalAxisLabels = [(1.0, "H"), (0.0, "L")];
 
+    private static readonly Vector4 TransparentColor = new(0f, 0f, 0f, 0f);
+
     private const double ZoomFactor = 1.5;
     private const double MinWindowWidthSamples = 2.0;
 
@@ -43,24 +45,33 @@ public sealed class OscilloscopeWindow : DebuggerWindow
     // a generic rendering choice, not specific to any one signal.
     private const double AnalogAxisPaddingFraction = 0.05;
 
+    // Target on-screen spacing between shared gridlines - both the timescale
+    // row's own tick labels and DrawSharedGridlines' vertical lines derive
+    // from the same ComputeGridTicks call, so they always land at the same
+    // pixel X.
+    private const float TargetGridSpacingPixels = 100f;
+
     private readonly Debugger _debugger;
     private readonly IReadOnlyList<ScopeChannelNode> _roots;
     private readonly ScopeRecorder _recorder;
     private readonly Dictionary<ScopeChannel, int> _channelIndex;
     private readonly double _cyclesPerSecond;
-    private readonly ImPlotFormatter _timeAxisFormatter;
-
-    // Group tree collapse state, keyed by "/"-joined name path from the root
-    // (e.g. "Apple II/MOS6502"). Absence means expanded (the default); persisted
-    // across sessions via GetPersistedSettingsLines/ApplyPersistedSettingsLine,
-    // the same ImGuiSettingsHandler plumbing Program.cs already uses for IsOpen.
-    private readonly HashSet<string> _collapsedGroupPaths = new();
 
     // Shared x-axis view range (absolute sample index units), backing every row's
     // (and the timescale ruler's) linked axis while stopped - see class remarks.
     private double _viewMin;
     private double _viewMax;
     private bool _wasStopped;
+
+    // Pixel bounds of the timescale ruler's own plot, captured each frame in
+    // DrawTimescaleRow - every channel row's BeginPlot fills the same Waveform
+    // column width at the same X shift, so this rect is authoritative for
+    // every row's plot area without re-deriving it from column widths/padding.
+    // Used after EndTable() to draw the shared vertical gridlines - see
+    // DrawSharedGridlines.
+    private float _plotLeft;
+    private float _plotRight;
+    private float _plotTop;
 
     // Saleae-style zoom readout/control, kept in sync with _viewMin/_viewMax (see
     // DrawOverride) but editable independently via the toolbar's +/- buttons and
@@ -73,13 +84,12 @@ public sealed class OscilloscopeWindow : DebuggerWindow
 
     public override Pane PreferredPane => Pane.Bottom;
 
-    public unsafe OscilloscopeWindow(Debugger debugger, IReadOnlyList<ScopeChannelNode> channels)
+    public OscilloscopeWindow(Debugger debugger, IReadOnlyList<ScopeChannelNode> channels)
     {
         _debugger = debugger;
         _roots = channels;
         _recorder = new ScopeRecorder(channels);
         _cyclesPerSecond = debugger.System.CyclesPerSecond;
-        _timeAxisFormatter = FormatTimeAxisTick;
         // One sample per pixel, matching the fixed zoom phases 1/2 used as a
         // starting point.
         _millisecondsPer100Px = 100_000.0 / _cyclesPerSecond;
@@ -201,12 +211,28 @@ public sealed class OscilloscopeWindow : DebuggerWindow
             _viewMax = _viewMin + 1;
         }
 
+        var gridTicks = ComputeGridTicks(_viewMin, _viewMax, plotWidthPixels);
+
+        // Every row's own ImPlot frame/background/border is pushed transparent
+        // for the whole table - the shared gridlines drawn behind the table
+        // (see DrawSharedGridlines) are what read as the row grid now, instead
+        // of each row rendering its own separate boxed plot.
+        ImPlot.PushStyleColor(ImPlotCol.FrameBg, TransparentColor);
+        ImPlot.PushStyleColor(ImPlotCol.Bg, TransparentColor);
+        ImPlot.PushStyleColor(ImPlotCol.Border, TransparentColor);
+
+        var drawList = ImGui.GetWindowDrawList();
+        drawList.ChannelsSplit(2);
+        drawList.ChannelsSetCurrent(1);
+
         if (!ImGui.BeginTable(
             "##oscilloscope_table"u8,
             2,
-            ImGuiTableFlags.BordersInnerV | ImGuiTableFlags.Resizable | ImGuiTableFlags.ScrollY,
+            ImGuiTableFlags.BordersInnerV | ImGuiTableFlags.BordersInnerH | ImGuiTableFlags.Resizable | ImGuiTableFlags.ScrollY,
             ImGui.GetContentRegionAvail()))
         {
+            ImPlot.PopStyleColor(3);
+            drawList.ChannelsMerge();
             return;
         }
 
@@ -214,35 +240,107 @@ public sealed class OscilloscopeWindow : DebuggerWindow
         ImGui.TableSetupColumn("Waveform"u8, ImGuiTableColumnFlags.WidthStretch);
         ImGui.TableSetupScrollFreeze(0, 1);
 
-        DrawTimescaleRow(stopped, oldestRetained, axisUpperBound, valueLabelWidth);
+        DrawTimescaleRow(stopped, oldestRetained, axisUpperBound, valueLabelWidth, gridTicks);
 
         foreach (var root in _roots)
         {
-            DrawChannelNode(root, string.Empty, stopped, oldestRetained, axisUpperBound, valueLabelWidth);
+            DrawChannelNode(root, stopped, oldestRetained, axisUpperBound, valueLabelWidth);
         }
+
+        var tableMax = ImGui.GetItemRectMax();
 
         ImGui.EndTable();
+
+        ImPlot.PopStyleColor(3);
+
+        // Drawn into the split-off background channel so it renders behind
+        // every row's content (plot traces, group labels) merged above it,
+        // regardless of the order the two were actually issued in.
+        drawList.ChannelsSetCurrent(0);
+        DrawSharedGridlines(drawList, gridTicks, tableMax.Y);
+        drawList.ChannelsMerge();
     }
 
-    protected override IEnumerable<KeyValuePair<string, string>> GetPersistedSettings()
+    // Picks "nice" (1/2/5 * 10^n) gridline spacing in sample-index units,
+    // aiming for roughly one gridline per TargetGridSpacingPixels of plot
+    // width - mirrors the classic axis-tick "nice number" algorithm so
+    // spacing looks like a normal ruler instead of arbitrary fractional
+    // sample counts.
+    private static double[] ComputeGridTicks(double viewMin, double viewMax, double plotWidthPixels)
     {
-        if (_collapsedGroupPaths.Count > 0)
+        var range = viewMax - viewMin;
+        if (range <= 0 || plotWidthPixels <= 0)
         {
-            yield return new("CollapsedGroups", string.Join(';', _collapsedGroupPaths));
+            return [];
         }
+
+        var targetTickCount = Math.Max(1.0, plotWidthPixels / TargetGridSpacingPixels);
+        var roughStep = range / targetTickCount;
+        var magnitude = Math.Pow(10, Math.Floor(Math.Log10(roughStep)));
+        var normalized = roughStep / magnitude;
+
+        double niceNormalized;
+        if (normalized < 1.5)
+        {
+            niceNormalized = 1;
+        }
+        else if (normalized < 3)
+        {
+            niceNormalized = 2;
+        }
+        else if (normalized < 7)
+        {
+            niceNormalized = 5;
+        }
+        else
+        {
+            niceNormalized = 10;
+        }
+
+        var step = niceNormalized * magnitude;
+        if (step <= 0 || double.IsNaN(step) || double.IsInfinity(step))
+        {
+            return [];
+        }
+
+        var first = Math.Ceiling(viewMin / step) * step;
+
+        var ticks = new List<double>();
+        for (var tick = first; tick <= viewMax && ticks.Count < 1000; tick += step)
+        {
+            ticks.Add(tick);
+        }
+
+        return ticks.ToArray();
     }
 
-    protected override void ApplyPersistedSetting(string key, string value)
+    // Draws one vertical line per shared gridline tick, spanning from the
+    // bottom of the frozen timescale row (_plotTop) down to the bottom of the
+    // table's own rendered rect (tableBottom - i.e. the visible channel-row
+    // viewport, whether or not it's scrolled) - a single shared line per tick
+    // instead of every row drawing its own short, separately-boxed segment.
+    // Called with the window draw list's background channel current (see
+    // DrawOverride) so it lands behind every row's own content.
+    private void DrawSharedGridlines(ImDrawListPtr drawList, double[] ticks, float tableBottom)
     {
-        if (key != "CollapsedGroups")
+        if (ticks.Length == 0 || tableBottom <= _plotTop || _plotRight <= _plotLeft)
         {
             return;
         }
 
-        foreach (var path in value.Split(';', StringSplitOptions.RemoveEmptyEntries))
+        var color = ImGui.GetColorU32(ImGuiCol.TableBorderLight);
+        var range = _viewMax - _viewMin;
+
+        drawList.PushClipRect(new Vector2(_plotLeft, _plotTop), new Vector2(_plotRight, tableBottom), true);
+
+        foreach (var tick in ticks)
         {
-            _collapsedGroupPaths.Add(path);
+            var t = (tick - _viewMin) / range;
+            var x = _plotLeft + (float)(t * (_plotRight - _plotLeft));
+            drawList.AddLine(new Vector2(x, _plotTop), new Vector2(x, tableBottom), color);
         }
+
+        drawList.PopClipRect();
     }
 
     private void ClampView(double oldestRetained, double axisUpperBound)
@@ -270,7 +368,7 @@ public sealed class OscilloscopeWindow : DebuggerWindow
     // ImGui.TableSetupScrollFreeze in DrawOverride) so it stays pinned above the
     // channel rows while they scroll, instead of every row drawing its own
     // tick labels.
-    private void DrawTimescaleRow(bool stopped, double oldestRetained, double axisUpperBound, float valueLabelWidth)
+    private unsafe void DrawTimescaleRow(bool stopped, double oldestRetained, double axisUpperBound, float valueLabelWidth, double[] gridTicks)
     {
         var rowHeight = ImGui.GetTextLineHeightWithSpacing() * 2f;
 
@@ -297,12 +395,38 @@ public sealed class OscilloscopeWindow : DebuggerWindow
             ""u8,
             ImPlotAxisFlags.NoGridLines,
             ImPlotAxisFlags.NoGridLines | ImPlotAxisFlags.NoTickLabels);
-        ImPlot.SetupAxisFormat(ImAxis.X1, _timeAxisFormatter);
         ImPlot.SetupAxisLimits(ImAxis.Y1, 0, 1, ImPlotCond.Always);
 
         SetupSharedXAxis(stopped, oldestRetained, axisUpperBound);
 
+        // Explicit ticks (rather than ImPlot's own auto-generated ones via
+        // SetupAxisFormat) so the labels shown here land at exactly the same
+        // sample-index positions as DrawSharedGridlines' vertical lines.
+        if (gridTicks.Length > 0)
+        {
+            Span<double> tickValues = stackalloc double[gridTicks.Length];
+            var tickLabels = new string[gridTicks.Length];
+            for (var i = 0; i < gridTicks.Length; i++)
+            {
+                tickValues[i] = gridTicks[i];
+                tickLabels[i] = FormatDuration(gridTicks[i] / _cyclesPerSecond);
+            }
+
+            fixed (double* tickValuesPtr = tickValues)
+            {
+                ImPlot.SetupAxisTicks(ImAxis.X1, tickValuesPtr, gridTicks.Length, tickLabels);
+            }
+        }
+
         ImPlot.EndPlot();
+
+        // Captured here rather than re-derived from column widths/padding
+        // after EndTable() - see _plotLeft/_plotRight/_plotTop remarks.
+        var plotRectMin = ImGui.GetItemRectMin();
+        var plotRectMax = ImGui.GetItemRectMax();
+        _plotLeft = plotRectMin.X;
+        _plotRight = plotRectMax.X;
+        _plotTop = plotRectMax.Y;
     }
 
     // Shared X1 setup used by both the timescale ruler and every channel row, so
@@ -325,7 +449,7 @@ public sealed class OscilloscopeWindow : DebuggerWindow
         }
     }
 
-    private void DrawChannelNode(ScopeChannelNode node, string parentPath, bool stopped, double oldestRetained, double axisUpperBound, float valueLabelWidth)
+    private void DrawChannelNode(ScopeChannelNode node, bool stopped, double oldestRetained, double axisUpperBound, float valueLabelWidth)
     {
         switch (node)
         {
@@ -334,33 +458,22 @@ public sealed class OscilloscopeWindow : DebuggerWindow
                 break;
 
             case ScopeChannelGroup group:
-                var path = parentPath.Length == 0 ? group.Name : $"{parentPath}/{group.Name}";
-
                 ImGui.TableNextRow();
                 ImGui.TableNextColumn();
 
-                // Applies persisted state the first time this ID is seen this
-                // session; a manual toggle afterward takes over as normal,
-                // reflected back into _collapsedGroupPaths below so it's what
-                // gets written out again on save.
-                ImGui.SetNextItemOpen(!_collapsedGroupPaths.Contains(path), ImGuiCond.FirstUseEver);
+                // Leaf + NoTreePushOnOpen renders this as a plain, always-expanded
+                // label row (no arrow, nothing to click to collapse) - groups are
+                // purely visual organization now, not a hide/show toggle.
+                ImGui.TreeNodeEx(
+                    group.Name,
+                    ImGuiTreeNodeFlags.SpanAllColumns | ImGuiTreeNodeFlags.Leaf | ImGuiTreeNodeFlags.Bullet | ImGuiTreeNodeFlags.NoTreePushOnOpen);
 
-                var isOpen = ImGui.TreeNodeEx(group.Name, ImGuiTreeNodeFlags.SpanAllColumns);
-                if (isOpen)
+                ImGui.Indent();
+                foreach (var child in group.Children)
                 {
-                    _collapsedGroupPaths.Remove(path);
-
-                    foreach (var child in group.Children)
-                    {
-                        DrawChannelNode(child, path, stopped, oldestRetained, axisUpperBound, valueLabelWidth);
-                    }
-
-                    ImGui.TreePop();
+                    DrawChannelNode(child, stopped, oldestRetained, axisUpperBound, valueLabelWidth);
                 }
-                else
-                {
-                    _collapsedGroupPaths.Add(path);
-                }
+                ImGui.Unindent();
                 break;
         }
     }
@@ -637,25 +750,6 @@ public sealed class OscilloscopeWindow : DebuggerWindow
             xs[i] = absoluteIndex;
             ys[i] = buffer[(int)(absoluteIndex % capacity)];
         }
-    }
-
-    // ImPlot tick-label formatter: converts an x-axis value (absolute sample
-    // index, i.e. tick count since recording started) to a time string, with
-    // the unit adapted to magnitude since the visible span usually ranges from
-    // a handful of microseconds (zoomed in) up to however long the ring buffer
-    // retains (zoomed all the way out).
-    private unsafe int FormatTimeAxisTick(double sampleIndex, byte* buff, int size, void* userData)
-    {
-        var text = FormatDuration(sampleIndex / _cyclesPerSecond);
-        if (text.Length >= size)
-        {
-            text = text[..(size - 1)];
-        }
-
-        var destination = new Span<byte>(buff, size);
-        var written = Encoding.ASCII.GetBytes(text, destination);
-        destination[written] = 0;
-        return written;
     }
 
     private static string FormatDuration(double seconds)
