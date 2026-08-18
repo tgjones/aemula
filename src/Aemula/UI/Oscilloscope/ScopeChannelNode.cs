@@ -29,4 +29,15 @@ public abstract class ScopeChannelNode(string name)
                 break;
         }
     }
+
+    public static IEnumerable<ScopeChannel> Flatten(IEnumerable<ScopeChannelNode> nodes)
+    {
+        foreach (var node in nodes)
+        {
+            foreach (var channel in Flatten(node))
+            {
+                yield return channel;
+            }
+        }
+    }
 }

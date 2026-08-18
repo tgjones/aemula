@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using Aemula.Debugging;
 using Aemula.Emulation.Chips;
@@ -300,9 +301,9 @@ public sealed partial class AppleIISystem : EmulatedSystem
         return new AppleIIDebugger(this);
     }
 
-    internal ScopeChannelGroup CreateScopeChannelGroup()
+    internal IReadOnlyList<ScopeChannelNode> CreateScopeChannelNodes()
     {
-        return new ScopeChannelGroup("Apple II",
+        return
         [
             Cpu.CreateScopeChannelGroup(),
             new ScopeChannelGroup("Video Timing",
@@ -321,6 +322,6 @@ public sealed partial class AppleIISystem : EmulatedSystem
                     (255, "White"),
                 ]),
             ]),
-        ]);
+        ];
     }
 }

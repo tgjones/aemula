@@ -44,7 +44,7 @@ public sealed class OscilloscopeWindow : DebuggerWindow
     private const double AnalogAxisPaddingFraction = 0.05;
 
     private readonly Debugger _debugger;
-    private readonly ScopeChannelNode _root;
+    private readonly IReadOnlyList<ScopeChannelNode> _roots;
     private readonly ScopeRecorder _recorder;
     private readonly Dictionary<ScopeChannel, int> _channelIndex;
     private readonly double _cyclesPerSecond;
@@ -73,10 +73,10 @@ public sealed class OscilloscopeWindow : DebuggerWindow
 
     public override Pane PreferredPane => Pane.Bottom;
 
-    public unsafe OscilloscopeWindow(Debugger debugger, ScopeChannelNode channels)
+    public unsafe OscilloscopeWindow(Debugger debugger, IReadOnlyList<ScopeChannelNode> channels)
     {
         _debugger = debugger;
-        _root = channels;
+        _roots = channels;
         _recorder = new ScopeRecorder(channels);
         _cyclesPerSecond = debugger.System.CyclesPerSecond;
         _timeAxisFormatter = FormatTimeAxisTick;
@@ -216,7 +216,10 @@ public sealed class OscilloscopeWindow : DebuggerWindow
 
         DrawTimescaleRow(stopped, oldestRetained, axisUpperBound, valueLabelWidth);
 
-        DrawChannelNode(_root, string.Empty, stopped, oldestRetained, axisUpperBound, valueLabelWidth);
+        foreach (var root in _roots)
+        {
+            DrawChannelNode(root, string.Empty, stopped, oldestRetained, axisUpperBound, valueLabelWidth);
+        }
 
         ImGui.EndTable();
     }

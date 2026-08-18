@@ -49,6 +49,6 @@ public sealed class AppleIIDebugger : Debugger
         result.Add(new BreakpointsWindow(this));
         result.Add(new MemoryEditor(1, address => _appleII.ReadByteDebug((ushort)address), (address, data) => _appleII.WriteByteDebug((ushort)address, data)));
         result.Add(new ScreenDisplayWindow(_appleII.Display));
-        result.Add(new OscilloscopeWindow(this, _appleII.CreateScopeChannelGroup()));
+        result.Add(new OscilloscopeWindow(this, _appleII.CreateScopeChannelNodes()));
     }
 }

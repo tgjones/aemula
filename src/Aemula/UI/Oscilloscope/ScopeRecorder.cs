@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 
 namespace Aemula.UI.Oscilloscope;
@@ -15,9 +16,9 @@ public sealed class ScopeRecorder
 
     private readonly ulong[][] _samples;
 
-    public ScopeRecorder(ScopeChannelNode root, int capacity = DefaultCapacity)
+    public ScopeRecorder(IReadOnlyList<ScopeChannelNode> roots, int capacity = DefaultCapacity)
     {
-        Channels = ScopeChannelNode.Flatten(root).ToArray();
+        Channels = ScopeChannelNode.Flatten(roots).ToArray();
         Capacity = capacity;
 
         _samples = new ulong[Channels.Length][];
