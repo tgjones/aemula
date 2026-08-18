@@ -568,8 +568,18 @@ public sealed class OscilloscopeWindow : DebuggerWindow
         // PlotToPixels only resolves correctly while this plot is active, so
         // the pixel Y for each value-axis label is captured here and drawn
         // later, after EndPlot() - see DrawValueAxisLabels for why the draw
-        // itself has to happen outside Begin/EndPlot.
-        IReadOnlyList<(double Value, string Label)> valueAxisLabels = isDigital ? DigitalAxisLabels : channel.AnalogTicks;
+        // itself has to happen outside Begin/EndPlot. Analog gets exactly two
+        // labels, at its own real-world min/max (e.g. "0 V"/"2 V") - see
+        // ScopeChannel.Analog remarks - rather than a caller-supplied list of
+        // arbitrary anchor points.
+        IReadOnlyList<(double Value, string Label)> valueAxisLabels = isDigital
+            ? DigitalAxisLabels
+            : isAnalog
+                ? [
+                    (channel.AnalogMin, FormatUnitValue(channel.AnalogMin, channel.AnalogUnit)),
+                    (channel.AnalogMax, FormatUnitValue(channel.AnalogMax, channel.AnalogUnit)),
+                  ]
+                : [];
         Span<float> valueAxisLabelPixelY = stackalloc float[valueAxisLabels.Count];
         for (var i = 0; i < valueAxisLabels.Count; i++)
         {
@@ -593,6 +603,7 @@ public sealed class OscilloscopeWindow : DebuggerWindow
             }
             else if (isAnalog)
             {
+                ScaleAnalogSamples(channel, ys);
                 DrawAnalogTrace(channel, color, visStart, visibleCount, xs, ys);
             }
             else
@@ -691,7 +702,7 @@ public sealed class OscilloscopeWindow : DebuggerWindow
             var index = (int)Math.Round(mouse.X - visStart);
             if (index >= 0 && index < visibleCount)
             {
-                ImGui.SetTooltip($"{channel.Name}: {(byte)ys[index]}");
+                ImGui.SetTooltip($"{channel.Name}: {FormatUnitValue(ys[index], channel.AnalogUnit)}");
             }
         }
     }
@@ -776,6 +787,25 @@ public sealed class OscilloscopeWindow : DebuggerWindow
             xs[i] = absoluteIndex;
             ys[i] = buffer[(int)(absoluteIndex % capacity)];
         }
+    }
+
+    // Analog's raw sample is always an 8-bit byte (see ScopeChannel.Analog),
+    // linearly rescaled here into the channel's own real-world
+    // [AnalogMin, AnalogMax] range so the trace, Y-axis, and value-axis
+    // labels all agree on one coordinate system.
+    private static void ScaleAnalogSamples(ScopeChannel channel, Span<double> ys)
+    {
+        var scale = (channel.AnalogMax - channel.AnalogMin) / 255.0;
+        for (var i = 0; i < ys.Length; i++)
+        {
+            ys[i] = channel.AnalogMin + ys[i] * scale;
+        }
+    }
+
+    private static string FormatUnitValue(double value, string unit)
+    {
+        var text = value.ToString("0.##", CultureInfo.InvariantCulture);
+        return string.IsNullOrEmpty(unit) ? text : $"{text} {unit}";
     }
 
     private static string FormatDuration(double seconds)
