@@ -138,4 +138,160 @@ public class AppleIISystemCompositeVideoTests
         await Assert.That(observed.Contains((byte)19)).IsTrue();
         await Assert.That(observed.Contains((byte)108)).IsTrue();
     }
+
+    // Phase 4 of docs/apple-ii-ntsc-video-plan.md: line/frame length tests
+    // against the already-implemented video scanner, plus the
+    // HiresColorPhase phase-lock question, using the two things phase 3
+    // added: this composite encoder's free-running _masterTickCounter, and
+    // HSyncPulse as an already-verified once-per-line marker.
+
+    [Test]
+    public async Task LineAndFrameLengthMatchDocumentedTickCounts()
+    {
+        // Cross-checks the plan doc's "Sample rate" tick-count claims
+        // directly against HSyncPulse (one rising edge per line) and the
+        // vertical scanner state (which repeats every frame), rather than
+        // re-trusting the prose - and, as it turns out, catching a real
+        // error in it: every line measures 912 ticks, not "910 normally,
+        // 912 on the once-per-65-lines long-cycle line" as originally
+        // written. Phase0IsElongatedOnceEverySixtyFiveCycles (in
+        // AppleIISystemVideoTimingTests.cs) already establishes that 1 of
+        // every 65 PHASE0 cycles is long (16 ticks, not 14) - the doc's
+        // mistake was reading that as "1 line in 65", when a line *is* 65
+        // PHASE0 cycles, so it's really "1 (long) cycle in every line"
+        // (64*14 + 16 = 912). AppleIISystem.VideoTiming.cs's own comment
+        // already had this right ("once-per-scanline 'long cycle'") - only
+        // this plan doc's restatement of it was wrong.
+        var system = new AppleIISystem();
+        system.LoadProgram("");
+
+        var lineLengths = new List<int>();
+        var ticksSinceLastHSyncRisingEdge = 0;
+        var wasHSync = false;
+        var sawFirstEdge = false;
+
+        // Comfortably past the vertical section's first (cold-start, V=0
+        // to its 511 terminal count) wraparound, into the steady 262-line
+        // periodic region - see
+        // VerticalPresetSequenceMatchesSatherWorkedExample's comment on
+        // why 511 lines, not 262, elapse before the first repeat.
+        for (var i = 0; i < 520 * 912; i++)
+        {
+            system.Tick();
+        }
+
+        var vAtLineStart = new List<ushort>();
+
+        for (var i = 0; i < 300 * 912 + 1000 && vAtLineStart.Count < 300; i++)
+        {
+            system.Tick();
+            ticksSinceLastHSyncRisingEdge++;
+
+            var isHSync = system.HSyncPulse;
+            if (isHSync && !wasHSync)
+            {
+                var (_, v) = system.GetVideoScannerStateForTests();
+
+                if (sawFirstEdge)
+                {
+                    lineLengths.Add(ticksSinceLastHSyncRisingEdge);
+                }
+
+                vAtLineStart.Add(v);
+                sawFirstEdge = true;
+                ticksSinceLastHSyncRisingEdge = 0;
+            }
+
+            wasHSync = isHSync;
+        }
+
+        await Assert.That(lineLengths.Count).IsGreaterThanOrEqualTo(262);
+
+        foreach (var length in lineLengths)
+        {
+            await Assert.That(length).IsEqualTo(912);
+        }
+
+        // 262 lines/frame: the vertical scanner state at line-start repeats
+        // after exactly 262 HSync edges (independently corroborates
+        // VerticalPresetSequenceMatchesSatherWorkedExample's 511->250
+        // wraparound: 511-250+1=262).
+        var repeatIndex = vAtLineStart.FindIndex(1, vAtLineStart.Count - 1, v => v == vAtLineStart[0]);
+        await Assert.That(repeatIndex).IsEqualTo(262);
+    }
+
+    [Test]
+    public async Task HiresColorPhaseMatchesAbsoluteSubcarrierPhaseAcrossScanlines()
+    {
+        // Settles the open question flagged on HiresColorPhase
+        // (AppleIISystem.Video.cs / docs/apple-ii-ntsc-video-plan.md's
+        // "Open risks"): does HiresColorPhase's column-parity-derived
+        // quadrant (fixed for a given column, on every line, by
+        // construction) actually match the true absolute subcarrier phase -
+        // this phase's free-running _masterTickCounter - consistently line
+        // to line, or does it only hold within one line?
+        //
+        // It matches, line to line, indefinitely. LineAndFrameLengthMatchDocumentedTickCounts
+        // (this file) establishes every line is exactly 912 master ticks,
+        // which is itself a multiple of 4 (unlike the plan doc's original,
+        // now-corrected "910 normally" assumption - 910 %4 == 2, which
+        // would have made this drift by half a subcarrier cycle every
+        // line). Because the real per-line total is a multiple of 4, a
+        // fixed column always lands on the identical absolute subcarrier
+        // quadrant on every single line - which is exactly what the
+        // once-per-line "long cycle" stretch exists to guarantee (Sather,
+        // quoted in docs/apple-ii-plan.md: it keeps "the dot clock
+        // phase-locked to the color subcarrier across scanlines"). So
+        // HiresColorPhase's column-parity-only formula isn't an
+        // approximation of the true absolute phase - it *is* the true
+        // absolute phase, verified here directly against the free-running
+        // counter rather than assumed from the formula's own construction.
+        var system = new AppleIISystem();
+        system.LoadProgram("");
+
+        var wasPhase0 = system.Phase0;
+        var recordedRawH = -1;
+        var quadrantsAtFixedColumn = new List<uint>();
+
+        // Comfortably more than a full 262-line frame - accounting for the
+        // ~70 of those lines that are blanked (Vbl) and so don't produce a
+        // hit at all - so the frame wraparound (V's reload back to its
+        // preset) is itself exercised, not just steady horizontal-only
+        // lines.
+        for (var i = 0; i < 500 * 912 && quadrantsAtFixedColumn.Count < 270; i++)
+        {
+            var counterBeforeThisTick = system.GetMasterTickCounterForTests();
+            system.Tick();
+            var isPhase0 = system.Phase0;
+
+            if (isPhase0 && !wasPhase0 && !system.Hbl && !system.Vbl)
+            {
+                var (h, _) = system.GetVideoScannerStateForTests();
+                var rawH = h & 0b0_111111; // H0-H5, masking off HPE'
+
+                // Any visible column works as the fixed reference point -
+                // the same H-state recurs at the same absolute screen
+                // column on every line.
+                recordedRawH = recordedRawH == -1 ? rawH : recordedRawH;
+
+                if (rawH == recordedRawH)
+                {
+                    // counterBeforeThisTick is _masterTickCounter's value
+                    // as TickVideo() computed this cell's dots (it hasn't
+                    // been incremented for this tick yet - that happens
+                    // later, in this same Tick() call's TickCompositeVideo)
+                    // - i.e. the absolute subcarrier phase for this cell's
+                    // first dot.
+                    quadrantsAtFixedColumn.Add(counterBeforeThisTick & 3);
+                }
+            }
+
+            wasPhase0 = isPhase0;
+        }
+
+        await Assert.That(quadrantsAtFixedColumn.Count).IsEqualTo(270);
+
+        var distinctQuadrants = new HashSet<uint>(quadrantsAtFixedColumn);
+        await Assert.That(distinctQuadrants.Count).IsEqualTo(1);
+    }
 }

@@ -42,21 +42,26 @@ public sealed partial class AppleIISystem
     // and SYNC is high there (see the plan doc's "Composite sync" section).
     private const double BurstAmplitudeVolts = 0.35;
 
-    // One byte sample per master tick; a fixed-capacity ring buffer sized
-    // comfortably over one frame's worth of samples (262 lines * up to 912
-    // ticks/line, the long-cycle line's worst case).
+    // One byte sample per master tick; a fixed-capacity ring buffer sized to
+    // one frame's worth of samples. Every line is 912 ticks, not just some
+    // of them - phase 4 verification found every line carries one long
+    // (16-tick) PHASE0 cycle among its 65 (64*14+16=912), not just one line
+    // in 65 as this plan originally assumed; see "Sample rate" below.
     private const int CompositeVideoCapacity = 262 * 912;
 
     public readonly byte[] CompositeVideo = new byte[CompositeVideoCapacity];
 
     public int CompositeVideoWriteIndex { get; private set; }
 
+    internal uint GetMasterTickCounterForTests() => _masterTickCounter;
+
     // Ticks elapsed since the last PHASE0 rising edge, i.e. since
     // TickVideo() last computed a fresh 7-dot cell. 2 ticks/dot covers the
-    // normal 14-tick cell exactly; the once-per-65-lines "long cycle"
-    // stretch adds 2 extra ticks that this simply holds the last dot
-    // through, rather than modelling exactly which of the 7 dots really
-    // gets stretched on real hardware - an accepted approximation, see
+    // normal 14-tick cell exactly; the once-per-line "long cycle" stretch
+    // (one 16-tick cell among the line's 65) adds 2 extra ticks that this
+    // simply holds the last dot through, rather than modelling exactly
+    // which of the 7 dots really gets stretched on real hardware - an
+    // accepted approximation, see
     // docs/apple-ii-ntsc-video-plan.md's "Sample rate" section.
     private int _ticksSincePhase0Edge;
 

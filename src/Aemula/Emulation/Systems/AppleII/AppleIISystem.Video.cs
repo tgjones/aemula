@@ -140,13 +140,14 @@ public sealed partial class AppleIISystem
     // plan's "Future goal: analog composite video into Television" section
     // defers. Sized and indexed exactly like Display.Data; only meaningful
     // where/when HIRES was actually being scanned (garbage - not zeroed
-    // between frames - everywhere else). One open question before Television
-    // leans on this across scanlines: whether phase 3's once-per-line
-    // "long cycle" stretch (an extra 2 master ticks, i.e. another 180
-    // degrees) keeps column 0's phase identical from line to line, as the
-    // phase-lock it's designed for implies, or only keeps it locked to the
-    // color burst rather than to a fixed column-parity origin. Verify
-    // against actual scanline-to-scanline phase before relying on it.
+    // between frames - everywhere else). Resolved (docs/apple-ii-ntsc-video-plan.md
+    // phase 4, AppleIISystemCompositeVideoTests.HiresColorPhaseMatchesAbsoluteSubcarrierPhaseAcrossScanlines):
+    // yes, a fixed column's phase is identical on every line, verified
+    // directly against the composite encoder's free-running master-tick
+    // counter, not just assumed from the once-per-line "long cycle"
+    // stretch's intended purpose - it keeps every line at exactly 912
+    // master ticks (a multiple of 4), which is what makes this exact
+    // rather than approximate.
     public readonly byte[] HiresColorPhase;
 
     // docs/apple-ii-ntsc-video-plan.md phase 2: the real digital PICTURE/

@@ -228,6 +228,7 @@ authoritative answer to the open question already flagged on
 `HiresColorPhase` (whether its column-parity-relative phase formula actually
 matches the true absolute subcarrier phase consistently line-to-line) — once
 this exists, that can be checked directly instead of needing a bespoke test.
+**Resolved in phase 4: yes, exactly** — see phase 4's write-up below.
 
 ## Signal representation
 
@@ -272,9 +273,12 @@ after the fact. Only the burst sine's phase genuinely needs true per-tick
 evaluation, and that's a free-running counter, independent of the collapsed
 video generation.
 
-Per line: 910 master ticks normally, 912 on the once-per-65-lines long-cycle
-line (already established in phase 3). 262 lines/frame (non-interlaced).
-That's a ~238,420-sample buffer per frame (≈233KB as bytes) — no
+Per line: 912 master ticks — 64 normal 14-tick PHASE0 cycles plus one
+16-tick "long cycle", on **every** line, not (as this section originally,
+incorrectly, assumed) 910 normally with 912 only once every 65 lines; see
+phase 4's "Line/frame length" finding below for the correction and the
+direct Sather citation that settles it. 262 lines/frame (non-interlaced).
+That's an exact 238,944-sample buffer per frame (≈233KB as bytes) — no
 architectural concern, just worth sizing a buffer for rather than
 allocating per-scanline.
 
@@ -390,16 +394,51 @@ center; the ~6-byte offset is the "small offset differences acceptable"
 case "Summing formula" already flagged, now with the actual number on
 record instead of an estimate.
 
-**Phase 4 — Verification**
-Since there's no visual decode yet to eyeball, verify numerically:
-- Anchor-level tests per "Phase 3".
-- Line/frame length tests (910/912 ticks/line, 262 lines/frame) against the
-  already-implemented video scanner.
-- A test resolving the `HiresColorPhase` open question: compare its
-  quadrant value at a given column against `tick & 3` from the new
-  free-running subcarrier counter, across several scanlines, to settle
-  whether it's actually phase-locked to an absolute reference or only
-  relatively consistent.
+**Phase 4 — Verification (done)**
+Since there's no visual decode yet to eyeball, verified numerically, in two
+new tests in `AppleIISystemCompositeVideoTests.cs` (plus the anchor-level
+tests already landed in phase 3):
+
+- **`LineAndFrameLengthMatchDocumentedTickCounts`** measures line length
+  directly off `HSyncPulse` rising edges (one per line) and frame length off
+  the vertical scanner state's repeat period. It found a real error in this
+  plan doc's own "Sample rate" section: **every line is 912 master ticks,
+  not "910 normally, 912 on the once-per-65-lines long-cycle line"** as
+  originally written there. `Phase0IsElongatedOnceEverySixtyFiveCycles`
+  (phase 1's test file) already correctly established "1 long PHASE0 cycle
+  per 65" — the plan doc's mistake was reading that as "1 line in 65",
+  when a line *is* 65 PHASE0 cycles, so it's really "1 long cycle in every
+  line" (64×14 + 16 = 912). `AppleIISystem.VideoTiming.cs`'s own comment
+  already had this right ("once-per-scanline 'long cycle' stretch") - only
+  this plan doc's restatement of it was wrong, and
+  `CompositeVideoCapacity`'s `262 * 912` sizing was already implicitly
+  correct (just uncommented as to why). Directly confirmed against Jim
+  Sather, *Understanding the Apple II*, ch. 3 ("Timing Generation and the
+  Video Scanner"), not just re-derived from this codebase's own prior
+  comments: "The duration of the horizontal sequence is equal to 64 normal
+  6502 cycles and one long cycle... There are exactly 17030 (65 x 262) 6502
+  cycles in every television scan... As a side effect all 1 MHz and 2 MHz
+  signals are elongated **once every horizontal line**." 262 lines/frame
+  was independently confirmed the same way (the vertical scanner state
+  repeats after exactly 262 `HSyncPulse` edges, matching Sather's "262
+  state counter... the 262 state sequence represents a vertical scan").
+  Fixed the doc text above and two comments in `AppleIISystem.CompositeVideo.cs`
+  that repeated the same "once-per-65-lines" error.
+- **`HiresColorPhaseMatchesAbsoluteSubcarrierPhaseAcrossScanlines`**
+  resolves the open question flagged on `HiresColorPhase`: sampling the
+  free-running `_masterTickCounter`'s value (`& 3`, i.e. its subcarrier
+  quadrant) at a fixed screen column across a full frame-plus-wraparound
+  (270 samples) found it's **exactly constant** every time - the absolute
+  subcarrier phase at a given column genuinely is phase-locked to a fixed,
+  line-invariant reference, not just relatively consistent within one line.
+  This resolves cleanly (not just approximately) precisely *because* every
+  line is 912 ticks, a multiple of 4 - had the original "910 normally"
+  assumption been right, 910 % 4 == 2 would have made the phase flip by
+  half a subcarrier cycle every other line instead. This also matches
+  Sather's own stated purpose for the long cycle - "the same beginning
+  phase relationship occurs every horizontal line" - now verified directly
+  against this codebase's own free-running tick counter rather than assumed
+  from `HiresColorPhase`'s formula construction alone.
 
 **Phase 5 — Oscilloscope integration**
 Surface both the new digital signals (phases 1–2) and the new analog
