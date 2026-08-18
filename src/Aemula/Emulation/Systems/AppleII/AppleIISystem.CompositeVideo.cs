@@ -72,6 +72,18 @@ public sealed partial class AppleIISystem
     // doesn't disturb the phase sequence.
     private uint _masterTickCounter;
 
+    // The digital VIDEO DATA bit for whichever dot the master clock is
+    // currently within - the same tick-to-dot mapping TickCompositeVideo
+    // uses below to build vOut, exposed as a scope channel
+    // (docs/apple-ii-ntsc-video-plan.md phase 5).
+    public bool VideoDataBit => _videoDataBits[Math.Min(_ticksSincePhase0Edge / 2, 6)];
+
+    // The most recently written composite-video sample, i.e. this tick's
+    // value - exposed as an Analog scope channel alongside the digital
+    // sync/blanking rows (docs/apple-ii-ntsc-video-plan.md phase 5).
+    public byte CurrentCompositeVideoSample =>
+        CompositeVideo[(CompositeVideoWriteIndex + CompositeVideoCapacity - 1) % CompositeVideoCapacity];
+
     private void TickCompositeVideo(bool phase0RisingEdge)
     {
         if (phase0RisingEdge)
@@ -83,9 +95,7 @@ public sealed partial class AppleIISystem
             _ticksSincePhase0Edge++;
         }
 
-        var dotIndex = Math.Min(_ticksSincePhase0Edge / 2, 6);
-
-        var videoBit = _videoDataBits[dotIndex] ? 1.0 : 0.0;
+        var videoBit = VideoDataBit ? 1.0 : 0.0;
         var syncBit = SyncBit ? 1.0 : 0.0;
 
         var vBase = EffectiveLogicHigh * (WVideo * videoBit + WSync * syncBit);

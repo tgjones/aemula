@@ -440,40 +440,112 @@ tests already landed in phase 3):
   against this codebase's own free-running tick counter rather than assumed
   from `HiresColorPhase`'s formula construction alone.
 
-**Phase 5 — Oscilloscope integration**
-Surface both the new digital signals (phases 1–2) and the new analog
+**Phase 5 — Oscilloscope integration (done)**
+Surfaced both the new digital signals (phases 1–2) and the new analog
 composite output (phase 3) in the existing Apple II oscilloscope view.
 `docs/oscilloscope-plan.md` already anticipated exactly this as a deferred
 stretch phase ("Phase 5 (stretch, later) — Analog channels": "Not started
-until that groundwork exists") — this phase is that groundwork. Two parts:
+until that groundwork exists") — this phase was that groundwork. Two parts:
 
-- **Analog channel support in the oscilloscope framework itself.** Add a
-  third `ScopeChannel.Kind`, `Analog`, alongside the existing `Digital`/
-  `Bus`. This refines `oscilloscope-plan.md`'s original sketch: that doc
-  assumed a "float-sampled" channel type would be needed, but since this
-  plan's own "Signal representation" decision already lands the composite
-  output as a plain 0–255 byte, no new sample storage type is actually
-  needed — `ScopeChannel.Read: Func<ulong>` and `ScopeRecorder`'s existing
-  `ulong[]` ring buffer cover it unchanged. What `Analog` needs that
-  `Digital`/`Bus` don't provide is different *rendering*: a continuous
-  `ImPlot.PlotLine` trace instead of `PlotStairs`' discrete steps or the
-  hex-banded rectangles `Bus` channels use — stairs/bands would visually
-  flatten the whole point of synthesizing the color-burst sine wave in
-  phase 3. Y-axis ticks at the meaningful anchor points from "Signal
-  representation" above (0="Sync", 64="Black", 255="White"), mirroring how
-  `Digital` channels already label their axis "L"/"H" instead of raw 0/1.
-- **Wire the new signals into `AppleIISystem.CreateScopeChannelGroup()`.**
-  Digital: `HSyncPulse`, `VSyncPulse`, `VideoDataBit` (`ColorBurstGate` is
-  already there from phase 3 of the main plan). Analog: `CompositeVideo`,
-  the phase-3 byte sample stream. Follows the existing "chips own their
-  channel group; systems compose" pattern from `oscilloscope-plan.md` — no
-  new framework structure needed beyond the `Analog` kind itself.
+- **Analog channel support in the oscilloscope framework itself.** Landed
+  as a third `ScopeChannel.Kind`, `Analog` (`ScopeChannelKind.cs`), plus
+  `ScopeChannel.Analog(name, Func<byte> read, min, max, ticks)` next to the
+  existing `Digital`/`Bus` factories. This refines `oscilloscope-plan.md`'s
+  original sketch: that doc assumed a "float-sampled" channel type would be
+  needed, but since this plan's own "Signal representation" decision
+  already lands the composite output as a plain 0–255 byte, no new sample
+  storage type was actually needed — `ScopeChannel.Read: Func<ulong>` and
+  `ScopeRecorder`'s existing `ulong[]` ring buffer cover it unchanged.
+  Rendering (`DrawAnalogTrace` in `OscilloscopeWindow.cs`) went through two
+  approaches: `ImPlot.PlotLine`'s straight-line interpolation between
+  samples was tried first, specifically to make the color-burst sine (only
+  4 samples/cycle at this sample rate - see below) read as a smooth curve
+  rather than a jagged staircase; a follow-up review of the running app
+  found this came at a real cost, though, since the encoder's black/white/
+  sync portions genuinely are a discrete step at one sample per master
+  tick, no between-sample interpolation modelled (see "Sample rate"
+  below) - so `PlotLine` was misrepresenting their true square edges as
+  sloped ramps whenever zoomed in past one sample per pixel. Landed on
+  `ImPlot.PlotStairs`, same as `Digital`, since it's the faithful rendering
+  for the majority of the signal (the square-edged portions), even though
+  it leaves the burst reading as a jagged staircase rather than a smooth
+  sine - a real property of the underlying 4-samples/cycle signal, not a
+  rendering artifact to hide. Either way this is still a distinct
+  `DrawAnalogTrace` from `Digital`'s `DrawDigitalTrace`, not the exact same
+  function, since their hover tooltips differ (raw byte value vs. H/L) and
+  a future signal with real between-sample structure might still want
+  `PlotLine` back.
+
+  The Y-axis range (`AnalogMin`/`AnalogMax`) and labeled anchor ticks
+  (`AnalogTicks`, a `(double Value, string Label)` list) are **properties
+  on `ScopeChannel` itself, not constants in `OscilloscopeWindow`** — an
+  explicit correction made after an initial pass hardcoded composite
+  video's specific 0–255 range and Sync/Black/White labels directly into
+  the window. That doesn't generalize: the window is meant to stay
+  signal-agnostic, and a future analog channel (e.g. a different Apple II
+  signal, or another system entirely) will have its own range and anchor
+  points with no reason to match this one's. `Digital`/`Bus` channels leave
+  these unset (`0`/`0`/empty list) since they don't use them.
+  `OscilloscopeWindow` only contributes a generic, signal-independent
+  choice: `AnalogAxisPaddingFraction` (5% headroom around whatever
+  `AnalogMin`/`AnalogMax` a channel supplies, so its trace doesn't clip the
+  plot edge) and the tick-label mirroring of how `Digital` channels already
+  render "L"/"H" instead of raw 0/1.
+
+  That tick-label mirroring itself hit a real bug once an Analog channel
+  actually existed to expose it: giving each row's Y-axis native
+  `ImPlot.SetupAxisTicks` labels (as Digital's "L"/"H" already did) meant
+  ImPlot reserved a label-gutter width that scales with the label text -
+  "White"/"Black"/"Sync" is much wider than "L"/"H", so the composite video
+  row's plot area, and therefore its x-axis, landed visibly out of sync
+  with every other row and the timescale ruler. Fixed in
+  `OscilloscopeWindow.cs` by dropping native Y-tick-label rendering
+  entirely (`NoTickLabels` unconditionally, on every row, not just Bus's as
+  before) in favor of `DrawValueAxisLabels`: a fixed-width gutter sized
+  once per frame and reserved identically ahead of every row's own
+  `BeginPlot` - including the ruler's - regardless of channel kind or label
+  content, with the label text positioned via `ImPlot.PlotToPixels` (while
+  the row's plot is still active) but actually drawn after `EndPlot()`, so
+  it isn't clipped by ImPlot's own plot-area clip rect. See
+  `docs/oscilloscope-plan.md`'s phase 5 write-up for the fuller mechanical
+  detail.
+- **Wired the new signals into `AppleIISystem.CreateScopeChannelGroup()`.**
+  Digital: `HSyncPulse`, `VSyncPulse`, and a new `VideoDataBit` property
+  (`ColorBurstGate` was already there from phase 3 of the main plan).
+  Analog: `ScopeChannel.Analog("Composite Video", () =>
+  CurrentCompositeVideoSample, 0, 255, [(0, "Sync"), (64, "Black"), (255,
+  "White")])` — `CurrentCompositeVideoSample` is a new property returning
+  the byte most recently written into the phase-3 `CompositeVideo` ring
+  buffer, i.e. the current tick's sample, since the oscilloscope samples
+  channels once per tick via `Read: Func<ulong>` rather than reading the
+  ring buffer directly, and the 0/64/255 anchors are exactly the
+  Sync/Black/White byte values from "Signal representation" above.
+  `VideoDataBit` reads `_videoDataBits[Math.Min(_ticksSincePhase0Edge / 2,
+  6)]` — the exact tick-to-dot mapping `TickCompositeVideo` already used
+  inline to compute `videoBit`; that computation was refactored to call the
+  new property instead of duplicating the mapping. Both new properties live
+  in `AppleIISystem.CompositeVideo.cs`, next to the state they read; all
+  new channels were added to the existing "Video Timing"
+  `ScopeChannelGroup` rather than a new group, so the sync
+  pulses/blanking/composite-video rows sit next to each other for the
+  direct visual comparison "Done when" below calls for. Follows the
+  existing "chips own their channel group; systems compose" pattern from
+  `oscilloscope-plan.md` — no new framework structure was needed beyond the
+  `Analog` kind itself.
+
+All 24 existing `AppleIISystem*` tests (including the phase 3/4 composite-video
+and video-timing tests) still pass unchanged after the `TickCompositeVideo`
+refactor — the new `VideoDataBit` property is a pure extraction of existing
+logic, not a behavior change.
 
 **Done when:** the oscilloscope view shows the new sync pulses lining up
 correctly against the existing HBL/VBL/`ColorBurstGate` rows, and the
 composite video row visibly shows a sine-shaped burst riding on
 square-edged black/white/sync steps, landing on the byte anchor values from
-"Signal representation" at the moments those levels should occur.
+"Signal representation" at the moments those levels should occur. The
+implementation above is complete and builds/tests clean, but this criterion
+is inherently a visual one (an oscilloscope view) — actually eyeballing it
+in the running app is left to manual verification, not automated here.
 
 ## Reference materials
 

@@ -10,13 +10,14 @@ fidelity, and controls incrementally.
 
 ## Status
 
-**Phases 0 through 4 are done** (see git log for `Aemula.UI` — "Implement
+**Phases 0 through 5 are done** (see git log for `Aemula.UI` — "Implement
 oscilloscope phase 0", "Implement oscilloscope phase 1", a follow-up
 "label rows to the left" rework driven by review feedback, "Implement
 oscilloscope phase 2", "Implement phase 3 of oscilloscope plan", and
-"Implement phase 4"), except for measurement cursors, which were
-deliberately left out of Phase 4 — see the Phase 4 writeup below for why,
-and Phase 5/6 are still ahead. Everything below is written in the present
+"Implement phase 4"; Phase 5 landed as part of
+`docs/apple-ii-ntsc-video-plan.md`'s own phase 5), except for measurement
+cursors, which were deliberately left out of Phase 4 — see the Phase 4
+writeup below for why, and Phase 6 is still ahead. Everything below is written in the present
 tense for what's actually built. If you're picking this up in a new
 session, the **Rendering** and **Window layout** sections below describe
 the current `OscilloscopeWindow.cs` accurately — read those before
@@ -67,9 +68,12 @@ the other `Hexa.NET.*` packages, plus context setup/teardown in
 `ImPlot.DestroyContext()` at shutdown).
 
 Digital channels render via **`ImPlot.PlotStairs`** (a plain step-line),
-not `PlotDigital` — see "Layout false starts" below for why. Each
-channel's y-axis uses **`ImPlot.SetupAxisTicks(ImAxis.Y1, [0,1], 2, ["L","H"])`**
-so it reads "L"/"H" instead of raw 0/1. The x-axis is in absolute
+not `PlotDigital` — see "Layout false starts" below for why. Each channel's
+y-axis carries `ImPlotAxisFlags.NoTickLabels` unconditionally (originally
+just for Bus; Phase 5 made it universal — see that phase's write-up for
+why) so ImPlot never renders its own native value-axis labels, and
+`DrawValueAxisLabels` draws the "L"/"H" (or an Analog channel's own
+`AnalogTicks`) text manually instead. The x-axis is in absolute
 sample-index units (one tick = one `Debugger.Ticked` call) and, since Phase
 3, is only forced every frame via `SetupAxisLimits(..., ImPlotCond.Always)`
 while the debugger is running; once stopped it hands off to ImPlot's own
@@ -135,9 +139,11 @@ through two rejected designs before landing on the current one:
 ```
 ScopeChannelNode              (abstract: shared Name)
 ├─ ScopeChannel                (leaf: one sampled signal)
-│    Kind: Digital | Bus
-│    BitWidth: int             (1 for Digital, e.g. 8/16 for Bus)
+│    Kind: Digital | Bus | Analog
+│    BitWidth: int             (1 for Digital, e.g. 8/16 for Bus; unused for Analog)
 │    Read: Func<ulong>         (digital reads back as 0/1)
+│    AnalogMin/AnalogMax: double        (Analog only, else 0/0)
+│    AnalogTicks: (Value, Label)[]      (Analog only, else empty)
 └─ ScopeChannelGroup           (composite: ordered List<ScopeChannelNode>)
                                 (renders as a collapsible tree row;
                                  collapsing only hides member rows, it
@@ -146,9 +152,15 @@ ScopeChannelNode              (abstract: shared Name)
 
 Keeping the sample type as a single `ulong` regardless of `Kind` lets the
 recorder and ring buffer stay generic — `Kind`/`BitWidth` only matter to
-the renderer (step-line vs. hex band). There's no per-channel show/hide
-any more (removed on review — see Window layout below): every channel is
-always recorded and always rendered, so `Kind`/`BitWidth` are the only
+the renderer (step-line vs. hex band vs. continuous line). `AnalogMin`/
+`AnalogMax`/`AnalogTicks` (added in Phase 5) are per-channel rather than
+constants in `OscilloscopeWindow`, since different Analog signals have
+different meaningful ranges and labeled anchor points — the window itself
+stays signal-agnostic and only contributes generic rendering choices (axis
+padding fraction) on top of whatever a channel supplies. There's no
+per-channel show/hide any more (removed on review — see Window layout
+below): every channel is always recorded and always rendered, so `Kind`/
+`BitWidth` are the only
 thing the UI branches on.
 
 ### Recording
@@ -397,13 +409,55 @@ deferred rather than attempted and cut).
   and still solves the actual problem (channels being visually
   indistinguishable from each other).
 
-**Phase 5 (stretch, later) — Analog channels**
-Add the `Analog` channel kind once composite video produces a real signal to
-sample. Not started until that groundwork exists — now planned in detail as
-its own phase in `docs/apple-ii-ntsc-video-plan.md`, which also found this
-doesn't need a new float sample type after all: the encoder's byte-valued
-signal fits the existing `ulong`-per-sample model, so `Analog` ends up being
-a rendering distinction (a continuous line trace), not a storage one.
+**Phase 5 (stretch, later) — Analog channels (done)**
+Added the `Analog` channel kind once composite video produced a real signal
+to sample — planned and landed as its own phase in
+`docs/apple-ii-ntsc-video-plan.md` (phase 5 there), which also confirmed
+this didn't need a new float sample type after all: the encoder's
+byte-valued signal fits the existing `ulong`-per-sample model unchanged, so
+`Analog` ended up being purely a rendering distinction (`DrawAnalogTrace`,
+vs. Digital's `DrawDigitalTrace` or Bus's hex bands), not a storage one -
+though a distinct function from `Digital`'s, not a shared one, since their
+hover tooltips differ (raw byte value vs. H/L) and a future analog signal
+with real between-sample structure might want different interpolation.
+`DrawAnalogTrace` itself went through two renderers: `ImPlot.PlotLine`
+first, to make the encoder's color-burst sine (only 4 samples/cycle at this
+sample rate - `docs/apple-ii-ntsc-video-plan.md`'s phase 5 write-up has the
+detail) read as a smooth curve; landed on `ImPlot.PlotStairs` (same as
+`Digital`) after checking the running app found `PlotLine`'s
+straight-line interpolation was misrepresenting the encoder's otherwise-square
+black/white/sync edges as sloped ramps once zoomed in past one sample per
+pixel - a real cost, since those portions genuinely are a discrete step at
+one sample per master tick with no modelled interpolation between samples.
+`PlotStairs` is the faithful rendering for that majority of the signal,
+even though it leaves the burst reading as a jagged staircase rather than a
+smooth sine - a real property of the underlying signal at this sample rate,
+not something worth hiding behind interpolation. `AppleIISystem`'s "Video
+Timing" channel group now includes the composite video output plus the new
+`HSyncPulse`/`VSyncPulse`/`VideoDataBit` digital signals that plan's phases
+1–2 added — see that doc's phase 5 write-up for the full detail.
+
+A follow-up review caught a real alignment bug this phase introduced: an
+Analog channel's wider value-axis labels ("White"/"Black"/"Sync" vs.
+Digital's "L"/"H") made ImPlot reserve a wider native Y-tick-label gutter
+for that row specifically, shifting its plot's data area — and therefore
+its x-axis — visibly out of sync with every other row and the timescale
+ruler above them. Fixed by removing ImPlot's native Y-tick-label rendering
+entirely (`NoTickLabels` on every row's Y axis now, not just Bus's) and
+replacing it with `DrawValueAxisLabels`: a fixed-width gutter
+(`valueLabelWidth`, sized once in `DrawOverride` and threaded through every
+row including the ruler) reserved identically regardless of channel kind or
+label content, with the actual label text positioned manually via
+`ImPlot.PlotToPixels` (computed while the row's plot is still active) and
+drawn with `ImGui.GetWindowDrawList()` *after* `EndPlot()` — deliberately
+after, since drawing during Begin/EndPlot would have been clipped by
+ImPlot's own plot-area clip rect, which starts exactly at the shifted-right
+cursor position the gutter reservation moves to before `BeginPlot`. This is
+also why `AnalogMin`/`AnalogMax`/`AnalogTicks` had to become per-channel
+properties on `ScopeChannel` rather than constants in `OscilloscopeWindow`
+in the first place (a separate review comment on this same phase): a
+future Analog channel with a different range/labels needs its own values
+here regardless of how the alignment fix works.
 
 **Phase 6 (stretch, later) — More systems**
 Same framework is already system-agnostic by Phase 0 — add a system-level

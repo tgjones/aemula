@@ -311,6 +311,15 @@ public sealed partial class AppleIISystem : EmulatedSystem
                 ScopeChannel.Digital("VBL", () => Vbl),
                 ScopeChannel.Digital("Color Burst Gate", () => ColorBurstGate),
                 ScopeChannel.Digital("Phase 0", () => Phase0),
+                ScopeChannel.Digital("HSync", () => HSyncPulse),
+                ScopeChannel.Digital("VSync", () => VSyncPulse),
+                ScopeChannel.Digital("Video Data", () => VideoDataBit),
+                ScopeChannel.Analog("Composite Video", () => CurrentCompositeVideoSample, 0, 255,
+                [
+                    (0, "Sync"),
+                    (64, "Black"),
+                    (255, "White"),
+                ]),
             ]),
         ]);
     }

@@ -29,10 +29,19 @@ namespace Aemula.UI.Oscilloscope;
 /// </summary>
 public sealed class OscilloscopeWindow : DebuggerWindow
 {
-    private static readonly string[] DigitalTickLabels = ["L", "H"];
+    // Digital's fixed 0/1 value-axis labels, in the same (Value, Label) shape
+    // as ScopeChannel.AnalogTicks - see DrawValueAxisLabels for why both kinds
+    // render through the one shared mechanism instead of ImPlot's own native
+    // Y-axis tick labels.
+    private static readonly (double Value, string Label)[] DigitalAxisLabels = [(1.0, "H"), (0.0, "L")];
 
     private const double ZoomFactor = 1.5;
     private const double MinWindowWidthSamples = 2.0;
+
+    // Headroom added around each Analog channel's own AnalogMin/AnalogMax
+    // (see ScopeChannel) so its trace doesn't clip against the plot edge -
+    // a generic rendering choice, not specific to any one signal.
+    private const double AnalogAxisPaddingFraction = 0.05;
 
     private readonly Debugger _debugger;
     private readonly ScopeChannelNode _root;
@@ -98,6 +107,13 @@ public sealed class OscilloscopeWindow : DebuggerWindow
     {
         var labelColumnWidth = ImGui.GetFontSize() * 10f;
 
+        // Fixed value-axis-label gutter, reserved identically inside every
+        // row's Waveform cell regardless of channel kind - see
+        // DrawValueAxisLabels for why this can't be left to ImPlot's own
+        // per-row Y-tick-label reservation (its width varies with label
+        // text, which desyncs each row's plot origin from the others').
+        var valueLabelWidth = ImGui.GetFontSize() * 4f;
+
         var jumpToNow = ImGui.Button("Jump to Now"u8);
         ImGui.SameLine();
         ImGui.TextUnformatted("Zoom:"u8);
@@ -134,7 +150,7 @@ public sealed class OscilloscopeWindow : DebuggerWindow
         // before any samples have been recorded.
         var axisUpperBound = Math.Max(liveEdge, oldestRetained + 1);
 
-        var plotWidthPixels = Math.Max(1.0, ImGui.GetContentRegionAvail().X - labelColumnWidth);
+        var plotWidthPixels = Math.Max(1.0, ImGui.GetContentRegionAvail().X - labelColumnWidth - valueLabelWidth);
 
         var zoomChanged = zoomOutClicked || zoomInClicked;
         if (zoomOutClicked)
@@ -198,9 +214,9 @@ public sealed class OscilloscopeWindow : DebuggerWindow
         ImGui.TableSetupColumn("Waveform"u8, ImGuiTableColumnFlags.WidthStretch);
         ImGui.TableSetupScrollFreeze(0, 1);
 
-        DrawTimescaleRow(stopped, oldestRetained, axisUpperBound);
+        DrawTimescaleRow(stopped, oldestRetained, axisUpperBound, valueLabelWidth);
 
-        DrawChannelNode(_root, string.Empty, stopped, oldestRetained, axisUpperBound);
+        DrawChannelNode(_root, string.Empty, stopped, oldestRetained, axisUpperBound, valueLabelWidth);
 
         ImGui.EndTable();
     }
@@ -251,7 +267,7 @@ public sealed class OscilloscopeWindow : DebuggerWindow
     // ImGui.TableSetupScrollFreeze in DrawOverride) so it stays pinned above the
     // channel rows while they scroll, instead of every row drawing its own
     // tick labels.
-    private void DrawTimescaleRow(bool stopped, double oldestRetained, double axisUpperBound)
+    private void DrawTimescaleRow(bool stopped, double oldestRetained, double axisUpperBound, float valueLabelWidth)
     {
         var rowHeight = ImGui.GetTextLineHeightWithSpacing() * 2f;
 
@@ -260,6 +276,10 @@ public sealed class OscilloscopeWindow : DebuggerWindow
         ImGui.TableNextColumn();
 
         ImGui.TableNextColumn();
+        // Same fixed shift every channel row applies (see DrawChannelRow),
+        // so the ruler's own BeginPlot starts at the identical pixel X as
+        // every channel row's, keeping the shared X axis genuinely aligned.
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + valueLabelWidth);
 
         if (!ImPlot.BeginPlot(
             "##timescale"u8,
@@ -302,12 +322,12 @@ public sealed class OscilloscopeWindow : DebuggerWindow
         }
     }
 
-    private void DrawChannelNode(ScopeChannelNode node, string parentPath, bool stopped, double oldestRetained, double axisUpperBound)
+    private void DrawChannelNode(ScopeChannelNode node, string parentPath, bool stopped, double oldestRetained, double axisUpperBound, float valueLabelWidth)
     {
         switch (node)
         {
             case ScopeChannel channel:
-                DrawChannelRow(channel, stopped, oldestRetained, axisUpperBound);
+                DrawChannelRow(channel, stopped, oldestRetained, axisUpperBound, valueLabelWidth);
                 break;
 
             case ScopeChannelGroup group:
@@ -329,7 +349,7 @@ public sealed class OscilloscopeWindow : DebuggerWindow
 
                     foreach (var child in group.Children)
                     {
-                        DrawChannelNode(child, path, stopped, oldestRetained, axisUpperBound);
+                        DrawChannelNode(child, path, stopped, oldestRetained, axisUpperBound, valueLabelWidth);
                     }
 
                     ImGui.TreePop();
@@ -342,7 +362,7 @@ public sealed class OscilloscopeWindow : DebuggerWindow
         }
     }
 
-    private unsafe void DrawChannelRow(ScopeChannel channel, bool stopped, double oldestRetained, double axisUpperBound)
+    private unsafe void DrawChannelRow(ScopeChannel channel, bool stopped, double oldestRetained, double axisUpperBound, float valueLabelWidth)
     {
         var rowHeight = ImGui.GetTextLineHeightWithSpacing() * 3.5f;
 
@@ -355,6 +375,7 @@ public sealed class OscilloscopeWindow : DebuggerWindow
         ImGui.TableNextColumn();
 
         var isDigital = channel.Kind == ScopeChannelKind.Digital;
+        var isAnalog = channel.Kind == ScopeChannelKind.Analog;
 
         // Deterministic per-channel color, distinct from every other channel's own
         // independent plot (each row is its own BeginPlot, so ImPlot's normal
@@ -362,6 +383,13 @@ public sealed class OscilloscopeWindow : DebuggerWindow
         // color) - GetColormapColor wraps by channel count, so this stays stable
         // and theme-independent regardless of how many channels are recorded.
         var color = ImPlot.GetColormapColor(_channelIndex[channel], ImPlotColormap.Deep);
+
+        // Reserve the fixed value-label gutter (see DrawOverride/
+        // DrawValueAxisLabels) before this row's own BeginPlot, so its plot
+        // origin lands at the same pixel X as every other row's regardless
+        // of what value-axis labels this channel has.
+        var labelRegionScreenPos = ImGui.GetCursorScreenPos();
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + valueLabelWidth);
 
         if (!ImPlot.BeginPlot(
             $"##{channel.Name}",
@@ -371,22 +399,39 @@ public sealed class OscilloscopeWindow : DebuggerWindow
             return;
         }
 
+        // Y1 never shows ImPlot's own native tick labels, on any channel
+        // kind - their width varies with label text (e.g. Analog's "White"
+        // vs. Digital's "H"), which would otherwise change how much of this
+        // row's BeginPlot ImPlot reserves for the label gutter and desync
+        // this row's plot origin from every other row's. DrawValueAxisLabels
+        // below renders the equivalent labels manually instead, into the
+        // fixed gutter reserved above.
         ImPlot.SetupAxes(
             ""u8,
             ""u8,
             ImPlotAxisFlags.NoTickLabels | ImPlotAxisFlags.NoGridLines,
-            isDigital ? ImPlotAxisFlags.NoGridLines : ImPlotAxisFlags.NoGridLines | ImPlotAxisFlags.NoTickLabels);
-        ImPlot.SetupAxisLimits(ImAxis.Y1, -0.1, 1.1, ImPlotCond.Always);
+            ImPlotAxisFlags.NoTickLabels | ImPlotAxisFlags.NoGridLines);
+        if (isAnalog)
+        {
+            var padding = (channel.AnalogMax - channel.AnalogMin) * AnalogAxisPaddingFraction;
+            ImPlot.SetupAxisLimits(ImAxis.Y1, channel.AnalogMin - padding, channel.AnalogMax + padding, ImPlotCond.Always);
+        }
+        else
+        {
+            ImPlot.SetupAxisLimits(ImAxis.Y1, -0.1, 1.1, ImPlotCond.Always);
+        }
 
         SetupSharedXAxis(stopped, oldestRetained, axisUpperBound);
 
-        if (isDigital)
+        // PlotToPixels only resolves correctly while this plot is active, so
+        // the pixel Y for each value-axis label is captured here and drawn
+        // later, after EndPlot() - see DrawValueAxisLabels for why the draw
+        // itself has to happen outside Begin/EndPlot.
+        IReadOnlyList<(double Value, string Label)> valueAxisLabels = isDigital ? DigitalAxisLabels : channel.AnalogTicks;
+        Span<float> valueAxisLabelPixelY = stackalloc float[valueAxisLabels.Count];
+        for (var i = 0; i < valueAxisLabels.Count; i++)
         {
-            Span<double> digitalTicks = stackalloc double[] { 0.0, 1.0 };
-            fixed (double* digitalTicksPtr = digitalTicks)
-            {
-                ImPlot.SetupAxisTicks(ImAxis.Y1, digitalTicksPtr, 2, DigitalTickLabels);
-            }
+            valueAxisLabelPixelY[i] = ImPlot.PlotToPixels(0.0, valueAxisLabels[i].Value).Y;
         }
 
         var limits = ImPlot.GetPlotLimits(ImAxis.X1);
@@ -404,6 +449,10 @@ public sealed class OscilloscopeWindow : DebuggerWindow
             {
                 DrawDigitalTrace(channel, color, visStart, visibleCount, xs, ys);
             }
+            else if (isAnalog)
+            {
+                DrawAnalogTrace(channel, color, visStart, visibleCount, xs, ys);
+            }
             else
             {
                 DrawBusTrace(channel, color, visStart, visibleCount, ys);
@@ -411,6 +460,40 @@ public sealed class OscilloscopeWindow : DebuggerWindow
         }
 
         ImPlot.EndPlot();
+
+        DrawValueAxisLabels(valueAxisLabels, valueAxisLabelPixelY, labelRegionScreenPos, valueLabelWidth);
+    }
+
+    // Draws each value-axis label (Digital's fixed "H"/"L", or an Analog
+    // channel's own AnalogTicks - Bus channels have none) at the pixel Y
+    // DrawChannelRow already resolved for it via PlotToPixels, into the
+    // fixed gutter reserved to the left of that row's BeginPlot. Done after
+    // EndPlot() specifically: ImPlot clips its own draw calls to the plot
+    // rect, which starts exactly at the shifted-right cursor position
+    // DrawChannelRow moved to before calling BeginPlot - so text drawn
+    // during Begin/EndPlot at an X to the left of that (i.e. inside the
+    // reserved gutter) would be invisible, clipped by the still-active plot
+    // clip rect.
+    private static void DrawValueAxisLabels(IReadOnlyList<(double Value, string Label)> labels, ReadOnlySpan<float> pixelY, Vector2 regionScreenPos, float regionWidth)
+    {
+        const float RightPadding = 6f;
+
+        if (labels.Count == 0)
+        {
+            return;
+        }
+
+        var drawList = ImGui.GetWindowDrawList();
+        var textColor = ImGui.GetColorU32(ImGuiCol.Text);
+
+        for (var i = 0; i < labels.Count; i++)
+        {
+            var textSize = ImGui.CalcTextSize(labels[i].Label);
+            var pos = new Vector2(
+                regionScreenPos.X + regionWidth - RightPadding - textSize.X,
+                pixelY[i] - textSize.Y * 0.5f);
+            drawList.AddText(pos, textColor, labels[i].Label);
+        }
     }
 
     private static unsafe void DrawDigitalTrace(ScopeChannel channel, Vector4 color, long visStart, int visibleCount, ReadOnlySpan<double> xs, ReadOnlySpan<double> ys)
@@ -433,6 +516,40 @@ public sealed class OscilloscopeWindow : DebuggerWindow
             {
                 var value = ys[index];
                 ImGui.SetTooltip($"{channel.Name}: {(value != 0 ? "H" : "L")}");
+            }
+        }
+    }
+
+    // Analog rendering: PlotStairs, same as Digital - the underlying signal
+    // really is a discrete step at one sample per master tick (no
+    // between-sample interpolation is modelled, docs/apple-ii-ntsc-video-plan.md
+    // "Sample rate"), so a step trace is the faithful rendering for the
+    // black/white/sync portions. The color-burst sine only has 4
+    // samples/cycle at this sample rate (TickCompositeVideo's comment) and
+    // so still reads as a jagged staircase rather than a smooth curve, but
+    // that's the actual signal, not a rendering artifact - PlotLine's
+    // straight-line interpolation was tried first specifically to make the
+    // burst look smoother, but that came at the cost of misrepresenting the
+    // otherwise-square black/white/sync edges as sloped ramps.
+    private static unsafe void DrawAnalogTrace(ScopeChannel channel, Vector4 color, long visStart, int visibleCount, ReadOnlySpan<double> xs, ReadOnlySpan<double> ys)
+    {
+        ImPlot.PushStyleColor(ImPlotCol.Line, color);
+
+        fixed (double* xsPtr = xs)
+        fixed (double* ysPtr = ys)
+        {
+            ImPlot.PlotStairs("##data"u8, xsPtr, ysPtr, visibleCount);
+        }
+
+        ImPlot.PopStyleColor();
+
+        if (ImPlot.IsPlotHovered())
+        {
+            var mouse = ImPlot.GetPlotMousePos();
+            var index = (int)Math.Round(mouse.X - visStart);
+            if (index >= 0 && index < visibleCount)
+            {
+                ImGui.SetTooltip($"{channel.Name}: {(byte)ys[index]}");
             }
         }
     }

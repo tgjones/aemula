@@ -4,4 +4,5 @@ public enum ScopeChannelKind
 {
     Digital,
     Bus,
+    Analog,
 }
