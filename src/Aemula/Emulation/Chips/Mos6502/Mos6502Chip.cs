@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using Aemula.Emulation.Chips.Mos6502.UI;
 using Aemula.UI;
-using Aemula.UI.Oscilloscope;
+using Aemula.UI.LogicAnalyzer;
 
 namespace Aemula.Emulation.Chips.Mos6502;
 
@@ -298,18 +298,18 @@ public partial class Mos6502Chip
     /// system gets the same channel list for free - see
     /// docs/oscilloscope-plan.md.
     /// </summary>
-    internal ScopeChannelGroup CreateScopeChannelGroup()
+    internal ChannelGroup CreateChannelGroup()
     {
-        return new ScopeChannelGroup("MOS6502",
+        return new ChannelGroup("MOS6502",
         [
-            ScopeChannel.Bus("Address", 16, () => Address),
-            ScopeChannel.Bus("Data", 8, () => Data),
-            ScopeChannel.Digital("R/W", () => RW),
-            ScopeChannel.Digital("SYNC", () => Sync),
-            ScopeChannel.Digital("RDY", () => Rdy),
-            ScopeChannel.Digital("IRQ", () => Irq),
-            ScopeChannel.Digital("NMI", () => Nmi),
-            ScopeChannel.Digital("PHI2", () => Phi2),
+            Channel.Bus("Address", 16, () => Address),
+            Channel.Bus("Data", 8, () => Data),
+            Channel.Digital("R/W", () => RW),
+            Channel.Digital("SYNC", () => Sync),
+            Channel.Digital("RDY", () => Rdy),
+            Channel.Digital("IRQ", () => Irq),
+            Channel.Digital("NMI", () => Nmi),
+            Channel.Digital("PHI2", () => Phi2),
         ]);
     }
 }

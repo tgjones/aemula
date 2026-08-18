@@ -5,7 +5,7 @@ using Aemula.Debugging;
 using Aemula.Emulation.Chips;
 using Aemula.Emulation.Chips.Mos6502;
 using Aemula.Emulation.Systems.AppleII.Debugging;
-using Aemula.UI.Oscilloscope;
+using Aemula.UI.LogicAnalyzer;
 
 namespace Aemula.Emulation.Systems.AppleII;
 
@@ -301,21 +301,21 @@ public sealed partial class AppleIISystem : EmulatedSystem
         return new AppleIIDebugger(this);
     }
 
-    internal IReadOnlyList<ScopeChannelNode> CreateScopeChannelNodes()
+    internal IReadOnlyList<ChannelNode> CreateChannelNodes()
     {
         return
         [
-            Cpu.CreateScopeChannelGroup(),
-            new ScopeChannelGroup("Video Timing",
+            Cpu.CreateChannelGroup(),
+            new ChannelGroup("Video Timing",
             [
-                ScopeChannel.Digital("HBL", () => Hbl),
-                ScopeChannel.Digital("VBL", () => Vbl),
-                ScopeChannel.Digital("Color Burst Gate", () => ColorBurstGate),
-                ScopeChannel.Digital("Phase 0", () => Phase0),
-                ScopeChannel.Digital("HSync", () => HSyncPulse),
-                ScopeChannel.Digital("VSync", () => VSyncPulse),
-                ScopeChannel.Digital("Video Data", () => VideoDataBit),
-                ScopeChannel.Analog("Composite Video", () => CurrentCompositeVideoSample, 0, WhiteVoltage, "V"),
+                Channel.Digital("HBL", () => Hbl),
+                Channel.Digital("VBL", () => Vbl),
+                Channel.Digital("Color Burst Gate", () => ColorBurstGate),
+                Channel.Digital("Phase 0", () => Phase0),
+                Channel.Digital("HSync", () => HSyncPulse),
+                Channel.Digital("VSync", () => VSyncPulse),
+                Channel.Digital("Video Data", () => VideoDataBit),
+                Channel.Analog("Composite Video", () => CurrentCompositeVideoSample, 0, WhiteVoltage, "V"),
             ]),
         ];
     }

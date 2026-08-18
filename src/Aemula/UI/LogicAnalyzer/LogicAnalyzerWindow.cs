@@ -6,7 +6,7 @@ using Aemula.Debugging;
 using Hexa.NET.ImGui;
 using Hexa.NET.ImPlot;
 
-namespace Aemula.UI.Oscilloscope;
+namespace Aemula.UI.LogicAnalyzer;
 
 /// <summary>
 /// Logic-analyzer-style debugger window: one merged tree/waveform view, channel
@@ -27,10 +27,10 @@ namespace Aemula.UI.Oscilloscope;
 /// can also be driven directly via the +/- buttons or the "ms / 100px" textbox in
 /// the toolbar, Saleae Logic-style.
 /// </summary>
-public sealed class OscilloscopeWindow : DebuggerWindow
+public sealed class LogicAnalyzerWindow : DebuggerWindow
 {
     // Digital's fixed 0/1 value-axis labels, in the same (Value, Label) shape
-    // as ScopeChannel.AnalogTicks - see DrawValueAxisLabels for why both kinds
+    // as Channel.AnalogTicks - see DrawValueAxisLabels for why both kinds
     // render through the one shared mechanism instead of ImPlot's own native
     // Y-axis tick labels.
     private static readonly (double Value, string Label)[] DigitalAxisLabels = [(1.0, "H"), (0.0, "L")];
@@ -41,7 +41,7 @@ public sealed class OscilloscopeWindow : DebuggerWindow
     private const double MinWindowWidthSamples = 2.0;
 
     // Headroom added around each Analog channel's own AnalogMin/AnalogMax
-    // (see ScopeChannel) so its trace doesn't clip against the plot edge -
+    // (see Channel) so its trace doesn't clip against the plot edge -
     // a generic rendering choice, not specific to any one signal.
     private const double AnalogAxisPaddingFraction = 0.05;
 
@@ -56,9 +56,9 @@ public sealed class OscilloscopeWindow : DebuggerWindow
     private const float ChannelColorBarWidth = 4f;
 
     private readonly Debugger _debugger;
-    private readonly IReadOnlyList<ScopeChannelNode> _roots;
-    private readonly ScopeRecorder _recorder;
-    private readonly Dictionary<ScopeChannel, int> _channelIndex;
+    private readonly IReadOnlyList<ChannelNode> _roots;
+    private readonly LogicAnalyzerRecorder _recorder;
+    private readonly Dictionary<Channel, int> _channelIndex;
     private readonly double _cyclesPerSecond;
 
     // Shared x-axis view range (absolute sample index units), backing every row's
@@ -84,21 +84,21 @@ public sealed class OscilloscopeWindow : DebuggerWindow
     private string _zoomInputBuffer = string.Empty;
     private bool _zoomInputWasActive;
 
-    public override string DisplayName => "Oscilloscope";
+    public override string DisplayName => "Logic Analyzer";
 
     public override Pane PreferredPane => Pane.Bottom;
 
-    public OscilloscopeWindow(Debugger debugger, IReadOnlyList<ScopeChannelNode> channels)
+    public LogicAnalyzerWindow(Debugger debugger, IReadOnlyList<ChannelNode> channels)
     {
         _debugger = debugger;
         _roots = channels;
-        _recorder = new ScopeRecorder(channels);
+        _recorder = new LogicAnalyzerRecorder(channels);
         _cyclesPerSecond = debugger.System.CyclesPerSecond;
         // One sample per pixel, matching the fixed zoom phases 1/2 used as a
         // starting point.
         _millisecondsPer100Px = 100_000.0 / _cyclesPerSecond;
 
-        _channelIndex = new Dictionary<ScopeChannel, int>();
+        _channelIndex = new Dictionary<Channel, int>();
         for (var i = 0; i < _recorder.Channels.Length; i++)
         {
             _channelIndex[_recorder.Channels[i]] = i;
@@ -230,7 +230,7 @@ public sealed class OscilloscopeWindow : DebuggerWindow
         drawList.ChannelsSetCurrent(1);
 
         if (!ImGui.BeginTable(
-            "##oscilloscope_table"u8,
+            "##logic_analyzer_table"u8,
             2,
             ImGuiTableFlags.BordersInnerV | ImGuiTableFlags.BordersInnerH | ImGuiTableFlags.Resizable | ImGuiTableFlags.ScrollY,
             ImGui.GetContentRegionAvail()))
@@ -453,15 +453,15 @@ public sealed class OscilloscopeWindow : DebuggerWindow
         }
     }
 
-    private void DrawChannelNode(ScopeChannelNode node, bool stopped, double oldestRetained, double axisUpperBound, float valueLabelWidth)
+    private void DrawChannelNode(ChannelNode node, bool stopped, double oldestRetained, double axisUpperBound, float valueLabelWidth)
     {
         switch (node)
         {
-            case ScopeChannel channel:
+            case Channel channel:
                 DrawChannelRow(channel, stopped, oldestRetained, axisUpperBound, valueLabelWidth);
                 break;
 
-            case ScopeChannelGroup group:
+            case ChannelGroup group:
                 var groupRowHeight = ImGui.GetTextLineHeightWithSpacing() * 1.6f;
 
                 ImGui.TableNextRow(ImGuiTableRowFlags.None, groupRowHeight);
@@ -492,7 +492,7 @@ public sealed class OscilloscopeWindow : DebuggerWindow
         }
     }
 
-    private unsafe void DrawChannelRow(ScopeChannel channel, bool stopped, double oldestRetained, double axisUpperBound, float valueLabelWidth)
+    private unsafe void DrawChannelRow(Channel channel, bool stopped, double oldestRetained, double axisUpperBound, float valueLabelWidth)
     {
         var rowHeight = ImGui.GetTextLineHeightWithSpacing() * 3.5f;
 
@@ -523,8 +523,8 @@ public sealed class OscilloscopeWindow : DebuggerWindow
 
         ImGui.TableNextColumn();
 
-        var isDigital = channel.Kind == ScopeChannelKind.Digital;
-        var isAnalog = channel.Kind == ScopeChannelKind.Analog;
+        var isDigital = channel.Kind == ChannelKind.Digital;
+        var isAnalog = channel.Kind == ChannelKind.Analog;
 
         // Reserve the fixed value-label gutter (see DrawOverride/
         // DrawValueAxisLabels) before this row's own BeginPlot, so its plot
@@ -570,7 +570,7 @@ public sealed class OscilloscopeWindow : DebuggerWindow
         // later, after EndPlot() - see DrawValueAxisLabels for why the draw
         // itself has to happen outside Begin/EndPlot. Analog gets exactly two
         // labels, at its own real-world min/max (e.g. "0 V"/"2 V") - see
-        // ScopeChannel.Analog remarks - rather than a caller-supplied list of
+        // Channel.Analog remarks - rather than a caller-supplied list of
         // arbitrary anchor points.
         IReadOnlyList<(double Value, string Label)> valueAxisLabels = isDigital
             ? DigitalAxisLabels
@@ -649,7 +649,7 @@ public sealed class OscilloscopeWindow : DebuggerWindow
         }
     }
 
-    private static unsafe void DrawDigitalTrace(ScopeChannel channel, Vector4 color, long visStart, int visibleCount, ReadOnlySpan<double> xs, ReadOnlySpan<double> ys)
+    private static unsafe void DrawDigitalTrace(Channel channel, Vector4 color, long visStart, int visibleCount, ReadOnlySpan<double> xs, ReadOnlySpan<double> ys)
     {
         ImPlot.PushStyleColor(ImPlotCol.Line, color);
 
@@ -684,7 +684,7 @@ public sealed class OscilloscopeWindow : DebuggerWindow
     // straight-line interpolation was tried first specifically to make the
     // burst look smoother, but that came at the cost of misrepresenting the
     // otherwise-square black/white/sync edges as sloped ramps.
-    private static unsafe void DrawAnalogTrace(ScopeChannel channel, Vector4 color, long visStart, int visibleCount, ReadOnlySpan<double> xs, ReadOnlySpan<double> ys)
+    private static unsafe void DrawAnalogTrace(Channel channel, Vector4 color, long visStart, int visibleCount, ReadOnlySpan<double> xs, ReadOnlySpan<double> ys)
     {
         ImPlot.PushStyleColor(ImPlotCol.Line, color);
 
@@ -712,7 +712,7 @@ public sealed class OscilloscopeWindow : DebuggerWindow
     // centered in the rectangle when there's room for it. ImPlot has no built-in
     // "bus" mark, so this draws directly into plot pixel space via
     // GetPlotDrawList()/PlotToPixels() - see "Open risks" in the plan doc.
-    private static void DrawBusTrace(ScopeChannel channel, Vector4 color, long visStart, int visibleCount, ReadOnlySpan<double> ys)
+    private static void DrawBusTrace(Channel channel, Vector4 color, long visStart, int visibleCount, ReadOnlySpan<double> ys)
     {
         const double BandTop = 0.85;
         const double BandBottom = 0.15;
@@ -775,7 +775,7 @@ public sealed class OscilloscopeWindow : DebuggerWindow
         }
     }
 
-    private void FillVisibleSamples(ScopeChannel channel, long visStart, int visibleCount, Span<double> xs, Span<double> ys)
+    private void FillVisibleSamples(Channel channel, long visStart, int visibleCount, Span<double> xs, Span<double> ys)
     {
         var channelIndex = _channelIndex[channel];
         var buffer = _recorder.GetChannelBuffer(channelIndex);
@@ -789,11 +789,11 @@ public sealed class OscilloscopeWindow : DebuggerWindow
         }
     }
 
-    // Analog's raw sample is always an 8-bit byte (see ScopeChannel.Analog),
+    // Analog's raw sample is always an 8-bit byte (see Channel.Analog),
     // linearly rescaled here into the channel's own real-world
     // [AnalogMin, AnalogMax] range so the trace, Y-axis, and value-axis
     // labels all agree on one coordinate system.
-    private static void ScaleAnalogSamples(ScopeChannel channel, Span<double> ys)
+    private static void ScaleAnalogSamples(Channel channel, Span<double> ys)
     {
         var scale = (channel.AnalogMax - channel.AnalogMin) / 255.0;
         for (var i = 0; i < ys.Length; i++)

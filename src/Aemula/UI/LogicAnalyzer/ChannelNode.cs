@@ -1,24 +1,24 @@
 using System.Collections.Generic;
 
-namespace Aemula.UI.Oscilloscope;
+namespace Aemula.UI.LogicAnalyzer;
 
 /// <summary>
-/// Base for the oscilloscope's channel tree - either a leaf <see cref="ScopeChannel"/>
-/// or a <see cref="ScopeChannelGroup"/> composing other nodes.
+/// Base for the logic analyzer's channel tree - either a leaf <see cref="Channel"/>
+/// or a <see cref="ChannelGroup"/> composing other nodes.
 /// </summary>
-public abstract class ScopeChannelNode(string name)
+public abstract class ChannelNode(string name)
 {
     public string Name { get; } = name;
 
-    public static IEnumerable<ScopeChannel> Flatten(ScopeChannelNode node)
+    public static IEnumerable<Channel> Flatten(ChannelNode node)
     {
         switch (node)
         {
-            case ScopeChannel channel:
+            case Channel channel:
                 yield return channel;
                 break;
 
-            case ScopeChannelGroup group:
+            case ChannelGroup group:
                 foreach (var child in group.Children)
                 {
                     foreach (var channel in Flatten(child))
@@ -30,7 +30,7 @@ public abstract class ScopeChannelNode(string name)
         }
     }
 
-    public static IEnumerable<ScopeChannel> Flatten(IEnumerable<ScopeChannelNode> nodes)
+    public static IEnumerable<Channel> Flatten(IEnumerable<ChannelNode> nodes)
     {
         foreach (var node in nodes)
         {

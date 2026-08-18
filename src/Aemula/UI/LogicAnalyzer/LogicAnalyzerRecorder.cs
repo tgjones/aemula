@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace Aemula.UI.Oscilloscope;
+namespace Aemula.UI.LogicAnalyzer;
 
 /// <summary>
 /// Records one fixed-depth ring buffer of samples per channel. <see cref="Sample"/>
@@ -10,15 +10,15 @@ namespace Aemula.UI.Oscilloscope;
 /// since that only happens while the emulator is actually running, capture freezes
 /// for free whenever the debugger is paused/stopped.
 /// </summary>
-public sealed class ScopeRecorder
+public sealed class LogicAnalyzerRecorder
 {
     public const int DefaultCapacity = 131_072;
 
     private readonly ulong[][] _samples;
 
-    public ScopeRecorder(IReadOnlyList<ScopeChannelNode> roots, int capacity = DefaultCapacity)
+    public LogicAnalyzerRecorder(IReadOnlyList<ChannelNode> roots, int capacity = DefaultCapacity)
     {
-        Channels = ScopeChannelNode.Flatten(roots).ToArray();
+        Channels = ChannelNode.Flatten(roots).ToArray();
         Capacity = capacity;
 
         _samples = new ulong[Channels.Length][];
@@ -28,7 +28,7 @@ public sealed class ScopeRecorder
         }
     }
 
-    public ScopeChannel[] Channels { get; }
+    public Channel[] Channels { get; }
 
     public int Capacity { get; }
 
