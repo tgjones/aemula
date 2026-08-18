@@ -51,6 +51,10 @@ public sealed class OscilloscopeWindow : DebuggerWindow
     // pixel X.
     private const float TargetGridSpacingPixels = 100f;
 
+    // Width of the Saleae-style color swatch drawn at the left edge of each
+    // channel row's name cell, in the channel's own trace color.
+    private const float ChannelColorBarWidth = 4f;
+
     private readonly Debugger _debugger;
     private readonly IReadOnlyList<ScopeChannelNode> _roots;
     private readonly ScopeRecorder _recorder;
@@ -458,22 +462,32 @@ public sealed class OscilloscopeWindow : DebuggerWindow
                 break;
 
             case ScopeChannelGroup group:
-                ImGui.TableNextRow();
+                var groupRowHeight = ImGui.GetTextLineHeightWithSpacing() * 1.6f;
+
+                ImGui.TableNextRow(ImGuiTableRowFlags.None, groupRowHeight);
+
+                // Full-width shaded band (RowBg0 spans every column, including
+                // the otherwise-empty Waveform column) so this reads as a
+                // section header for the channels beneath it, now that groups
+                // are plain labels rather than collapsible tree nodes.
+                ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(ImGuiCol.TableHeaderBg));
+
                 ImGui.TableNextColumn();
 
-                // Leaf + NoTreePushOnOpen renders this as a plain, always-expanded
-                // label row (no arrow, nothing to click to collapse) - groups are
-                // purely visual organization now, not a hide/show toggle.
-                ImGui.TreeNodeEx(
-                    group.Name,
-                    ImGuiTreeNodeFlags.SpanAllColumns | ImGuiTreeNodeFlags.Leaf | ImGuiTreeNodeFlags.Bullet | ImGuiTreeNodeFlags.NoTreePushOnOpen);
+                var groupTextHeight = ImGui.GetTextLineHeight();
+                var groupCellScreenPos = ImGui.GetCursorScreenPos();
+                // Same left offset a channel row's name gets past its color bar
+                // (see DrawChannelRow), so this label lines up with the channel
+                // names underneath it despite having no bar of its own.
+                ImGui.SetCursorScreenPos(new Vector2(
+                    groupCellScreenPos.X + ChannelColorBarWidth + ImGui.GetStyle().CellPadding.X,
+                    groupCellScreenPos.Y + (groupRowHeight - groupTextHeight) * 0.5f));
+                ImGui.TextUnformatted(group.Name);
 
-                ImGui.Indent();
                 foreach (var child in group.Children)
                 {
                     DrawChannelNode(child, stopped, oldestRetained, axisUpperBound, valueLabelWidth);
                 }
-                ImGui.Unindent();
                 break;
         }
     }
@@ -484,21 +498,33 @@ public sealed class OscilloscopeWindow : DebuggerWindow
 
         ImGui.TableNextRow(ImGuiTableRowFlags.None, rowHeight);
 
+        // Deterministic per-channel color, distinct from every other channel's own
+        // independent plot (each row is its own BeginPlot, so ImPlot's normal
+        // per-plot color cycling would otherwise hand every row the same first
+        // color) - GetColormapColor wraps by channel count, so this stays stable
+        // and theme-independent regardless of how many channels are recorded.
+        // Computed up front since it's also used for this row's Saleae-style
+        // color bar (see below), drawn before the channel name.
+        var color = ImPlot.GetColormapColor(_channelIndex[channel], ImPlotColormap.Deep);
+
         ImGui.TableNextColumn();
-        ImGui.AlignTextToFramePadding();
+
+        var cellScreenPos = ImGui.GetCursorScreenPos();
+        ImGui.GetWindowDrawList().AddRectFilled(
+            cellScreenPos,
+            new Vector2(cellScreenPos.X + ChannelColorBarWidth, cellScreenPos.Y + rowHeight),
+            ImGui.GetColorU32(color));
+
+        var textHeight = ImGui.GetTextLineHeight();
+        ImGui.SetCursorScreenPos(new Vector2(
+            cellScreenPos.X + ChannelColorBarWidth + ImGui.GetStyle().CellPadding.X,
+            cellScreenPos.Y + (rowHeight - textHeight) * 0.5f));
         ImGui.Text(channel.Name);
 
         ImGui.TableNextColumn();
 
         var isDigital = channel.Kind == ScopeChannelKind.Digital;
         var isAnalog = channel.Kind == ScopeChannelKind.Analog;
-
-        // Deterministic per-channel color, distinct from every other channel's own
-        // independent plot (each row is its own BeginPlot, so ImPlot's normal
-        // per-plot color cycling would otherwise hand every row the same first
-        // color) - GetColormapColor wraps by channel count, so this stays stable
-        // and theme-independent regardless of how many channels are recorded.
-        var color = ImPlot.GetColormapColor(_channelIndex[channel], ImPlotColormap.Deep);
 
         // Reserve the fixed value-label gutter (see DrawOverride/
         // DrawValueAxisLabels) before this row's own BeginPlot, so its plot
