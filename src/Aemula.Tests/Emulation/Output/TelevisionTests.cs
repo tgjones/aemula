@@ -1,166 +1,59 @@
-﻿using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 
 namespace Aemula.Tests.Emulation.Output;
 
-internal class TelevisionTests
+// Phase 0 of docs/television-plan.md. This file replaces an earlier
+// [Skip]ped prototype (System.Drawing.Bitmap-based, didn't run on CI) - see
+// the plan doc's "Testing" section for why it wasn't extended instead.
+public class TelevisionTests
 {
-    [Test, Skip("Doesn't work on CI because it uses a non-Linux-compatible library")]
-    public async Task CanDecodeNtsc()
+    // smpte.ntsc's raw bytes are on a 0-200 scale - its own capture's own
+    // calibration - not the 0-255 scale Television expects (byte 0 = 0V
+    // sync tip, byte 255 = white, matching AppleIISystem.CompositeVideo's
+    // own encoder scale - see the plan doc's "Input signal contract").
+    // Rescaling once here, at the point the asset is loaded, keeps
+    // Television itself agnostic to the fact that two differently-
+    // calibrated producers exist.
+    private static byte[] LoadNormalizedSmpteAsset()
     {
-        var ntscFilePath = Path.GetFullPath(Path.Combine("Emulation", "Output", "Assets", "smpte.ntsc"));
-        var ntscBytes = File.ReadAllBytes(ntscFilePath);
+        var filePath = Path.GetFullPath(Path.Combine("Emulation", "Output", "Assets", "smpte.ntsc"));
+        var rawBytes = File.ReadAllBytes(filePath);
 
-        // NTSC signal format:
-        //
-        // Scanline:          63.5 µs (15.734 kHz)
-        //   Blanking:        10.9 µs
-        //     Front Porch:    1.5 µs at   0 IRE
-        //     Sync Tip:       4.7 µs at -40 IRE, 0V
-        //     Back Porch:     4.7 µs at   0 IRE (or 6.2)
-        //       Breezeway:    0.6 µs at   0 IRE
-        //       Color Burst:  2.5 µs centred at 0 IRE, with 40 IRE peak-to-peak amplitude, 9 +- 1 cycles
-        //   Active Video:    52.6 µs between 7.5 +- 2.5 and 100 IRE
-        //
-        // Vertical Blanking: equivalent to 9 lines in NTSC, 7.5 in PAL
-        //   Equalizing Pulses: 31.8 µs
-        //   Vertical Sync
-        //   Equalizing Pulses
-        //   Horizontal Pulses
-        //
-        // Vertical Serrations?
-        // First serration pulse triggers vertical sync.
-
-        // If VSYNC pulse occurs:
-        // - at the beginning of the scanline, it marks an odd field.
-        // - at the second half of the scanline, it marks an even field.
-        //
-        // IRE:
-        //   -40 IRE = -286mV
-        //     0 IRE =    0mV
-        //   100 IRE = +714mV
-        //
-        // Use a low-pass filter to separate the vertical sync.
-
-        // If vsync is not detected, the vertical oscillator should free-run at a slightly lower frequency than ~59.94 Hz.
-
-        const float ntscColorCarrierFrequency = 3_579_545f;
-        const float ntscSamplesPerSecond = ntscColorCarrierFrequency * 4;
-        const float ntscSamplesPerMicrosecond = ntscSamplesPerSecond / 1_000_000f;
-
-        const int syncLevel = 4; // Sync level should be 0, but we allow some leeway.
-        const int blankLevel = 40 / 140 * 200;
-
-        // Implement vertical and horizontal oscillator, which will free-run if no sync is detected.
-
-        var syncSamples = 0;
-#pragma warning disable CS0219 // Variable is assigned but its value is never used
-#pragma warning disable IDE0059 // Unnecessary assignment of a value
-        var foundHSync = false;
-        var foundVSync = false;
-#pragma warning restore IDE0059 // Unnecessary assignment of a value
-#pragma warning restore CS0219 // Variable is assigned but its value is never used
-
-        var samples = new List<double>();
-
-        var yPos = 0;
-        var xPos = 0;
-
-        var bitmap = new System.Drawing.Bitmap(2000, 2000);
-
-        for (var i = 0; i < ntscBytes.Length; i++)
+        var normalized = new byte[rawBytes.Length];
+        for (var i = 0; i < rawBytes.Length; i++)
         {
-            var b = ntscBytes[i];
-
-            await Assert.That(b).IsLessThanOrEqualTo((byte)200);
-
-            samples.Add(b / 200.0f);
-
-            var isBelowSyncLevel = false;
-
-            if (b <= syncLevel)
-            {
-                syncSamples++;
-                isBelowSyncLevel = true;
-            }
-
-            var isBlanked = b < blankLevel;
-
-            // HSYNC is 4.7 microseconds long, +- 0.2 microseconds.
-            const float hSyncNominalDurationInMicroseconds = 4.7f;
-            const float hSyncToleranceInMicroseconds = 0.2f;
-            const float hSyncMinimumDurationInMicroseconds = hSyncNominalDurationInMicroseconds - hSyncToleranceInMicroseconds;
-            const int hSyncDuration = (int)(hSyncMinimumDurationInMicroseconds * ntscSamplesPerMicrosecond);
-            if (!isBelowSyncLevel && syncSamples >= hSyncDuration)
-            {
-                //if (foundHSyncAtLeastOnce)
-                //{
-                //    break;
-                //}
-#pragma warning disable IDE0059 // Unnecessary assignment of a value
-                foundHSync = true;
-#pragma warning restore IDE0059 // Unnecessary assignment of a value
-                xPos = 0;
-                yPos++;
-            }
-
-            // VSYNC
-            const int vSyncDuration = 380; // TODO
-            if (!isBelowSyncLevel && syncSamples >= vSyncDuration)
-            {
-#pragma warning disable IDE0059 // Unnecessary assignment of a value
-                foundVSync = true;
-#pragma warning restore IDE0059 // Unnecessary assignment of a value
-                yPos = 0;
-            }
-
-            if (!isBelowSyncLevel)
-            {
-                syncSamples = 0;
-            }
-
-            if (!isBlanked)
-            {
-                // Active video.
-                var y = (b - blankLevel) * 2; // Normalize to 0 IRE.
-                y = Math.Clamp(y, 0, 255);
-
-                var actualX = Math.Clamp(xPos, 0, bitmap.Width - 1);
-                bitmap.SetPixel(actualX, yPos, System.Drawing.Color.FromArgb(255, y, y, y));
-            }
-
-            // TODO: If it's been a certain amount of time since the last horizontal sync, we should assume the horizontal sync is starting.
-            // TODO: If it's been a certain amount of time since the last vertical sync, we should assume the vertical sync is starting.
-
-            xPos++;
+            normalized[i] = (byte)(rawBytes[i] * 255 / 200);
         }
 
-        bitmap.Save("ntsc.png");
-
-        //var myPlot = new ScottPlot.Plot(4000, 600);
-        //myPlot.AddSignal(samples.ToArray());
-        //myPlot.SaveFig("signal.png");
+        return normalized;
     }
 
-    [Test, Skip("Not working yet")]
-    public void CanDecodePal()
+    [Test]
+    public async Task SmpteAssetNormalizesToFullByteRange()
     {
-        var wfmFilePath = Path.GetFullPath(Path.Combine("Emulation", "Output", "Assets", "nes.wmf"));
-#pragma warning disable IDE0059 // Unnecessary assignment of a value
-        var wmfFile = WfmFile.FromFile(wfmFilePath);
-#pragma warning restore IDE0059 // Unnecessary assignment of a value
-    }
-}
+        var normalized = LoadNormalizedSmpteAsset();
 
-internal class WfmFile
-{
-    public static WfmFile FromFile(string filePath)
-    {
-        using var fileStream = File.OpenRead(filePath);
-        using var binaryReader = new BinaryReader(fileStream);
+        // 955,500 bytes at 910 samples/line (63.5µs at exactly 4x the NTSC
+        // color subcarrier) is exactly 1050 lines, i.e. 525 lines x 2 fields
+        // - see the plan doc's "Existing state" section.
+        await Assert.That(normalized.Length).IsEqualTo(955_500);
 
-        return new WfmFile();
+        // The raw asset's actual range is [4, 199] (confirmed by inspection,
+        // not assumed) - rescaled by *255/200 with integer truncation, that
+        // becomes [5, 253]. Asserting the exact rescaled extremes (rather
+        // than just "some values changed") catches an off-by-one in the
+        // rescale formula, not just its general direction.
+        var min = normalized[0];
+        var max = normalized[0];
+
+        foreach (var sample in normalized)
+        {
+            if (sample < min) min = sample;
+            if (sample > max) max = sample;
+        }
+
+        await Assert.That(min).IsEqualTo((byte)5);
+        await Assert.That(max).IsEqualTo((byte)253);
     }
 }

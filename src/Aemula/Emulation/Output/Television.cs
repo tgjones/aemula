@@ -1,49 +1,11 @@
-﻿using System;
-
 namespace Aemula.Emulation.Output;
 
-public class Television
+public sealed class Television
 {
-
-}
-
-public class Oscillator(float freeRunFrequency, int resolution)
-{
-    private readonly double _deltaPerSecond = (1.0f / freeRunFrequency) / resolution;
-
-    public OscillatorUpdateResult Update(float deltaTime)
-    {
-        //if (thing > _timeSinceLastReset)
-        //{
-        //    // Trigger a sync
-        //    _timeSinceLastReset = 0;
-        //    return OscillatorUpdateResult.TriggerSync;
-        //}
-
-        throw new System.NotImplementedException();
-    }
-
-#pragma warning disable CA1822 // Mark members as static
-    public void OnSyncSignalDetected()
-#pragma warning restore CA1822 // Mark members as static
-    {
-        // If the oscillator's current state is close to the point where it
-        // would naturally trigger a retrace, trigger a retrace at this
-        // precise moment.
-
-        // Calculate the new frequency, and update _deltaPerSecond.
-    }
-
-    public float GetValue()
-    {
-        // return (float)Math.Sin(2 * Math.PI * Phase);
-
-        throw new System.NotImplementedException();
-    }
-}
-
-public enum OscillatorUpdateResult
-{
-    None,
-    TriggerSync,
+    // Hardcoded for now - see docs/television-plan.md's "Standard detection
+    // seam". A real multi-standard TV works this out from the incoming
+    // signal itself (line/frame rate, and PAL's line-to-line burst-phase
+    // alternation), but this class doesn't have a PAL decode path to switch
+    // to yet, so there's nothing to detect.
+    public TelevisionStandard Standard => TelevisionStandard.Ntsc;
 }
