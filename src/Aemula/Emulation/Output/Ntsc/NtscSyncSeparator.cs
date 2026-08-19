@@ -30,23 +30,6 @@ namespace Aemula.Emulation.Output.Ntsc;
 // blanking (~27µs) - that's the "sync separation" half of this class.
 public sealed class NtscSyncSeparator
 {
-    // The sample rate this whole decoder assumes throughout - see the plan
-    // doc's "Input signal contract". 4x the color subcarrier means every 4
-    // consecutive samples are exactly one subcarrier cycle, which is what
-    // later phases (the color burst PLL, YIQ demodulation) rely on - not
-    // relevant to sync separation itself, but it's what the sample-count
-    // constants below are converted from.
-    private const double SamplesPerSecond = 14_318_180;
-
-    // A standard HSYNC pulse is ~4.7µs wide (see TelevisionTests.cs's
-    // original prototype comment block, and the NTSC references linked from
-    // README.md) - converted to samples at the rate above. This is only a
-    // *starting point*: _hsyncWidthEstimate (below) immediately starts
-    // tracking whatever the real incoming pulses measure as, the same way
-    // real hardware's sync separator doesn't need to know the exact spec
-    // width in advance, just roughly where to start looking.
-    private const double NominalHSyncWidthSamples = 4.7e-6 * SamplesPerSecond; // ~67.3 samples
-
     // A completed low run only counts as "a normal HSYNC pulse" if its
     // width is within this fraction of the current running HSYNC-width
     // estimate. The lower bound also keeps this class from being fooled by
@@ -89,7 +72,7 @@ public sealed class NtscSyncSeparator
     private double _syncLevel = InitialSyncLevel;
     private double _blackLevel = InitialBlackLevel;
     private double _whiteLevel = InitialWhiteLevel;
-    private double _hsyncWidthEstimate = NominalHSyncWidthSamples;
+    private double _hsyncWidthEstimate = NtscTiming.NominalHSyncWidthSamples;
 
     // How many consecutive samples we've been below sync level for, in the
     // pulse currently in progress (0 when not currently in a low pulse).
