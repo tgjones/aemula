@@ -47,4 +47,19 @@ internal static class NtscTiming
     public const double BurstWindowStartSamples = 0.6e-6 * SamplesPerSecond; // ~8.6 samples
     public const int BurstCycleCount = 9;
     public const double BurstWindowLengthSamples = BurstCycleCount * 4; // 36 samples
+
+    // Where active (visible-picture) video starts and how long it lasts,
+    // both measured from the same HSYNC-trailing-edge zero point as the
+    // burst window above. The classic RS-170A breakdown of the ~4.7us
+    // between HSYNC's trailing edge and active video's start is: 0.6us
+    // breezeway (where BurstWindowStartSamples already begins), 2.5us burst
+    // itself (9 cycles - already captured as BurstWindowLengthSamples above,
+    // and 0.6+2.5=3.1us, comfortably inside the 4.7us total), then a further
+    // 1.6us of plain back porch before the picture starts - see the Raster
+    // Graphics Handbook (RS170.pdf) and NTSC Studio Timing PDF, both already
+    // linked from this project's own README.md. Active video itself then
+    // runs 52.6us, with the remaining 1.5us of the 63.5us line being front
+    // porch (4.7 + 4.7 + 52.6 + 1.5 = 63.5, matching NominalSamplesPerLine).
+    public const double ActiveVideoStartSamples = 4.7e-6 * SamplesPerSecond; // ~67.3 samples
+    public const double ActiveVideoLengthSamples = 52.6e-6 * SamplesPerSecond; // ~753.1 samples
 }
