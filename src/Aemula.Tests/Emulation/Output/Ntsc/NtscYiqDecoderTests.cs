@@ -192,4 +192,42 @@ public class NtscYiqDecoderTests
 
         await Assert.That(decoder.Luma).IsBetween(254.0, 255.0);
     }
+
+    // This isn't a test of NtscYiqDecoder.Process at all - it's a check on
+    // the *derivation* behind NtscYiqDecoder.BurstToIAxisRotationRadians
+    // (see that constant's own remarks): that I/Q really are just the
+    // standard Y'UV plane's U/V axes rotated by 33 degrees, not merely a
+    // number that happens to be close. It reconstructs the well-known
+    // Y'IQ matrix (0.596/-0.274/-0.322 for I, 0.211/-0.523/0.312 for Q -
+    // commonly reproduced in video-engineering references, e.g. the
+    // Wikipedia YIQ article) from first principles - Y'UV's own coefficients
+    // (0.492/0.877) plus a 33-degree rotation - and checks they agree. If
+    // this ever failed, it would mean the 33-degree figure the burst-to-I-
+    // axis derivation depends on doesn't actually reproduce the standard
+    // matrix, i.e. the derivation itself would be suspect - not just this
+    // test.
+    [Test]
+    [Arguments(1.0, 0.0, 0.0)]
+    [Arguments(0.0, 1.0, 0.0)]
+    [Arguments(0.0, 0.0, 1.0)]
+    [Arguments(0.6, 0.3, 0.9)]
+    public async Task ThirtyThreeDegreeUvRotationReproducesStandardYiqCoefficients(double r, double g, double b)
+    {
+        const double iAxisFromVAxisDegrees = 33.0;
+        var iAxisFromUAxisRadians = (90.0 + iAxisFromVAxisDegrees) * Math.PI / 180.0;
+        var qAxisFromUAxisRadians = iAxisFromVAxisDegrees * Math.PI / 180.0;
+
+        var y = 0.299 * r + 0.587 * g + 0.114 * b;
+        var u = 0.492 * (b - y);
+        var v = 0.877 * (r - y);
+
+        var i = u * Math.Cos(iAxisFromUAxisRadians) + v * Math.Sin(iAxisFromUAxisRadians);
+        var q = u * Math.Cos(qAxisFromUAxisRadians) + v * Math.Sin(qAxisFromUAxisRadians);
+
+        var expectedI = 0.596 * r - 0.274 * g - 0.322 * b;
+        var expectedQ = 0.211 * r - 0.523 * g + 0.312 * b;
+
+        await Assert.That(i).IsBetween(expectedI - 0.005, expectedI + 0.005);
+        await Assert.That(q).IsBetween(expectedQ - 0.005, expectedQ + 0.005);
+    }
 }

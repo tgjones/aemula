@@ -23,18 +23,58 @@ public sealed class NtscYiqDecoder
     // The fixed rotation between the color-burst PLL's own phase-zero
     // reference (which NtscColorBurstPll locks to wherever the burst
     // signal's positive peak happens to land) and the NTSC-standard I axis
-    // the YIQ->RGB matrix below assumes. The broadcast spec ties these two
-    // together by a precise, defined angle (burst phase vs. the I/Q axes),
-    // but getting that exact textbook constant right (and getting every
-    // sign convention in the chain leading up to it right at the same time)
-    // is exactly the kind of thing this project's "close enough, not
-    // broadcast-accuracy work" bar (see docs/television-plan.md's YIQ
-    // section) says not to chase - so, like the other tunable constants in
-    // this decoder (loop gains, capture ranges), this one is instead
-    // calibrated empirically: chosen so smpte.ntsc's known color-bar order
-    // (white, yellow, cyan, green, magenta, red, blue) actually comes out
-    // in that hue order - see TelevisionTests' SMPTE bar assertions.
-    internal const double BurstToIAxisRotationRadians = 2.5;
+    // the YIQ->RGB matrix below assumes - derived from the standard NTSC
+    // Y'UV/Y'IQ axis geometry, not fitted to smpte.ntsc's bar colors:
+    //
+    //   - I is *defined* as the (B'-Y')/(R'-Y') plane's "V" axis
+    //     (=(R'-Y')'s own direction), rotated by exactly 33 degrees - this
+    //     is the actual historical definition (the 0.956/0.621/etc. YIQ->RGB
+    //     coefficients below are *derived from* this 33-degree rotation
+    //     together with the 0.492/0.877 U/V scale factors, not the other
+    //     way around) - see e.g. Poynton, "Digital Video and HDTV", the
+    //     classic Y'UV/Y'IQ vector diagram. NtscYiqDecoderTests'
+    //     MatchesUvToIqDefinition test reconstructs the standard 0.596/
+    //     -0.274/-0.322/0.211/-0.523/0.312 matrix coefficients from this
+    //     same 33-degree figure, as a check that this really is the
+    //     defining relationship and not just a coincidentally-close number.
+    //   - V sits 90 degrees from U by definition of the (U, V) plane, so I
+    //     sits at 90+33 = 123 degrees from the U axis.
+    //   - the color burst is transmitted in antiphase to U (burst = -U) -
+    //     the standard "burst references the (B'-Y') axis, 180 degrees
+    //     out of phase" fact (also why a vectorscope's burst target sits
+    //     opposite the U axis) - so the angle from burst's own phase to the
+    //     I axis is 123 - 180 = -57 degrees.
+    //
+    // That -57-degree figure is itself a commonly-cited standalone NTSC
+    // fact ("burst leads I by 57 degrees" / "I is 57 degrees behind
+    // burst"), corroborating the geometric derivation above independently.
+    //
+    // What spec derivation *can't* pin down is which of two directions this
+    // particular implementation needs the correction applied in: burst's
+    // phase is recovered by NtscColorBurstPll's phase detector, which - like
+    // any squaring/Costas-style detector (see that class's remarks) -
+    // cannot distinguish a lock from a lock 180 degrees away, since burst =
+    // +A*cos(phase) and burst = -A*cos(phase) both drive its quadrature
+    // error to zero equally well. Which of the two this implementation's
+    // loop actually settles into for a given real signal isn't something
+    // the broadcast spec specifies (it depends on this decoder's own
+    // cos/sin-to-in-phase/quadrature assignment and the real signal's
+    // recorded polarity) - exactly the kind of thing a real TV's "tint"
+    // knob exists to compensate for. Resolved here, once, against the one
+    // real reference this project has (confirmed empirically: 180 degrees
+    // added to the -57-degree spec figure, i.e. +123 degrees, is what
+    // actually locks this implementation to the real burst - see
+    // TelevisionTests' SMPTE bar assertions).
+    private const double IAxisFromVAxisDegrees = 33.0;
+    private const double VAxisFromUAxisDegrees = 90.0;
+    private const double BurstFromUAxisDegrees = 180.0;
+    private const double SpecBurstToIAxisDegrees =
+        (VAxisFromUAxisDegrees + IAxisFromVAxisDegrees) - BurstFromUAxisDegrees; // -57
+
+    private const double PllLockBranchDegrees = 180.0;
+
+    internal const double BurstToIAxisRotationRadians =
+        (SpecBurstToIAxisDegrees + PllLockBranchDegrees) * Math.PI / 180.0; // +123 degrees
 
     // The comb filter (see Process below) and the I/Q box-average both work
     // over a rolling one-subcarrier-cycle (4-sample) window, so both keep a
