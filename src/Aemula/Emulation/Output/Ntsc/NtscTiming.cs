@@ -62,4 +62,15 @@ internal static class NtscTiming
     // porch (4.7 + 4.7 + 52.6 + 1.5 = 63.5, matching NominalSamplesPerLine).
     public const double ActiveVideoStartSamples = 4.7e-6 * SamplesPerSecond; // ~67.3 samples
     public const double ActiveVideoLengthSamples = 52.6e-6 * SamplesPerSecond; // ~753.1 samples
+
+    // The vertically-active (non-blanked) portion of a field, out of
+    // NominalLinesPerField's 262.5 total - the conventionally-cited ~486
+    // active lines of a full interlaced NTSC frame (525 total, ~39 of them
+    // vertical blanking - broadly corroborated by this decoder's own
+    // measurement of smpte.ntsc's vertical blanking lines, see
+    // NtscColorBurstPllTests' "~37 of those are vertical-blanking lines"
+    // remark for the field-pair total) divided across its 2 fields. Only
+    // used for display-time aspect-ratio correction (see TelevisionWindow)
+    // - nothing in the decode pipeline itself needs this.
+    public const double NominalActiveLinesPerField = 486.0 / 2.0; // 243
 }

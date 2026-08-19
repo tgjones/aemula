@@ -2,6 +2,12 @@ using System;
 
 namespace Aemula.Emulation.Systems.AppleII;
 
+// This namespace nests under the root Aemula namespace, where the older,
+// unrelated Aemula.Television already lives (see docs/television-plan.md's
+// "Naming collision, explicitly out of scope" note) - aliased here for the
+// same reason TelevisionWindow.cs and AppleIIDebugger.cs already are.
+using Television = Aemula.Emulation.Output.Television;
+
 // Phase 3 of docs/apple-ii-ntsc-video-plan.md: the analog composite video
 // summing stage. Real hardware: Q3, an NPN emitter follower with three
 // weighted resistor inputs (R7=1.5K VIDEO DATA, R8=2K SYNC, R6=2.7K COLOR
@@ -11,6 +17,14 @@ namespace Aemula.Emulation.Systems.AppleII;
 // for the derivation this file implements.
 public sealed partial class AppleIISystem
 {
+    // Phase 6 of docs/television-plan.md: fed one sample at a time from
+    // TickCompositeVideo below, live, the same tick the analog summing
+    // stage produces it - the same way every other signal in this
+    // emulator propagates through the chips/systems that consume it,
+    // rather than a UI window pulling a backlog from a ring buffer once
+    // per frame.
+    public readonly Television Television = new();
+
     // Real resistor values (kΩ) from the video-summing circuit.
     private const double R7Video = 1.5;
     private const double R8Sync = 2.0;
@@ -118,6 +132,8 @@ public sealed partial class AppleIISystem
 
         CompositeVideo[CompositeVideoWriteIndex] = sample;
         CompositeVideoWriteIndex = (CompositeVideoWriteIndex + 1) % CompositeVideoCapacity;
+
+        Television.Decode(sample);
 
         _masterTickCounter++;
     }

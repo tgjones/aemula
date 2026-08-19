@@ -36,6 +36,22 @@ public sealed class Television
     public TelevisionStandard Standard => TelevisionStandard.Ntsc;
 
     /// <summary>
+    /// The active-video portion of one scanline, in samples - see
+    /// <see cref="IsActiveVideo"/>. Hardcoded to the NTSC figure for now,
+    /// same seam as <see cref="Standard"/> - consumers (e.g.
+    /// TelevisionWindow's display-time aspect-ratio correction) read this
+    /// rather than reaching into NtscTiming themselves, so they don't need
+    /// their own copy of the "which standard" branch once PAL exists.
+    /// </summary>
+    public double ActiveVideoLengthSamples => NtscTiming.ActiveVideoLengthSamples;
+
+    /// <summary>
+    /// The nominal number of vertically-active (non-blanked) lines in one
+    /// field. Same seam as <see cref="ActiveVideoLengthSamples"/>.
+    /// </summary>
+    public double NominalActiveLinesPerField => NtscTiming.NominalActiveLinesPerField;
+
+    /// <summary>
     /// The raster column (sample position within the current line) of the
     /// sample most recently passed to <see cref="Decode"/>.
     /// </summary>
