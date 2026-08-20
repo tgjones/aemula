@@ -151,14 +151,17 @@ public sealed partial class AppleIISystem
     public readonly byte[] HiresColorPhase;
 
     // docs/apple-ii-ntsc-video-plan.md phase 2: the real digital PICTURE/
-    // VIDEO DATA line for the 7 dots of whichever cell TickVideo() just
-    // scanned - one master-clock composite sample per dot clock still
-    // covers 2 master ticks each; phase 3 owns mapping tick -> dot index
-    // within a cell, this just retains what TEXT/LORES/HIRES already
-    // compute per dot (previously only ever passed straight to WritePixel
-    // and discarded). Forced all-false during HBL/VBL, matching Gayler's
+    // VIDEO DATA line for the 14 master ticks of whichever cell TickVideo()
+    // just scanned - one entry per master tick, not per dot. TEXT/HIRES
+    // shift once per dot (7M, i.e. every 2 master ticks), so those two
+    // just write the same per-dot bit into both of a dot's tick slots; but
+    // LORES's circulating 4-bit shift register genuinely is clocked at the
+    // full 14M rate (Sather p.8-23: "circulates as clocked by 14M, the
+    // sections circulate 3.5 times per video cycle" - 14 ticks / 4 bits =
+    // 3.5), so it needs real per-tick resolution, not per-dot - see
+    // DrawLoresByte. Forced all-false during HBL/VBL, matching Gayler's
     // "A9" blanking-gated video-data selector.
-    private readonly bool[] _videoDataBits = new bool[7];
+    private readonly bool[] _videoDataBits = new bool[14];
 
     internal bool[] GetVideoDataBitsForTests() => _videoDataBits;
 
@@ -312,7 +315,8 @@ public sealed partial class AppleIISystem
 
             var lit = _textVideoXor.Y1;
             WritePixel(baseX + dot, _currentRasterLine, lit);
-            _videoDataBits[dot] = lit;
+            _videoDataBits[dot * 2] = lit;
+            _videoDataBits[dot * 2 + 1] = lit;
         }
     }
 
@@ -330,28 +334,44 @@ public sealed partial class AppleIISystem
 
         for (var dot = 0; dot < 7; dot++)
         {
-            var x = baseX + dot;
-            WritePixel(x, _currentRasterLine, color);
+            WritePixel(baseX + dot, _currentRasterLine, color);
+        }
 
-            // LORES's real VIDEO DATA line isn't "direct color" - like
-            // HIRES, it's a genuine bit stream, just a periodic one:
-            // Sather p.8-8 describes the active nibble as loaded into a
-            // 4-bit "end around" shift register that circulates
-            // continuously ("the 4-bit patterns are circulated... This
-            // creates colored patterns which seem like solid color
-            // blocks"). A period-4 bit pattern is exactly 2 subcarrier
-            // cycles (a dot is 180 degrees of subcarrier - see
-            // HiresColorPhase above), which is what makes the hue solid
-            // instead of flickering byte to byte. Indexed by absolute
-            // pixel x, not dot-within-cell, so the phase carries
-            // continuously across byte boundaries, matching "end around".
-            // Which nibble bit lines up with which x%4 phase isn't
-            // recoverable from the available schematic scan - an
-            // arbitrary-but-consistent choice, not a verified one. Doesn't
-            // affect the encoder itself (docs/apple-ii-ntsc-video-plan.md
-            // is encoder-only), only a future decoder trying to reproduce
-            // the exact real hue.
-            _videoDataBits[dot] = ((nibble >> (x & 3)) & 1) != 0;
+        // LORES's real VIDEO DATA line isn't "direct color" - like HIRES,
+        // it's a genuine bit stream, just a periodic one: Sather p.8-23
+        // ("LORES Graphics Output") describes the active nibble as loaded
+        // into a 4-bit "end around" shift register clocked directly by 14M
+        // - twice the rate TEXT/HIRES shift at (they clock once per dot,
+        // i.e. once every 2 master ticks) - so it circulates 3.5 times
+        // per 14-tick video cycle (14 ticks / 4 bits = 3.5, matching
+        // Sather's own "3.5 million circulations per second - the same
+        // frequency as COLOR REFERENCE" aside). That's what makes a solid
+        // nibble's chroma land exactly on the subcarrier fundamental (one
+        // full 4-bit rotation every 4 master ticks) instead of half of it -
+        // get this rate wrong and a decoder's comb filter/PLL (built around
+        // exactly 4 samples/cycle) sees a period-8 signal it can't cancel,
+        // which is what full per-sample luma/chroma noise inside an
+        // otherwise solid LORES block turned out to be, in practice (see
+        // docs/television-plan.md's Phase 6 investigation).
+        //
+        // Sather is also explicit about *which* bit starts the rotation,
+        // not just the rate: "either its least significant bit (Q0) or its
+        // third least significant bit (Q2) is clocked to the picture
+        // flip-flop. Q0 is selected in video cycles where H0 was latched
+        // low (even memory addresses), and Q2 is selected... high (odd
+        // memory addresses)" - independently confirmed against Sather's own
+        // worked example (nibble 1001 on an even cycle: "10011001100110",
+        // beginning at Q0; on an odd cycle: "01100110011001", beginning at
+        // Q2) - both cases rotate Q0->Q1->Q2->Q3->Q0..., only the starting
+        // bit differs. H0 is the same even/odd-address signal DrawHiresByte's
+        // column-parity phase already keys off of, just read here before
+        // BaseX folds it into an absolute pixel position.
+        var startBit = H0 ? 2 : 0;
+
+        for (var tick = 0; tick < 14; tick++)
+        {
+            var bitIndex = (tick + startBit) & 3;
+            _videoDataBits[tick] = ((nibble >> bitIndex) & 1) != 0;
         }
     }
 
@@ -385,7 +405,8 @@ public sealed partial class AppleIISystem
             var x = baseX + dot;
             var lit = _hiresVideoShiftRegister.Qh;
             WritePixel(x, _currentRasterLine, lit);
-            _videoDataBits[dot] = lit;
+            _videoDataBits[dot * 2] = lit;
+            _videoDataBits[dot * 2 + 1] = lit;
 
             // Color-subcarrier phase quadrant for this dot, 0-3 meaning
             // 0/90/180/270 degrees relative to the color burst reference.

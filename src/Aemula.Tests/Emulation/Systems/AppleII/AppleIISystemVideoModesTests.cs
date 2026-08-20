@@ -312,9 +312,14 @@ public class AppleIISystemVideoModesTests
             {
                 var bits = system.GetVideoDataBitsForTests();
 
+                // TEXT/HIRES shift once per dot (7M - once every 2 master
+                // ticks), so each dot's bit occupies both of its tick slots
+                // in the now per-master-tick _videoDataBits array - see that
+                // field's remarks.
                 for (var dot = 0; dot < 7; dot++)
                 {
-                    await Assert.That(bits[dot]).IsEqualTo(expectedLit[dot]);
+                    await Assert.That(bits[dot * 2]).IsEqualTo(expectedLit[dot]);
+                    await Assert.That(bits[dot * 2 + 1]).IsEqualTo(expectedLit[dot]);
                 }
 
                 sampled = true;
@@ -329,10 +334,16 @@ public class AppleIISystemVideoModesTests
     [Test]
     public async Task VideoDataBitMatchesLoresCirculatingNibblePattern()
     {
-        // docs/apple-ii-ntsc-video-plan.md phase 2: LORES's real VIDEO DATA
-        // line is the active nibble circulated as a period-4 pattern,
-        // indexed by absolute pixel x (not dot-within-cell) so the phase
-        // carries continuously across byte boundaries (Sather p.8-8).
+        // Sather p.8-23 ("LORES Graphics Output"): LORES's real VIDEO DATA
+        // line is the active nibble loaded into a 4-bit "end around" shift
+        // register clocked directly by 14M (master clock) - not once per
+        // dot like TEXT/HIRES - so it circulates Q0->Q1->Q2->Q3->Q0... once
+        // every 4 master ticks, 3.5 times across a 14-tick video cycle.
+        // Which bit starts the rotation depends on address parity: Q0 for
+        // an even memory address (H0 latched low), Q2 for odd (H0 latched
+        // high) - confirmed against Sather's own worked example (nibble
+        // 1001: even cycle "10011001100110" starting at Q0, odd cycle
+        // "01100110011001" starting at Q2).
         var system = new AppleIISystem();
         system.LoadProgram("");
 
@@ -342,9 +353,9 @@ public class AppleIISystemVideoModesTests
         system.WriteByteDebug(0xC056, 0); // LORES
         system.WriteByteDebug(0xC054, 0); // PAGE1
 
-        // Same nibble in both halves of the byte, so the sampled dot's
+        // Same nibble in both halves of the byte, so the sampled cell's
         // expected pattern doesn't depend on which half (VC) is active.
-        const byte nibble = 0x5; // 0b0101
+        const byte nibble = 0b1001;
         for (var address = 0x400; address <= 0x7FF; address++)
         {
             system.WriteByteDebug((ushort)address, (byte)(nibble | (nibble << 4)));
@@ -361,16 +372,16 @@ public class AppleIISystemVideoModesTests
             if (isPhase0 && !wasPhase0 && !system.Hbl && !system.Vbl)
             {
                 var (h, _) = system.GetVideoScannerStateForTests();
-                var rawH = h & 0b0_111111; // H0-H5, masking off HPE'
-                var baseX = (rawH - 24) * 7;
+                var h0 = (h & 1) != 0;
+                var startBit = h0 ? 2 : 0;
 
                 var bits = system.GetVideoDataBitsForTests();
 
-                for (var dot = 0; dot < 7; dot++)
+                for (var tick = 0; tick < 14; tick++)
                 {
-                    var x = baseX + dot;
-                    var expected = ((nibble >> (x & 3)) & 1) != 0;
-                    await Assert.That(bits[dot]).IsEqualTo(expected);
+                    var bitIndex = (tick + startBit) & 3;
+                    var expected = ((nibble >> bitIndex) & 1) != 0;
+                    await Assert.That(bits[tick]).IsEqualTo(expected);
                 }
 
                 sampled = true;

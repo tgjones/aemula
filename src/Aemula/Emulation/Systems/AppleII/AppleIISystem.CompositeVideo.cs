@@ -70,13 +70,13 @@ public sealed partial class AppleIISystem
     internal uint GetMasterTickCounterForTests() => _masterTickCounter;
 
     // Ticks elapsed since the last PHASE0 rising edge, i.e. since
-    // TickVideo() last computed a fresh 7-dot cell. 2 ticks/dot covers the
-    // normal 14-tick cell exactly; the once-per-line "long cycle" stretch
-    // (one 16-tick cell among the line's 65) adds 2 extra ticks that this
-    // simply holds the last dot through, rather than modelling exactly
-    // which of the 7 dots really gets stretched on real hardware - an
-    // accepted approximation, see
-    // docs/apple-ii-ntsc-video-plan.md's "Sample rate" section.
+    // TickVideo() last computed a fresh 14-tick cell (_videoDataBits' own
+    // per-master-tick indexing - see that field's remarks). The once-per-
+    // line "long cycle" stretch (one 16-tick cell among the line's 65)
+    // adds 2 extra ticks that VideoDataBit below simply holds the last
+    // tick's value through, rather than modelling exactly which tick
+    // really gets stretched on real hardware - an accepted approximation,
+    // see docs/apple-ii-ntsc-video-plan.md's "Sample rate" section.
     private int _ticksSincePhase0Edge;
 
     // Free-running master-tick counter for the burst sine's phase - never
@@ -86,11 +86,11 @@ public sealed partial class AppleIISystem
     // doesn't disturb the phase sequence.
     private uint _masterTickCounter;
 
-    // The digital VIDEO DATA bit for whichever dot the master clock is
-    // currently within - the same tick-to-dot mapping TickCompositeVideo
-    // uses below to build vOut, exposed as a scope channel
+    // The digital VIDEO DATA bit for whichever master tick the clock is
+    // currently within - the same per-tick array TickCompositeVideo uses
+    // below to build vOut, exposed as a scope channel
     // (docs/apple-ii-ntsc-video-plan.md phase 5).
-    public bool VideoDataBit => _videoDataBits[Math.Min(_ticksSincePhase0Edge / 2, 6)];
+    public bool VideoDataBit => _videoDataBits[Math.Min(_ticksSincePhase0Edge, 13)];
 
     // The most recently written composite-video sample, i.e. this tick's
     // value - exposed as an Analog scope channel alongside the digital
