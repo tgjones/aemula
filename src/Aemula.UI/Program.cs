@@ -131,6 +131,25 @@ public static class Program
             }
         }
 
+        // Perf counters shown in the main menu bar, so it's easy to notice when heavy
+        // debugger windows (e.g. TelevisionWindow, LogicAnalyzerWindow) push us below
+        // real-time. Cycle count comes from Debugger.Ticked so it reflects cycles
+        // actually executed, not the (clamped) cycle count RunForDuration was asked for.
+        var cyclesThisPerfWindow = 0UL;
+        if (debugger != null)
+        {
+            debugger.Ticked += () => cyclesThisPerfWindow++;
+        }
+
+        var perfWindowTime = TimeSpan.Zero;
+        var perfWindowUpdateTime = TimeSpan.Zero;
+        var perfWindowFrames = 0;
+
+        var perfFps = 0.0;
+        var perfMsPerFrame = 0.0;
+        var perfActualMHz = 0.0;
+        var perfNominalMHz = system.CyclesPerSecond / 1_000_000.0;
+
         unsafe
         {
             // We never free these, but that's okay, they're alive as long as this application is.
@@ -163,7 +182,8 @@ public static class Program
         {
             var elapsed = stopwatch.Elapsed;
 
-            var deltaTimeSpan = elapsed - lastTime;
+            var realDeltaTimeSpan = elapsed - lastTime;
+            var deltaTimeSpan = realDeltaTimeSpan;
             lastTime = elapsed;
 
             // TODO: Not right.
@@ -218,7 +238,7 @@ public static class Program
             debugger?.RunForDuration(deltaTimeSpan);
 
             DrawWindow(debuggerWindows, ref firstRun);
-            DrawMainMenu(debuggerWindows);
+            DrawMainMenu(debuggerWindows, perfFps, perfMsPerFrame, perfActualMHz, perfNominalMHz);
 
             foreach (var debuggerWindow in debuggerWindows)
             {
@@ -228,6 +248,26 @@ public static class Program
             ImGui.Render();
             var drawData = ImGui.GetDrawData();
             bool isMinimized = drawData.DisplaySize.X <= 0 || drawData.DisplaySize.Y <= 0;
+
+            // Everything up to here is the actual per-frame update/draw-building work.
+            // What follows waits for the next swapchain image (i.e. the frame flip), which
+            // is display-imposed idle time rather than work, so it's excluded from ms/frame.
+            var updateDuration = stopwatch.Elapsed - elapsed;
+
+            perfWindowTime += realDeltaTimeSpan;
+            perfWindowUpdateTime += updateDuration;
+            perfWindowFrames++;
+            if (perfWindowTime >= TimeSpan.FromSeconds(1))
+            {
+                perfFps = perfWindowFrames / perfWindowTime.TotalSeconds;
+                perfMsPerFrame = perfWindowUpdateTime.TotalMilliseconds / perfWindowFrames;
+                perfActualMHz = cyclesThisPerfWindow / perfWindowTime.TotalSeconds / 1_000_000.0;
+
+                perfWindowTime = TimeSpan.Zero;
+                perfWindowUpdateTime = TimeSpan.Zero;
+                perfWindowFrames = 0;
+                cyclesThisPerfWindow = 0;
+            }
 
             unsafe
             {
@@ -333,7 +373,7 @@ public static class Program
         }
     }
 
-    private static unsafe void DrawMainMenu(List<DebuggerWindow> debuggerWindows)
+    private static unsafe void DrawMainMenu(List<DebuggerWindow> debuggerWindows, double fps, double msPerFrame, double actualMHz, double nominalMHz)
     {
         if (ImGui.BeginMainMenuBar())
         {
@@ -350,6 +390,26 @@ public static class Program
                 }
 
                 ImGui.EndMenu();
+            }
+
+            var perfText = $"{fps:F0} FPS  {msPerFrame:F2} ms  {actualMHz:F2} / {nominalMHz:F2} MHz";
+            var perfTextSize = ImGui.CalcTextSize(perfText);
+            var perfTextX = ImGui.GetWindowWidth() - perfTextSize.X - ImGui.GetStyle().ItemSpacing.X;
+            if (perfTextX > ImGui.GetCursorPosX())
+            {
+                ImGui.SetCursorPosX(perfTextX);
+            }
+
+            // Falling more than 5% behind the nominal clock is a sign that debugger
+            // windows (e.g. TelevisionWindow, LogicAnalyzerWindow) are too expensive
+            // to draw every frame and we're no longer keeping up with real-time.
+            if (actualMHz < nominalMHz * 0.95)
+            {
+                ImGui.TextColored(new Vector4(1.0f, 0.4f, 0.4f, 1.0f), perfText);
+            }
+            else
+            {
+                ImGui.TextUnformatted(perfText);
             }
 
             ImGui.EndMainMenuBar();
