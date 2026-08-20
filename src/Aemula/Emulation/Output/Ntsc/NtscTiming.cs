@@ -60,17 +60,22 @@ internal static class NtscTiming
     // linked from this project's own README.md. Active video itself then
     // runs 52.6us, with the remaining 1.5us of the 63.5us line being front
     // porch (4.7 + 4.7 + 52.6 + 1.5 = 63.5, matching NominalSamplesPerLine).
+    // Nominal-timing reference values only - Television itself no longer
+    // reads these directly (see Television.ActiveVideoStartSamples/
+    // ActiveVideoLengthSamples' own remarks on why those are self-calibrated
+    // instead), but TelevisionTests still uses them to build a synthetic
+    // test signal at exact spec positions, a legitimate, different use
+    // (constructing a fixture, not a live decode assumption).
     public const double ActiveVideoStartSamples = 4.7e-6 * SamplesPerSecond; // ~67.3 samples
     public const double ActiveVideoLengthSamples = 52.6e-6 * SamplesPerSecond; // ~753.1 samples
 
-    // The vertically-active (non-blanked) portion of a field, out of
-    // NominalLinesPerField's 262.5 total - the conventionally-cited ~486
-    // active lines of a full interlaced NTSC frame (525 total, ~39 of them
-    // vertical blanking - broadly corroborated by this decoder's own
-    // measurement of smpte.ntsc's vertical blanking lines, see
-    // NtscColorBurstPllTests' "~37 of those are vertical-blanking lines"
-    // remark for the field-pair total) divided across its 2 fields. Only
-    // used for display-time aspect-ratio correction (see TelevisionWindow)
-    // - nothing in the decode pipeline itself needs this.
-    public const double NominalActiveLinesPerField = 486.0 / 2.0; // 243
+    // Front porch's share of a nominal line (1.5us of 63.5us) - the one
+    // remaining fixed proportion Television.ActiveVideoLengthSamples still
+    // needs (nothing distinguishes front porch from active video by signal
+    // content, the same reason burst's own window position isn't
+    // self-calibrated - see NtscColorBurstPll's remarks), applied to the
+    // *detected* line length rather than kept as a hardcoded absolute
+    // sample count, so it still scales if a real signal's line length
+    // differs from nominal (as Apple II's 912-vs-909.3 already does).
+    public const double NominalFrontPorchFraction = 1.5e-6 * SamplesPerSecond / NominalSamplesPerLine;
 }

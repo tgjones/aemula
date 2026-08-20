@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using Aemula.Emulation.Output;
 using Aemula.Emulation.Systems.AppleII;
 
 namespace Aemula.Tests.Emulation.Systems.AppleII;
@@ -9,7 +10,7 @@ namespace Aemula.Tests.Emulation.Systems.AppleII;
 // byte pattern with a documented expected NTSC artifact color (from Jim
 // Sather's "Understanding the Apple II", p.8-15/8-16 - see below) into
 // screen memory, runs a frame, and checks the resulting pixels in
-// AppleIISystem.Television.DisplayBuffer (fed live from
+// AppleIISystem.Television.SampleBuffer (fed live from
 // AppleIISystem.TickCompositeVideo - see AppleIISystem.CompositeVideo.cs)
 // actually decode to that color.
 public class AppleIISystemTelevisionTests
@@ -97,8 +98,8 @@ public class AppleIISystemTelevisionTests
     // Rather than guess fixed-fraction sample coordinates (Apple II's real
     // HBL/VBL geometry isn't the generic RS-170A window NtscTiming assumes
     // for IsActiveVideo, and doesn't occupy the entire detected raster -
-    // Television.DisplayBuffer includes the full detected frame, vertical
-    // blanking and all, most of which stays black), this scans every pixel
+    // Television.SampleBuffer includes the full detected frame, vertical
+    // blanking and all, most of which stays black), this scans every sample
     // and checks only the ones the picture actually lit: since the whole
     // screen was filled with one uniform address-parity pattern, every lit
     // pixel should show close to the same hue - a wrongly-colored lit pixel
@@ -116,17 +117,27 @@ public class AppleIISystemTelevisionTests
     // cluster. 5% is a generous ceiling comfortably above the ~2% actually
     // observed, while still catching a real regression (e.g. a reversed
     // hue) outright, which would push this far higher.
-    private static async Task AssertUniformLitHue(DisplayBuffer buffer, Func<RgbaByte, bool> matchesExpectedHue)
+    private static async Task AssertUniformLitHue(SampleBuffer buffer, Func<RgbaByte, bool> matchesExpectedHue)
     {
         var litCount = 0;
         var mismatchCount = 0;
 
-        foreach (var pixel in buffer.Data)
+        foreach (var sample in buffer.Data)
         {
-            // Sync/blanking/background samples decode to near-black (see
-            // Television.IsActiveVideo's remarks) or simply never get
-            // written at all (DisplayBuffer starts zeroed) - anything this
-            // dim isn't part of the picture under test.
+            // Restrict to samples the pipeline itself classified as active
+            // video (see Television.ClassifyCurrentSample) - sync/blanking/
+            // color-burst samples are excluded outright, rather than relied
+            // on to just happen to be dim.
+            if (sample.Region != RasterRegion.ActiveVideo)
+            {
+                continue;
+            }
+
+            var pixel = sample.Color;
+
+            // Within active video, the picture's own unlit background is
+            // still close to black - only the specific dots the fill
+            // pattern set are meant to show real hue.
             if (pixel.R + pixel.G + pixel.B < 60)
             {
                 continue;
@@ -161,7 +172,7 @@ public class AppleIISystemTelevisionTests
         TickOneFrame(system);
 
         await AssertUniformLitHue(
-            system.Television.DisplayBuffer,
+            system.Television.SampleBuffer,
             pixel => pixel.G > pixel.R + 50 && pixel.G > pixel.B + 50);
     }
 
@@ -177,7 +188,7 @@ public class AppleIISystemTelevisionTests
         TickOneFrame(system);
 
         await AssertUniformLitHue(
-            system.Television.DisplayBuffer,
+            system.Television.SampleBuffer,
             pixel => pixel.R > pixel.G + 50 && pixel.B > pixel.G + 50);
     }
 }

@@ -48,6 +48,25 @@ public sealed class NtscSyncSeparator
     // see docs/television-plan.md's "Raster oscillators" section.
     private const double VSyncWidthMultiplier = 3.0;
 
+    // How many consecutive below-sync-level samples a low run has to reach
+    // before CurrentSyncRegion (below) will actually report it as sync,
+    // live. Below the classic RS-170A back-porch breakdown (breezeway,
+    // color burst, more back porch - see NtscTiming.BurstWindowStartSamples'
+    // remarks), color burst's own negative half-cycles genuinely dip below
+    // the plain sync/black midpoint ClassifyBelowSyncLevel uses - on the
+    // Apple II's calibrated levels (sync tip ~byte 0, black ~byte 64, burst
+    // amplitude ~+-44 around black - see AppleIISystem.CompositeVideo.cs's
+    // BurstAmplitudeVolts), the trough lands at ~byte 19, comfortably under
+    // the ~32 midpoint - for exactly one sample out of every 4 (one point
+    // per subcarrier cycle), immediately bounded on both sides by samples
+    // that aren't below it. A genuine sync pulse (HSYNC's own ~67 samples,
+    // let alone VSYNC's ~388) clears any small threshold here almost
+    // instantly; burst's own single-sample dips never reach it at all - so
+    // this is chosen well above what one burst trough alone can ever
+    // produce, not tuned against any real pulse's width the way
+    // HSyncToleranceLowerFraction/VSyncWidthMultiplier are.
+    private const int LiveSyncRegionConfirmSamples = 2;
+
     // How fast the sync-tip and white-peak trackers creep back toward
     // recent samples after snapping to a new extreme (see Process below).
     // How fast the HSYNC-width and black-level estimates smooth toward a
@@ -95,6 +114,17 @@ public sealed class NtscSyncSeparator
     public double WhiteLevel => _whiteLevel;
 
     /// <summary>
+    /// The running estimate of a normal HSYNC pulse's width, in samples -
+    /// self-calibrated from real accepted HSYNC pulses (see
+    /// <see cref="ClassifyCompletedLowRun"/>), not assumed from nominal
+    /// timing. RS-170A defines the back-porch-to-active-video gap as the
+    /// same duration as HSYNC itself, so <see cref="Television"/> reuses
+    /// this same estimate for that offset rather than a separately-tracked
+    /// (or fixed nominal) one - see its own remarks.
+    /// </summary>
+    public double HSyncWidthEstimate => _hsyncWidthEstimate;
+
+    /// <summary>
     /// True only for the single <see cref="Process"/> call in which a
     /// normal-width (HSYNC-like) low pulse's trailing edge was found - an
     /// edge-triggered pulse, not a level.
@@ -113,6 +143,21 @@ public sealed class NtscSyncSeparator
     /// level (i.e. is part of a sync pulse, not picture).
     /// </summary>
     public bool IsBelowSyncLevel { get; private set; }
+
+    /// <summary>
+    /// Which kind of sync pulse the most recently processed sample is
+    /// currently part of - <see langword="null"/> whenever
+    /// <see cref="IsBelowSyncLevel"/> is false, and also for the first
+    /// <see cref="LiveSyncRegionConfirmSamples"/> samples of a low run
+    /// that's still too new to call (see <see cref="Process"/>'s remarks on
+    /// why an unconfirmed single-sample dip - e.g. color burst's own
+    /// negative half-cycle - shouldn't count as sync at all). Unlike
+    /// <see cref="HSyncDetected"/>/<see cref="VSyncDetected"/> (which only
+    /// fire once, on the sample where a completed pulse's trailing edge is
+    /// found), this is live for every sample of an in-progress *confirmed*
+    /// pulse, not just the ones after it's finished.
+    /// </summary>
+    public RasterRegion? CurrentSyncRegion { get; private set; }
 
     /// <summary>
     /// Classifies a sample against the *current* running sync/black
@@ -139,6 +184,36 @@ public sealed class NtscSyncSeparator
         {
             _lowRunLength++;
 
+            // Live (causal, no lookahead) pulse-kind classification: a real
+            // receiver can tell, *while a pulse is still happening*, that
+            // it's already gone on far longer than any normal HSYNC pulse
+            // would - it doesn't need to wait for the pulse to end first.
+            // Once the in-progress low run's length crosses the same
+            // (self-calibrated, not nominal) VSYNC-width threshold
+            // ClassifyCompletedLowRun uses below, every sample from here
+            // until the run ends is VSYNC; before that, it's tentatively
+            // HSYNC - correct for the overwhelming majority of samples
+            // (everything in a normal, short HSYNC pulse), and only ever
+            // wrong for the handful of samples at the very start of a
+            // genuine VSYNC pulse, which self-correct the moment the run's
+            // length reaches the threshold.
+            //
+            // Below LiveSyncRegionConfirmSamples, this stays null rather
+            // than committing to HSYNC - a run this short is exactly as
+            // likely to be a single-sample noise dip (color burst's own
+            // negative half-cycle is the recurring real-signal example -
+            // see that const's remarks) as the genuine leading edge of a
+            // pulse, and unlike a completed run (ClassifyCompletedLowRun
+            // below), there's no way yet to tell which. A real pulse clears
+            // this within a couple of samples regardless, so the only cost
+            // is a few samples' reporting lag at the very start of every
+            // genuine sync pulse.
+            CurrentSyncRegion = _lowRunLength < LiveSyncRegionConfirmSamples
+                ? null
+                : _lowRunLength >= _hsyncWidthEstimate * VSyncWidthMultiplier
+                    ? RasterRegion.VSync
+                    : RasterRegion.HSync;
+
             // Fast-attack, slow-decay running minimum: a real clamp circuit
             // re-clamps to sync tip every single line, so this should snap
             // down immediately the moment a lower sample appears, but only
@@ -156,6 +231,8 @@ public sealed class NtscSyncSeparator
         }
         else
         {
+            CurrentSyncRegion = null;
+
             // Same fast-attack, slow-decay idea, mirrored to track a
             // running *maximum* instead of minimum - approximates "peak of
             // active video" (the plan doc's AGC white-level reference)

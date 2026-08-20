@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Aemula.Emulation.Output;
 using Aemula.Emulation.Output.Ntsc;
 
 namespace Aemula.Tests.Emulation.Output.Ntsc;
@@ -103,5 +104,85 @@ public class NtscSyncSeparatorTests
 
         await Assert.That(hsyncEverFired).IsFalse();
         await Assert.That(vsyncIndex).IsEqualTo(highSegmentLength + vsyncWidth);
+    }
+
+    // Phase 7's CurrentSyncRegion: unlike HSyncDetected/VSyncDetected (which
+    // only fire once, on the sample where a completed pulse's trailing edge
+    // is found), this is live for every sample of an in-progress pulse - see
+    // docs/television-plan.md's Phase 7 and this property's own remarks.
+    [Test]
+    public async Task CurrentSyncRegionIsHSyncThroughoutANormalPulseAndNullOutsideIt()
+    {
+        const int highSegmentLength = 50;
+        const int hsyncWidth = 67; // matches NtscSyncSeparator's ~67.3-sample nominal HSYNC width
+        const int confirmSamples = 2; // matches NtscSyncSeparator's own LiveSyncRegionConfirmSamples
+
+        var samples = new List<byte>();
+        for (var i = 0; i < highSegmentLength; i++) samples.Add(HighSample);
+        for (var i = 0; i < hsyncWidth; i++) samples.Add(SyncSample);
+        for (var i = 0; i < highSegmentLength; i++) samples.Add(HighSample);
+
+        var separator = new NtscSyncSeparator();
+
+        for (var i = 0; i < samples.Count; i++)
+        {
+            separator.Process(samples[i]);
+
+            // The first couple of samples of even a genuine pulse stay null
+            // rather than immediately HSync - see LiveSyncRegionConfirmSamples'
+            // remarks on why an unconfirmed single-sample-or-two dip can't
+            // yet be told apart from noise (color burst's own negative
+            // half-cycle being the recurring real-signal example).
+            var confirmedWithinPulse = i >= highSegmentLength + confirmSamples - 1
+                && i < highSegmentLength + hsyncWidth;
+
+            await Assert.That(separator.CurrentSyncRegion)
+                .IsEqualTo(confirmedWithinPulse ? RasterRegion.HSync : null);
+        }
+    }
+
+    [Test]
+    public async Task CurrentSyncRegionFlipsToVSyncLiveOnceAnInProgressPulseGrowsPastTheThreshold()
+    {
+        const int highSegmentLength = 50;
+
+        // Comfortably past 3x the ~67.3-sample nominal HSYNC width (the
+        // same VSYNC-width threshold ClassifyCompletedLowRun uses), so this
+        // pulse's classification genuinely flips mid-pulse, not just at its
+        // very end.
+        const int lowRunLength = 250;
+
+        var samples = new List<byte>();
+        for (var i = 0; i < highSegmentLength; i++) samples.Add(HighSample);
+        for (var i = 0; i < lowRunLength; i++) samples.Add(SyncSample);
+        for (var i = 0; i < highSegmentLength; i++) samples.Add(HighSample);
+
+        var separator = new NtscSyncSeparator();
+
+        RasterRegion? earlyRegion = null;
+        RasterRegion? lateRegion = null;
+
+        for (var i = 0; i < samples.Count; i++)
+        {
+            separator.Process(samples[i]);
+
+            // A handful of samples into the pulse - still well below the
+            // VSYNC threshold, so this should read as a (tentative, not yet
+            // reclassified) HSYNC - the pulse looks like a normal one so far.
+            if (i == highSegmentLength + 10)
+            {
+                earlyRegion = separator.CurrentSyncRegion;
+            }
+
+            // Comfortably past the threshold, while the pulse is still
+            // ongoing (this sample is not the pulse's trailing edge).
+            if (i == highSegmentLength + lowRunLength - 10)
+            {
+                lateRegion = separator.CurrentSyncRegion;
+            }
+        }
+
+        await Assert.That(earlyRegion).IsEqualTo(RasterRegion.HSync);
+        await Assert.That(lateRegion).IsEqualTo(RasterRegion.VSync);
     }
 }

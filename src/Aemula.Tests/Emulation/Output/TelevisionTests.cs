@@ -67,7 +67,7 @@ public class TelevisionTests
             television.Decode(sample);
         }
 
-        var buffer = television.DisplayBuffer;
+        var buffer = television.SampleBuffer;
 
         // Any row comfortably within the top two-thirds of the frame shows
         // the clean 7-bar strip for this asset (confirmed by inspection);
@@ -76,18 +76,19 @@ public class TelevisionTests
         var row = (int)(buffer.Height / 6);
 
         // Each of the 7 bars is an equal fraction of the active-video
-        // width (not the full buffer width - Television.Decode only writes
-        // into the active-video portion of each row, see its remarks on
-        // IsActiveVideo; the rest of the line's samples, sync/blanking,
-        // never get written and stay at DisplayBuffer's initial black).
-        // Sampling at the middle of each bar keeps well clear of the
-        // transition columns between bars.
+        // width, offset by where active video actually starts within the
+        // line - Television.Decode writes every sample at its true raster
+        // column (see docs/television-plan.md's Phase 7's remarks on
+        // Television.Decode), so column 0 in the buffer is the start of the
+        // line (sync/blanking), not the start of the picture. Sampling at
+        // the middle of each bar keeps well clear of the transition columns
+        // between bars.
         var barWidth = NtscTiming.ActiveVideoLengthSamples / 7.0;
 
         RgbaByte SampleBar(int barIndex)
         {
-            var column = (int)((barIndex + 0.5) * barWidth);
-            return buffer.Data[row * buffer.Width + column];
+            var column = (int)(NtscTiming.ActiveVideoStartSamples + (barIndex + 0.5) * barWidth);
+            return buffer.Data[row * buffer.Width + column].Color;
         }
 
         var white = SampleBar(0);

@@ -73,6 +73,30 @@ public class NtscColorBurstPllTests
         await Assert.That(detectedCount).IsGreaterThanOrEqualTo(950);
     }
 
+    // Phase 7's IsInBurstWindow: the literal per-sample flag Process' own
+    // phase detector already correlates samples against, exposed live rather
+    // than only summarized after the fact via BurstDetected - see
+    // docs/television-plan.md's Phase 7 and this property's own remarks.
+    [Test]
+    public async Task IsInBurstWindowTracksTheFixedBurstWindowLiveWithinALine()
+    {
+        var pll = new NtscColorBurstPll();
+        const double blackLevel = 64;
+        const double whiteLevel = 200;
+
+        var lineLength = (int)NtscTiming.NominalSamplesPerLine;
+
+        for (var column = 0; column < lineLength; column++)
+        {
+            pll.Process((byte)blackLevel, column, blackLevel, whiteLevel);
+
+            var expectedInWindow = column >= NtscTiming.BurstWindowStartSamples
+                && column < NtscTiming.BurstWindowStartSamples + NtscTiming.BurstWindowLengthSamples;
+
+            await Assert.That(pll.IsInBurstWindow).IsEqualTo(expectedInWindow);
+        }
+    }
+
     [Test]
     public async Task PhaseConvergesAndStabilizesOnConsistentSyntheticBurst()
     {

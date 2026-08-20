@@ -86,6 +86,32 @@ public sealed class NtscColorBurstPll
     public bool BurstDetected { get; private set; }
 
     /// <summary>
+    /// Whether the sample most recently passed to <see cref="Process"/> fell
+    /// within the color-burst window - live, per sample, unlike
+    /// <see cref="BurstDetected"/> (which only finalizes once a whole line's
+    /// window has closed). This is the literal window this class's own
+    /// phase detector correlates that sample against, not a separately
+    /// re-derived one - see docs/television-plan.md's Phase 7, which needed
+    /// a per-sample "was this really burst" answer sourced from the same
+    /// decision the pipeline already made, not a second reconstruction of
+    /// it.
+    /// </summary>
+    public bool IsInBurstWindow { get; private set; }
+
+    /// <summary>
+    /// The local oscillator's resolved phase for the sample most recently
+    /// passed to <see cref="Process"/> - the literal "where is 0/90/180/270
+    /// degrees of the recovered color subcarrier, right now" reference this
+    /// PLL locks to burst, <em>before</em> <see cref="NtscYiqDecoder"/>'s own
+    /// further rotation onto the I axis (see that class's
+    /// BurstToIAxisRotationRadians remarks - that rotation is specific to
+    /// demodulating I/Q, not part of what "the color carrier" itself means).
+    /// Mainly useful for diagnostics (e.g. TelevisionWindow's per-sample
+    /// hover tooltip drawing this as a reference sine over the raw signal).
+    /// </summary>
+    public double CurrentPhaseRadians { get; private set; }
+
+    /// <summary>
     /// Feeds one composite-video sample into the PLL. <paramref name="currentColumn"/>
     /// should be <see cref="NtscRasterOscillators.CurrentColumn"/> for this
     /// same sample, and <paramref name="blackLevel"/> should be
@@ -99,11 +125,12 @@ public sealed class NtscColorBurstPll
     {
         var phase = Math.PI / 2.0 * (_sampleCounter % 4) + _phaseOffsetRadians;
         _sampleCounter++;
+        CurrentPhaseRadians = phase;
 
-        var isInBurstWindow = currentColumn >= NtscTiming.BurstWindowStartSamples
+        IsInBurstWindow = currentColumn >= NtscTiming.BurstWindowStartSamples
             && currentColumn < NtscTiming.BurstWindowStartSamples + NtscTiming.BurstWindowLengthSamples;
 
-        if (isInBurstWindow)
+        if (IsInBurstWindow)
         {
             var acSample = sample - blackLevel;
 
