@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.Intrinsics;
 
 namespace Aemula.Emulation.Output.Ntsc;
 
@@ -76,6 +77,13 @@ public sealed class NtscYiqDecoder
     internal const double BurstToIAxisRotationRadians =
         (SpecBurstToIAxisDegrees + PllLockBranchDegrees) * Math.PI / 180.0; // +123 degrees
 
+    // Step 4's R/G/B coefficients (see Process), laid out as one lane per
+    // output channel (the unused 4th lane keeps these Vector256<double>-width
+    // for the FusedMultiplyAdd below - see Process for why 4 lanes are always
+    // available regardless of host SIMD width).
+    private static readonly Vector256<double> RgbCoeffI = Vector256.Create(0.956, -0.272, -1.106, 0.0);
+    private static readonly Vector256<double> RgbCoeffQ = Vector256.Create(0.621, -0.647, 1.703, 0.0);
+
     // The comb filter (see Process below) and the I/Q box-average both work
     // over a rolling one-subcarrier-cycle (4-sample) window, so both keep a
     // small ring buffer of recent values rather than reaching back into the
@@ -135,7 +143,16 @@ public sealed class NtscYiqDecoder
         // standard 3-tap NTSC notch/comb filter - while luma (which isn't
         // oscillating at the subcarrier frequency) survives averaging
         // mostly untouched, since it barely changes sample to sample.
-        Array.Copy(_sampleHistory, 0, _sampleHistory, 1, _sampleHistory.Length - 1);
+        // Array.Copy (and the Buffer.Memmove it delegates to) has enough fixed
+        // per-call overhead that at one call per composite-video sample (millions
+        // per second of emulated time) it dwarfed everything else in this method -
+        // a dotnet-trace sample profile of this method in isolation showed >99% of
+        // its time inside Buffer.MemmoveInternal. A manual shift of this fixed,
+        // tiny (5-byte) array does the exact same thing without that call.
+        _sampleHistory[4] = _sampleHistory[3];
+        _sampleHistory[3] = _sampleHistory[2];
+        _sampleHistory[2] = _sampleHistory[1];
+        _sampleHistory[1] = _sampleHistory[0];
         _sampleHistory[0] = sample;
 
         var rawLuma = (_sampleHistory[0] + 2.0 * _sampleHistory[2] + _sampleHistory[4]) / 4.0;
@@ -163,20 +180,41 @@ public sealed class NtscYiqDecoder
         // that class's own remarks), the raw average needs multiplying by 2
         // to recover the true I/Q amplitude, not just a scaled-down
         // version of it.
+        // cos/sin of the four slots' phases (base angle + a multiple of 90
+        // degrees) are just sign-flipped/swapped copies of cos/sin of the
+        // base angle itself - a quarter-turn rotation needs no trigonometry
+        // of its own. Computing the base pair via SinCos (which shares range
+        // reduction between the two, cheaper than two separate Math.Cos/
+        // Math.Sin calls) and deriving the other three slots this way avoids
+        // ever calling into transcendental math more than once per sample,
+        // instead of the twice-per-sample this originally did - meaningful
+        // since Process runs once per composite-video sample, i.e. millions
+        // of times per second of emulated time.
         var slot = (int)(_sampleCounter % 4);
-        var phase = Math.PI / 2.0 * slot + phaseOffsetRadians + BurstToIAxisRotationRadians;
+        var baseAngle = phaseOffsetRadians + BurstToIAxisRotationRadians;
         _sampleCounter++;
 
-        _iProductHistory[slot] = chroma * Math.Cos(phase);
-        _qProductHistory[slot] = chroma * Math.Sin(phase);
-
-        var iSum = 0.0;
-        var qSum = 0.0;
-        for (var i = 0; i < 4; i++)
+        var (baseSin, baseCos) = Math.SinCos(baseAngle);
+        var (cos, sin) = slot switch
         {
-            iSum += _iProductHistory[i];
-            qSum += _qProductHistory[i];
-        }
+            0 => (baseCos, baseSin),
+            1 => (-baseSin, baseCos),
+            2 => (-baseCos, -baseSin),
+            _ => (baseSin, -baseCos),
+        };
+
+        _iProductHistory[slot] = chroma * cos;
+        _qProductHistory[slot] = chroma * sin;
+
+        // Vector256<double> is always exactly 4 lanes on every platform (unlike
+        // System.Numerics.Vector<double>, whose width depends on the CPU - 2 on
+        // this machine's ARM64/NEON, not 4) - a natural fit for summing these
+        // fixed 4-element histories. Vector256.Create/Sum are cross-platform
+        // helpers that JIT-compile to real AVX instructions where available and
+        // fall back to equivalent scalar code otherwise, so this needs no
+        // platform guard.
+        var iSum = Vector256.Sum(Vector256.Create(_iProductHistory));
+        var qSum = Vector256.Sum(Vector256.Create(_qProductHistory));
 
         I = 2.0 * iSum / 4.0;
         Q = 2.0 * qSum / 4.0;
@@ -191,12 +229,17 @@ public sealed class NtscYiqDecoder
         // references - see the plan doc's YIQ section); different sources'
         // coefficients drift very slightly, but this set is the most
         // commonly cited one and well within this project's accuracy bar.
-        var r = Luma + 0.956 * I + 0.621 * Q;
-        var g = Luma - 0.272 * I - 0.647 * Q;
-        var b = Luma - 1.106 * I + 1.703 * Q;
+        //
+        // R/G/B share the same Luma + coeffI*I + coeffQ*Q shape, one row of
+        // the matrix per channel - a matrix-vector multiply, not three
+        // unrelated scalar expressions, so it's done as two
+        // Vector256.FusedMultiplyAdd calls (one lane per channel, 4th lane
+        // unused) instead of 6 scalar multiplies/adds, with the 0-255 clamp
+        // similarly done once across all three lanes.
+        var rgb = Vector256.FusedMultiplyAdd(RgbCoeffQ, Vector256.Create(Q),
+            Vector256.FusedMultiplyAdd(RgbCoeffI, Vector256.Create(I), Vector256.Create(Luma)));
+        var clamped = Vector256.Clamp(rgb, Vector256<double>.Zero, Vector256.Create(255.0));
 
-        Rgb = new RgbaByte(ClampToByte(r), ClampToByte(g), ClampToByte(b), 255);
+        Rgb = new RgbaByte((byte)clamped[0], (byte)clamped[1], (byte)clamped[2], 255);
     }
-
-    private static byte ClampToByte(double value) => (byte)Math.Clamp(value, 0, 255);
 }

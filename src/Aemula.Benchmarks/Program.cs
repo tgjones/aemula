@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using Aemula.Emulation.Output.Ntsc;
 using Aemula.Emulation.Systems.AppleII;
 using Aemula.Emulation.Systems.Atari2600;
 using Aemula.Emulation.Systems.Chip8;
@@ -120,16 +121,58 @@ public static class Program
     // all - isolates the NTSC decode pipeline's own cost (sync separator, raster
     // oscillators, color-burst PLL, YIQ decoder), which today runs on every sample
     // regardless of whether TelevisionWindow is open (see Television.cs's Decode).
+    // Then each of those four stages alone, so it's clear which one to spend
+    // optimization effort on rather than guessing.
     private static void RunTelevisionDecodeBenchmark()
     {
+        var nominalCyclesPerSecond = new AppleIISystem().CyclesPerSecond;
+
         var television = new Aemula.Emulation.Output.Television();
         var random = new Random(0);
         var sample = (byte)0;
 
-        Run("Television.Decode (isolated)", new AppleIISystem().CyclesPerSecond, tick: () =>
+        Run("Television.Decode (isolated, full pipeline)", nominalCyclesPerSecond, tick: () =>
         {
             television.Decode(sample);
             sample = (byte)random.Next(256);
+        });
+
+        // Synthetic but signal-shaped inputs for each stage below (slowly varying
+        // column/phase rather than constants) so branch-heavy code isn't measured
+        // taking the same path every call - matters less for correctness here than
+        // for the earlier benchmarks, since these stages aren't chained to each
+        // other's real output, but keeps each number honest about branchy costs.
+        var syncSeparator = new NtscSyncSeparator();
+        Run("  NtscSyncSeparator.Process", nominalCyclesPerSecond, tick: () =>
+        {
+            syncSeparator.Process(sample);
+            sample = (byte)random.Next(256);
+        });
+
+        var rasterOscillators = new NtscRasterOscillators();
+        var hSyncToggle = false;
+        Run("  NtscRasterOscillators.Process", nominalCyclesPerSecond, tick: () =>
+        {
+            hSyncToggle = !hSyncToggle;
+            rasterOscillators.Process(hSyncToggle, false);
+        });
+
+        var colorBurstPll = new NtscColorBurstPll();
+        double column = 0;
+        Run("  NtscColorBurstPll.Process", nominalCyclesPerSecond, tick: () =>
+        {
+            colorBurstPll.Process(sample, column, blackLevel: 40, whiteLevel: 200);
+            sample = (byte)random.Next(256);
+            column = (column + 1) % 912;
+        });
+
+        var yiqDecoder = new NtscYiqDecoder();
+        double phase = 0;
+        Run("  NtscYiqDecoder.Process", nominalCyclesPerSecond, tick: () =>
+        {
+            yiqDecoder.Process(sample, phase, blackLevel: 40, whiteLevel: 200);
+            sample = (byte)random.Next(256);
+            phase = (phase + 0.1) % (2 * Math.PI);
         });
     }
 
@@ -159,17 +202,17 @@ public static class Program
 
     private static void Report(string name, ulong nominalCyclesPerSecond, long cyclesExecuted, TimeSpan elapsed)
     {
-        var achievedHz = cyclesExecuted / elapsed.TotalSeconds;
-        var nominalMHz = nominalCyclesPerSecond / 1_000_000.0;
-        var achievedMHz = achievedHz / 1_000_000.0;
+        var nsPerCycle = elapsed.TotalMilliseconds * 1_000_000.0 / cyclesExecuted;
+        var nominalNsPerCycle = 1_000_000_000.0 / nominalCyclesPerSecond;
 
         // How many real ms it takes to simulate one nominal video frame's worth
         // (17ms) of emulated time at this rate - directly comparable to the "ms per
         // frame" figure shown in Aemula.UI's main menu bar.
-        var msPerNominalFrame = 17.0 * nominalMHz / achievedMHz;
+        var nominalCyclesPerFrame = 0.017 * nominalCyclesPerSecond;
+        var msPerNominalFrame = nominalCyclesPerFrame * nsPerCycle / 1_000_000.0;
 
         Console.WriteLine($"{name}:");
-        Console.WriteLine($"  {achievedHz:N0} cycles/sec  =  {achievedMHz:F2} MHz achieved vs {nominalMHz:F2} MHz nominal ({achievedMHz / nominalMHz:P0})");
+        Console.WriteLine($"  {nsPerCycle:F1} ns/cycle achieved vs {nominalNsPerCycle:F1} ns/cycle nominal budget ({nominalNsPerCycle / nsPerCycle:P0} of budget)");
         Console.WriteLine($"  ~{msPerNominalFrame:F2} ms to simulate one 17ms nominal frame");
         Console.WriteLine();
     }

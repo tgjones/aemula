@@ -142,8 +142,9 @@ public sealed class NtscColorBurstPll
             // _inPhaseAccumulator and leaves _quadratureAccumulator at
             // zero; any nonzero quadrature accumulation *is* the phase
             // error this loop corrects.
-            _inPhaseAccumulator += acSample * Math.Cos(phase);
-            _quadratureAccumulator += acSample * Math.Sin(phase);
+            (var sin, var cos) = Math.SinCos(phase);
+            _inPhaseAccumulator += acSample * cos;
+            _quadratureAccumulator += acSample * sin;
             _windowSampleCount++;
         }
         else if (_windowSampleCount > 0)
