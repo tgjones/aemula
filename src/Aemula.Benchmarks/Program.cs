@@ -161,7 +161,7 @@ public static class Program
         double column = 0;
         Run("  NtscColorBurstPll.Process", nominalCyclesPerSecond, tick: () =>
         {
-            colorBurstPll.Process(sample, column, blackLevel: 40, whiteLevel: 200);
+            colorBurstPll.Process(sample, (float)column, blackLevel: 40, whiteLevel: 200);
             sample = (byte)random.Next(256);
             column = (column + 1) % 912;
         });
@@ -170,7 +170,7 @@ public static class Program
         double phase = 0;
         Run("  NtscYiqDecoder.Process", nominalCyclesPerSecond, tick: () =>
         {
-            yiqDecoder.Process(sample, phase, blackLevel: 40, whiteLevel: 200);
+            yiqDecoder.Process(sample, (float)phase, blackLevel: 40, whiteLevel: 200);
             sample = (byte)random.Next(256);
             phase = (phase + 0.1) % (2 * Math.PI);
         });

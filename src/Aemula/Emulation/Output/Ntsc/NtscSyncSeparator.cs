@@ -37,8 +37,8 @@ public sealed class NtscSyncSeparator
     // that bracket real vertical blanking - those fall below
     // HSyncToleranceLowerFraction and are simply ignored (Phase 1 doesn't
     // need to specifically recognize them, only to not misclassify them).
-    private const double HSyncToleranceLowerFraction = 0.5;
-    private const double HSyncToleranceUpperFraction = 1.5;
+    private const float HSyncToleranceLowerFraction = 0.5f;
+    private const float HSyncToleranceUpperFraction = 1.5f;
 
     // A real vertical sync (broad) pulse is roughly 27.1µs - about 5.8x a
     // normal ~4.7µs HSYNC pulse - so "way longer than a normal HSYNC pulse"
@@ -46,7 +46,7 @@ public sealed class NtscSyncSeparator
     // than a fixed sample count. This is what lets the same logic work
     // whether a line is 910 samples (smpte.ntsc) or 912 samples (Apple II) -
     // see docs/television-plan.md's "Raster oscillators" section.
-    private const double VSyncWidthMultiplier = 3.0;
+    private const float VSyncWidthMultiplier = 3.0f;
 
     // How many consecutive below-sync-level samples a low run has to reach
     // before CurrentSyncRegion (below) will actually report it as sync,
@@ -73,9 +73,9 @@ public sealed class NtscSyncSeparator
     // newly classified pulse. All four are free parameters with no single
     // "correct" value from first principles - see docs/television-plan.md's
     // Open risks; expect to tune these once real signals are decoding.
-    private const double LevelDecayRate = 0.0005;
-    private const double HSyncWidthSmoothingRate = 0.1;
-    private const double BlackLevelSmoothingRate = 0.05;
+    private const float LevelDecayRate = 0.0005f;
+    private const float HSyncWidthSmoothingRate = 0.1f;
+    private const float BlackLevelSmoothingRate = 0.05f;
 
     // Seeded from the Apple II's own measured levels (see the plan doc's
     // "Voltage levels" section) so decoding is sane from sample 1, without
@@ -84,14 +84,14 @@ public sealed class NtscSyncSeparator
     // 255. These are just a starting guess, not a hard assumption - real
     // incoming samples immediately start pulling all three estimates
     // wherever they actually belong.
-    private const double InitialSyncLevel = 0;
-    private const double InitialBlackLevel = 64;
-    private const double InitialWhiteLevel = 255;
+    private const float InitialSyncLevel = 0;
+    private const float InitialBlackLevel = 64;
+    private const float InitialWhiteLevel = 255;
 
-    private double _syncLevel = InitialSyncLevel;
-    private double _blackLevel = InitialBlackLevel;
-    private double _whiteLevel = InitialWhiteLevel;
-    private double _hsyncWidthEstimate = NtscTiming.NominalHSyncWidthSamples;
+    private float _syncLevel = InitialSyncLevel;
+    private float _blackLevel = InitialBlackLevel;
+    private float _whiteLevel = InitialWhiteLevel;
+    private float _hsyncWidthEstimate = NtscTiming.NominalHSyncWidthSamples;
 
     // How many consecutive samples we've been below sync level for, in the
     // pulse currently in progress (0 when not currently in a low pulse).
@@ -101,17 +101,17 @@ public sealed class NtscSyncSeparator
     /// The running estimate of the sync tip voltage, on the same 0-255 byte
     /// scale <see cref="Television.Decode"/> receives samples on.
     /// </summary>
-    public double SyncLevel => _syncLevel;
+    public float SyncLevel => _syncLevel;
 
     /// <summary>
     /// The running estimate of the black (picture-minimum) level.
     /// </summary>
-    public double BlackLevel => _blackLevel;
+    public float BlackLevel => _blackLevel;
 
     /// <summary>
     /// The running estimate of the white (picture-maximum) level.
     /// </summary>
-    public double WhiteLevel => _whiteLevel;
+    public float WhiteLevel => _whiteLevel;
 
     /// <summary>
     /// The running estimate of a normal HSYNC pulse's width, in samples -
@@ -122,7 +122,7 @@ public sealed class NtscSyncSeparator
     /// this same estimate for that offset rather than a separately-tracked
     /// (or fixed nominal) one - see its own remarks.
     /// </summary>
-    public double HSyncWidthEstimate => _hsyncWidthEstimate;
+    public float HSyncWidthEstimate => _hsyncWidthEstimate;
 
     /// <summary>
     /// True only for the single <see cref="Process"/> call in which a
@@ -165,7 +165,7 @@ public sealed class NtscSyncSeparator
     /// midpoint between the two, i.e. a sample counts as "sync" once it's
     /// closer to the sync tip estimate than to the black-level estimate.
     /// </summary>
-    public bool ClassifyBelowSyncLevel(byte sample) => sample < (_syncLevel + _blackLevel) / 2.0;
+    public bool ClassifyBelowSyncLevel(byte sample) => sample < (_syncLevel + _blackLevel) / 2f;
 
     /// <summary>
     /// Feeds one composite-video sample into the separator. Call this once

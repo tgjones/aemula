@@ -35,16 +35,16 @@ public sealed class NtscRasterOscillators
     // while the estimate is still converging toward the truth, but still
     // comfortably rejects anything from a different NTSC-family signal
     // entirely (see the out-of-range test in NtscRasterOscillatorsTests).
-    private const double HorizontalCaptureRangeFraction = 0.15;
-    private const double HorizontalSmoothingRate = 0.1;
+    private const float HorizontalCaptureRangeFraction = 0.15f;
+    private const float HorizontalSmoothingRate = 0.1f;
 
     // Vertical capture range and smoothing - wider tolerance and faster
     // smoothing than horizontal's, since a field boundary is only measured
     // a handful of times total in even a long capture (once per field,
     // versus once per line), so there's much less opportunity to converge
     // gradually - it needs to get close in just a few pulses.
-    private const double VerticalCaptureRangeFraction = 0.2;
-    private const double VerticalSmoothingRate = 0.3;
+    private const float VerticalCaptureRangeFraction = 0.2f;
+    private const float VerticalSmoothingRate = 0.3f;
 
     // No matter how many pulses get accepted, a period estimate can never
     // drift more than this far from its nominal NTSC value - modeling a
@@ -52,7 +52,7 @@ public sealed class NtscRasterOscillators
     // little, not tuned anywhere). This is what guarantees a signal with
     // wildly wrong timing can never be mistaken for real sync, no matter
     // how many pulses it offers.
-    private const double MaxPeriodDriftFraction = 0.2;
+    private const float MaxPeriodDriftFraction = 0.2f;
 
     // A real vertical sync region is several HSYNC-width-or-broader pulses
     // in a row (equalizing + broad serration pulses), not one - see the
@@ -63,7 +63,7 @@ public sealed class NtscRasterOscillators
     // regions in this codebase's two test signals span up to ~3.5 line
     // widths, so this leaves comfortable margin while staying utterly
     // negligible next to the ~262-line gap between genuine fields.
-    private const double VerticalDebounceLineMultiplier = 4.0;
+    private const float VerticalDebounceLineMultiplier = 4.0f;
 
     private readonly PullInOscillator _horizontal = new(
         NtscTiming.NominalSamplesPerLine,
@@ -79,7 +79,7 @@ public sealed class NtscRasterOscillators
     // considered (accepted or not) - the debounce gate described above.
     // Seeded huge so the very first VSYNC pulse in a stream is always
     // considered.
-    private double _samplesSinceLastVSyncCandidate = 1e12;
+    private float _samplesSinceLastVSyncCandidate = 1e12f;
 
     /// <summary>
     /// The raster column (sample position within the current line) of the
@@ -98,7 +98,7 @@ public sealed class NtscRasterOscillators
     /// HSYNC spacing rather than configured - see the plan doc's "Raster
     /// oscillators" section.
     /// </summary>
-    public double DetectedSamplesPerLine => _horizontal.PeriodEstimate;
+    public float DetectedSamplesPerLine => _horizontal.PeriodEstimate;
 
     /// <summary>
     /// The current running estimate of lines-per-field, derived from the
@@ -106,7 +106,7 @@ public sealed class NtscRasterOscillators
     /// the horizontal one's - see the class remarks on why both oscillators
     /// operate in raw sample units internally.
     /// </summary>
-    public double DetectedLinesPerFrame => _vertical.PeriodEstimate / _horizontal.PeriodEstimate;
+    public float DetectedLinesPerFrame => _vertical.PeriodEstimate / _horizontal.PeriodEstimate;
 
     /// <summary>
     /// Advances both oscillators by one sample. <paramref name="hSyncDetected"/>
@@ -118,7 +118,7 @@ public sealed class NtscRasterOscillators
     {
         _horizontal.Tick(hSyncDetected);
 
-        _samplesSinceLastVSyncCandidate += 1.0;
+        _samplesSinceLastVSyncCandidate += 1f;
 
         var offerVSync = false;
         if (vSyncDetected && _samplesSinceLastVSyncCandidate >= _horizontal.PeriodEstimate * VerticalDebounceLineMultiplier)
@@ -154,12 +154,12 @@ public sealed class NtscRasterOscillators
     //      zero (and reporting a boundary crossing) either when a pulse is
     //      accepted or, with no pulse in sight, whenever a full period's
     //      worth of samples has simply gone by on its own.
-    private sealed class PullInOscillator(double nominalPeriod, double captureRangeFraction, double smoothingRate)
+    private sealed class PullInOscillator(float nominalPeriod, float captureRangeFraction, float smoothingRate)
     {
-        private readonly double _nominalPeriod = nominalPeriod;
+        private readonly float _nominalPeriod = nominalPeriod;
 
-        public double Position { get; private set; }
-        public double PeriodEstimate { get; private set; } = nominalPeriod;
+        public float Position { get; private set; }
+        public float PeriodEstimate { get; private set; } = nominalPeriod;
 
         // Samples elapsed since the last *accepted* pulse - unlike Position
         // (above), this is never touched by a free-run wrap, only by a
@@ -179,7 +179,7 @@ public sealed class NtscRasterOscillators
         // started counting" even for the very first accept, not just be a
         // large sentinel; _hasEverAccepted (not this) is what guarantees
         // that very first pulse is accepted regardless of its value.
-        private double _samplesSinceAccepted;
+        private float _samplesSinceAccepted;
         private bool _hasEverAccepted;
 
         /// <summary>
@@ -191,8 +191,8 @@ public sealed class NtscRasterOscillators
         /// </summary>
         public bool Tick(bool pulseOffered)
         {
-            Position += 1.0;
-            _samplesSinceAccepted += 1.0;
+            Position += 1f;
+            _samplesSinceAccepted += 1f;
 
             if (pulseOffered && IsWithinCaptureRange())
             {

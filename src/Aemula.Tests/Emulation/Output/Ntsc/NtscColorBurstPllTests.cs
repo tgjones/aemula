@@ -22,7 +22,7 @@ public class NtscColorBurstPllTests
             {
                 Separator.Process(samples[i]);
                 Oscillators.Process(Separator.HSyncDetected, Separator.VSyncDetected);
-                Pll.Process(samples[i], Oscillators.CurrentColumn, Separator.BlackLevel, Separator.WhiteLevel);
+                Pll.Process(samples[i], Oscillators.CurrentColumn, (float)Separator.BlackLevel, (float)Separator.WhiteLevel);
 
                 if (Oscillators.CurrentColumn < lastColumn)
                 {
@@ -50,7 +50,7 @@ public class NtscColorBurstPllTests
         {
             pipeline.Separator.Process(samples[i]);
             pipeline.Oscillators.Process(pipeline.Separator.HSyncDetected, pipeline.Separator.VSyncDetected);
-            pipeline.Pll.Process(samples[i], pipeline.Oscillators.CurrentColumn, pipeline.Separator.BlackLevel, pipeline.Separator.WhiteLevel);
+            pipeline.Pll.Process(samples[i], pipeline.Oscillators.CurrentColumn, (float)pipeline.Separator.BlackLevel, (float)pipeline.Separator.WhiteLevel);
 
             if (pipeline.Oscillators.CurrentColumn < lastColumn)
             {
@@ -81,8 +81,8 @@ public class NtscColorBurstPllTests
     public async Task IsInBurstWindowTracksTheFixedBurstWindowLiveWithinALine()
     {
         var pll = new NtscColorBurstPll();
-        const double blackLevel = 64;
-        const double whiteLevel = 200;
+        const float blackLevel = 64;
+        const float whiteLevel = 200;
 
         var lineLength = (int)NtscTiming.NominalSamplesPerLine;
 

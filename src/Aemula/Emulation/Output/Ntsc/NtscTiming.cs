@@ -13,13 +13,13 @@ internal static class NtscTiming
     // this codebase samples at exactly this rate (see Television.Decode),
     // which is what makes 4-samples-per-subcarrier-cycle math (the color
     // burst PLL, YIQ demodulation, in later phases) simple.
-    public const double SamplesPerSecond = 14_318_180;
+    public const float SamplesPerSecond = 14_318_180;
 
     // A normal HSYNC pulse is ~4.7µs.
-    public const double NominalHSyncWidthSamples = 4.7e-6 * SamplesPerSecond; // ~67.3 samples
+    public const float NominalHSyncWidthSamples = 4.7e-6f * SamplesPerSecond; // ~67.3 samples
 
     // 63.5µs per scanline (15.734kHz).
-    public const double NominalSamplesPerLine = 63.5e-6 * SamplesPerSecond; // ~909.3 samples
+    public const float NominalSamplesPerLine = 63.5e-6f * SamplesPerSecond; // ~909.3 samples
 
     // NTSC's vertical sync pulse recurs once per *field*, not once per full
     // (2-field, interlaced) frame - 262.5 lines, not 525. That single
@@ -28,9 +28,9 @@ internal static class NtscTiming
     // without this decoder needing to know which kind of source it's
     // looking at - see docs/television-plan.md's "Raster oscillators"
     // section.
-    public const double NominalLinesPerField = 262.5;
+    public const float NominalLinesPerField = 262.5f;
 
-    public const double NominalSamplesPerField = NominalLinesPerField * NominalSamplesPerLine; // ~238,691 samples
+    public const float NominalSamplesPerField = NominalLinesPerField * NominalSamplesPerLine; // ~238,691 samples
 
     // Color burst timing, measured from the HSYNC trailing edge (i.e. from
     // NtscRasterOscillators.CurrentColumn == 0, which is exactly where
@@ -44,9 +44,9 @@ internal static class NtscTiming
     // NtscSyncSeparator/NtscRasterOscillators do, so NtscColorBurstPll
     // starts from this fixed, spec-derived window and instead self-
     // calibrates the burst's *phase* within it (see that class).
-    public const double BurstWindowStartSamples = 0.6e-6 * SamplesPerSecond; // ~8.6 samples
+    public const float BurstWindowStartSamples = 0.6e-6f * SamplesPerSecond; // ~8.6 samples
     public const int BurstCycleCount = 9;
-    public const double BurstWindowLengthSamples = BurstCycleCount * 4; // 36 samples
+    public const float BurstWindowLengthSamples = BurstCycleCount * 4; // 36 samples
 
     // Where active (visible-picture) video starts and how long it lasts,
     // both measured from the same HSYNC-trailing-edge zero point as the
@@ -66,8 +66,8 @@ internal static class NtscTiming
     // instead), but TelevisionTests still uses them to build a synthetic
     // test signal at exact spec positions, a legitimate, different use
     // (constructing a fixture, not a live decode assumption).
-    public const double ActiveVideoStartSamples = 4.7e-6 * SamplesPerSecond; // ~67.3 samples
-    public const double ActiveVideoLengthSamples = 52.6e-6 * SamplesPerSecond; // ~753.1 samples
+    public const float ActiveVideoStartSamples = 4.7e-6f * SamplesPerSecond; // ~67.3 samples
+    public const float ActiveVideoLengthSamples = 52.6e-6f * SamplesPerSecond; // ~753.1 samples
 
     // Front porch's share of a nominal line (1.5us of 63.5us) - the one
     // remaining fixed proportion Television.ActiveVideoLengthSamples still
@@ -77,5 +77,5 @@ internal static class NtscTiming
     // *detected* line length rather than kept as a hardcoded absolute
     // sample count, so it still scales if a real signal's line length
     // differs from nominal (as Apple II's 912-vs-909.3 already does).
-    public const double NominalFrontPorchFraction = 1.5e-6 * SamplesPerSecond / NominalSamplesPerLine;
+    public const float NominalFrontPorchFraction = 1.5e-6f * SamplesPerSecond / NominalSamplesPerLine;
 }

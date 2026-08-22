@@ -27,7 +27,7 @@ public sealed class Television
     // signals" spirit as this decoder's other engineering-margin constants
     // (see e.g. NtscSyncSeparator's HSyncToleranceLowerFraction/
     // VSyncWidthMultiplier).
-    private const double VerticalBlankingFastPulseRateFraction = 0.75;
+    private const float VerticalBlankingFastPulseRateFraction = 0.75f;
 
     private readonly NtscSyncSeparator _syncSeparator = new();
     private readonly NtscRasterOscillators _rasterOscillators = new();
@@ -40,12 +40,12 @@ public sealed class Television
     // signal - see docs/television-plan.md's "Raster oscillators" section)
     // is known.
     public readonly SampleBuffer SampleBuffer = new(
-        (uint)Math.Round(NtscTiming.NominalSamplesPerLine),
-        (uint)Math.Round(NtscTiming.NominalLinesPerField));
+        (uint)MathF.Round(NtscTiming.NominalSamplesPerLine),
+        (uint)MathF.Round(NtscTiming.NominalLinesPerField));
 
     // State behind _isVerticallyBlanked below - see UpdateVerticalBlanking.
     private bool _wasInSyncRegion;
-    private double _samplesSincePulseStart = double.MaxValue;
+    private float _samplesSincePulseStart = float.MaxValue;
     private bool _isVerticallyBlanked;
 
     // Hardcoded for now - see docs/television-plan.md's "Standard detection
@@ -70,7 +70,7 @@ public sealed class Television
     /// spec, the same way DetectedSamplesPerLine already does for line
     /// length instead of assuming NtscTiming.NominalSamplesPerLine.
     /// </summary>
-    public double ActiveVideoStartSamples => _syncSeparator.HSyncWidthEstimate;
+    public float ActiveVideoStartSamples => _syncSeparator.HSyncWidthEstimate;
 
     /// <summary>
     /// The active-video portion of one scanline, in samples - see
@@ -84,7 +84,7 @@ public sealed class Television
     /// correctly if a real signal's line length differs from nominal (as
     /// Apple II's real ~912-vs-909.3 samples/line already does).
     /// </summary>
-    public double ActiveVideoLengthSamples =>
+    public float ActiveVideoLengthSamples =>
         DetectedSamplesPerLine
         - 2 * _syncSeparator.HSyncWidthEstimate
         - NtscTiming.NominalFrontPorchFraction * DetectedSamplesPerLine;
@@ -95,14 +95,14 @@ public sealed class Television
     /// readout (e.g. TelevisionWindow's toolbar); the decode pipeline itself
     /// only ever needs <see cref="CurrentColumn"/>/<see cref="CurrentRow"/>.
     /// </summary>
-    public double DetectedSamplesPerLine => _rasterOscillators.DetectedSamplesPerLine;
+    public float DetectedSamplesPerLine => _rasterOscillators.DetectedSamplesPerLine;
 
     /// <summary>
     /// The current running estimate of lines-per-frame - see
     /// <see cref="NtscRasterOscillators"/>. Same use as
     /// <see cref="DetectedSamplesPerLine"/>.
     /// </summary>
-    public double DetectedLinesPerFrame => _rasterOscillators.DetectedLinesPerFrame;
+    public float DetectedLinesPerFrame => _rasterOscillators.DetectedLinesPerFrame;
 
     /// <summary>
     /// Whether a real color burst (as opposed to noise, or active-video
@@ -290,16 +290,16 @@ public sealed class Television
         _wasInSyncRegion = inSyncRegionNow;
     }
 
-    private static RgbaByte GrayscaleFromLuma(double luma)
+    private static RgbaByte GrayscaleFromLuma(float luma)
     {
-        var level = (byte)Math.Round(luma);
+        var level = (byte)MathF.Round(luma);
         return new RgbaByte(level, level, level, 255);
     }
 
     private void ResizeSampleBufferIfDetectedTimingChanged()
     {
-        var width = (uint)Math.Round(_rasterOscillators.DetectedSamplesPerLine);
-        var height = (uint)Math.Round(_rasterOscillators.DetectedLinesPerFrame);
+        var width = (uint)MathF.Round(_rasterOscillators.DetectedSamplesPerLine);
+        var height = (uint)MathF.Round(_rasterOscillators.DetectedLinesPerFrame);
 
         if (width != SampleBuffer.Width || height != SampleBuffer.Height)
         {

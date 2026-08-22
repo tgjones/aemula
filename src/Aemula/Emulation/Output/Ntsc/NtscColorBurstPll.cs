@@ -38,7 +38,7 @@ public sealed class NtscColorBurstPll
     // settles smoothly across many lines rather than chasing noise on any
     // one of them. A free parameter with no single correct value from
     // first principles - see docs/television-plan.md's Open risks.
-    private const double LoopGain = 0.1;
+    private const float LoopGain = 0.1f;
 
     // A completed burst window only counts as "burst was actually there"
     // if its measured amplitude clears this fraction of the black/white
@@ -46,7 +46,7 @@ public sealed class NtscColorBurstPll
     // to fall in the window, not a real reference burst. Chosen
     // empirically against smpte.ntsc's real burst amplitude (see
     // NtscColorBurstPllTests) - a free parameter, not derived from spec.
-    private const double DetectionThresholdFraction = 0.05;
+    private const float DetectionThresholdFraction = 0.05f;
 
     // Free-running count of samples this PLL has ever processed - (mod 4)
     // is which of the 4 fixed reference phases (0/90/180/270 degrees) the
@@ -62,13 +62,19 @@ public sealed class NtscColorBurstPll
     // lines, and even across lines with no detectable burst at all (see
     // Process below) - a real burst-locked oscillator keeps "ringing" at
     // its last-known phase between bursts rather than resetting.
-    private double _phaseOffsetRadians;
+    private float _phaseOffsetRadians;
 
     // This line's in-progress burst-window correlation, accumulated
     // sample-by-sample while inside the window and finalized (feeding the
     // loop filter) the moment the window closes - see Process.
-    private double _inPhaseAccumulator;
-    private double _quadratureAccumulator;
+    //
+    // float, not double: same reasoning as NtscYiqDecoder's own float
+    // switch - this loop is closed (every line's burst measurement corrects
+    // _phaseOffsetRadians afresh against the real signal, per the flywheel
+    // remarks below), so float's lower precision doesn't compound over
+    // time the way it would in an open-loop integrator.
+    private float _inPhaseAccumulator;
+    private float _quadratureAccumulator;
     private int _windowSampleCount;
 
     /// <summary>
@@ -76,7 +82,7 @@ public sealed class NtscColorBurstPll
     /// mostly useful for tests/diagnostics, since <see cref="Process"/> is
     /// what actually applies it to demodulation.
     /// </summary>
-    public double PhaseOffsetRadians => _phaseOffsetRadians;
+    public float PhaseOffsetRadians => _phaseOffsetRadians;
 
     /// <summary>
     /// Whether a real burst (not just active-video content that happened
@@ -109,7 +115,7 @@ public sealed class NtscColorBurstPll
     /// Mainly useful for diagnostics (e.g. TelevisionWindow's per-sample
     /// hover tooltip drawing this as a reference sine over the raw signal).
     /// </summary>
-    public double CurrentPhaseRadians { get; private set; }
+    public float CurrentPhaseRadians { get; private set; }
 
     /// <summary>
     /// Feeds one composite-video sample into the PLL. <paramref name="currentColumn"/>
@@ -121,9 +127,9 @@ public sealed class NtscColorBurstPll
     /// <paramref name="whiteLevel"/> is only used to scale the detection
     /// threshold to this signal's own black-to-white swing.
     /// </summary>
-    public void Process(byte sample, double currentColumn, double blackLevel, double whiteLevel)
+    public void Process(byte sample, float currentColumn, float blackLevel, float whiteLevel)
     {
-        var phase = Math.PI / 2.0 * (_sampleCounter % 4) + _phaseOffsetRadians;
+        var phase = MathF.PI / 2f * (_sampleCounter % 4) + _phaseOffsetRadians;
         _sampleCounter++;
         CurrentPhaseRadians = phase;
 
@@ -142,7 +148,7 @@ public sealed class NtscColorBurstPll
             // _inPhaseAccumulator and leaves _quadratureAccumulator at
             // zero; any nonzero quadrature accumulation *is* the phase
             // error this loop corrects.
-            (var sin, var cos) = Math.SinCos(phase);
+            (var sin, var cos) = MathF.SinCos(phase);
             _inPhaseAccumulator += acSample * cos;
             _quadratureAccumulator += acSample * sin;
             _windowSampleCount++;
@@ -153,7 +159,7 @@ public sealed class NtscColorBurstPll
         }
     }
 
-    private void FinishBurstWindow(double blackToWhiteSwing)
+    private void FinishBurstWindow(float blackToWhiteSwing)
     {
         // Standard quadrature-demodulation amplitude recovery: for a pure
         // sinusoid correlated against sine/cosine references over N
@@ -162,7 +168,7 @@ public sealed class NtscColorBurstPll
         // trig identity that makes I/Q demodulation work at all - see
         // NtscYiqDecoder in a later phase for the same math applied to
         // chroma).
-        var amplitude = 2.0 * Math.Sqrt(
+        var amplitude = 2f * MathF.Sqrt(
             _inPhaseAccumulator * _inPhaseAccumulator + _quadratureAccumulator * _quadratureAccumulator)
             / _windowSampleCount;
 
@@ -176,7 +182,7 @@ public sealed class NtscColorBurstPll
             // burst happened to be - LoopGain is then a tuning constant
             // for how fast the loop settles, not one that also has to
             // account for arbitrary signal amplitude.
-            var normalizedError = _quadratureAccumulator / (_windowSampleCount * amplitude / 2.0);
+            var normalizedError = _quadratureAccumulator / (_windowSampleCount * amplitude / 2f);
             _phaseOffsetRadians -= normalizedError * LoopGain;
         }
 

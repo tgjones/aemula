@@ -35,8 +35,8 @@ public struct Sample
     // (consecutive raster positions are consecutive Decode calls) rather
     // than TelevisionWindow needing its own separate capture buffer.
     public byte RawSample;
-    public double CarrierPhaseRadians;
-    public double Luma;
-    public double I;
-    public double Q;
+    public float CarrierPhaseRadians;
+    public float Luma;
+    public float I;
+    public float Q;
 }

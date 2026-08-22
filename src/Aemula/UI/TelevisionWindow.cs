@@ -276,8 +276,8 @@ public sealed class TelevisionWindow : DebuggerWindow
     // draws the texture, not SampleBuffer's actual data, which stays at
     // native sample/line resolution for Phase 7's overlays (and any other
     // consumer that needs raw positions).
-    private double VerticalStretchFactor(double activeLineCount) =>
-        (_television.ActiveVideoLengthSamples / activeLineCount) / (4.0 / 3.0);
+    private float VerticalStretchFactor(float activeLineCount) =>
+        (_television.ActiveVideoLengthSamples / activeLineCount) / (4f / 3f);
 
     // Fixed sidebar width (controls + status readout + legend), scaled by
     // font size rather than a raw pixel count so it stays proportional
@@ -319,14 +319,14 @@ public sealed class TelevisionWindow : DebuggerWindow
         // *whole* raster - sync, blanking, color burst, and vertical
         // blanking/VSYNC lines included.
         Vector2 uv0, uv1;
-        double displayedWidthSamples;
-        double displayedHeightSamples;
+        float displayedWidthSamples;
+        float displayedHeightSamples;
         if (_activeVideoOnly)
         {
             var activeStart = _television.ActiveVideoStartSamples;
             var activeEnd = activeStart + _television.ActiveVideoLengthSamples;
-            uv0 = new Vector2((float)(activeStart / _textureWidth), (float)verticalActiveStart / _textureHeight);
-            uv1 = new Vector2((float)(activeEnd / _textureWidth), (float)(verticalActiveStart + verticalActiveCount) / _textureHeight);
+            uv0 = new Vector2(activeStart / _textureWidth, (float)verticalActiveStart / _textureHeight);
+            uv1 = new Vector2(activeEnd / _textureWidth, (float)(verticalActiveStart + verticalActiveCount) / _textureHeight);
             displayedWidthSamples = _television.ActiveVideoLengthSamples;
             displayedHeightSamples = verticalActiveCount;
         }
@@ -340,7 +340,7 @@ public sealed class TelevisionWindow : DebuggerWindow
 
         var availableSize = ImGui.GetContentRegionAvail();
         var finalSize = CalculateSizeFittingAspectRatio(
-            new Vector2((float)displayedWidthSamples, (float)(displayedHeightSamples * VerticalStretchFactor(verticalActiveCount))),
+            new Vector2(displayedWidthSamples, displayedHeightSamples * VerticalStretchFactor(verticalActiveCount)),
             availableSize);
 
         ImGui.Image(_textureBinding, finalSize, uv0, uv1);
@@ -411,7 +411,7 @@ public sealed class TelevisionWindow : DebuggerWindow
             return (0, height);
         }
 
-        var activeThreshold = _television.ActiveVideoLengthSamples * 0.5;
+        var activeThreshold = _television.ActiveVideoLengthSamples * 0.5f;
 
         var bestStart = 0;
         var bestCount = 0;

@@ -78,19 +78,27 @@ public sealed class NtscYiqDecoder
         (SpecBurstToIAxisDegrees + PllLockBranchDegrees) * Math.PI / 180.0; // +123 degrees
 
     // Step 4's R/G/B coefficients (see Process), laid out as one lane per
-    // output channel (the unused 4th lane keeps these Vector256<double>-width
+    // output channel (the unused 4th lane keeps these Vector128<float>-width
     // for the FusedMultiplyAdd below - see Process for why 4 lanes are always
     // available regardless of host SIMD width).
-    private static readonly Vector256<double> RgbCoeffI = Vector256.Create(0.956, -0.272, -1.106, 0.0);
-    private static readonly Vector256<double> RgbCoeffQ = Vector256.Create(0.621, -0.647, 1.703, 0.0);
+    private static readonly Vector128<float> RgbCoeffI = Vector128.Create(0.956f, -0.272f, -1.106f, 0.0f);
+    private static readonly Vector128<float> RgbCoeffQ = Vector128.Create(0.621f, -0.647f, 1.703f, 0.0f);
 
     // The comb filter (see Process below) and the I/Q box-average both work
     // over a rolling one-subcarrier-cycle (4-sample) window, so both keep a
     // small ring buffer of recent values rather than reaching back into the
     // full sample stream.
+    //
+    // float, not double, throughout this class: every value here ultimately
+    // gets clamped down to a single output byte (0-255), so float's 24-bit
+    // mantissa is far more precision than the result can ever show, and
+    // nothing recursively accumulates error sample-to-sample (each sample's
+    // phase is recomputed fresh from phaseOffsetRadians, not integrated) -
+    // see the NtscYiqDecoder float-vs-double discussion in chat history for
+    // the full reasoning.
     private readonly byte[] _sampleHistory = new byte[5];
-    private readonly double[] _iProductHistory = new double[4];
-    private readonly double[] _qProductHistory = new double[4];
+    private readonly float[] _iProductHistory = new float[4];
+    private readonly float[] _qProductHistory = new float[4];
 
     private ulong _sampleCounter;
 
@@ -99,19 +107,19 @@ public sealed class NtscYiqDecoder
     /// and white = 255 - <see cref="Television.Decode"/>'s own byte scale,
     /// not the raw sample scale (see Process).
     /// </summary>
-    public double Luma { get; private set; }
+    public float Luma { get; private set; }
 
     /// <summary>
     /// The most recently decoded in-phase chroma component, on the same
     /// black-to-white scale as <see cref="Luma"/> (0 = no color).
     /// </summary>
-    public double I { get; private set; }
+    public float I { get; private set; }
 
     /// <summary>
     /// The most recently decoded quadrature chroma component, on the same
     /// black-to-white scale as <see cref="Luma"/> (0 = no color).
     /// </summary>
-    public double Q { get; private set; }
+    public float Q { get; private set; }
 
     /// <summary>
     /// The most recently decoded pixel, as an opaque RGB byte triple.
@@ -129,7 +137,7 @@ public sealed class NtscYiqDecoder
     /// <c>Television.IsActiveVideo</c> is true (sync/blanking samples decode
     /// to meaningless colors, harmlessly, since nothing displays them).
     /// </summary>
-    public void Process(byte sample, double phaseOffsetRadians, double blackLevel, double whiteLevel)
+    public void Process(byte sample, float phaseOffsetRadians, float blackLevel, float whiteLevel)
     {
         // Step 1: luma via a comb filter. Every sample is exactly 90 degrees
         // of subcarrier phase from its neighbors (the 4x-fsc assumption -
@@ -155,7 +163,7 @@ public sealed class NtscYiqDecoder
         _sampleHistory[1] = _sampleHistory[0];
         _sampleHistory[0] = sample;
 
-        var rawLuma = (_sampleHistory[0] + 2.0 * _sampleHistory[2] + _sampleHistory[4]) / 4.0;
+        var rawLuma = (_sampleHistory[0] + 2f * _sampleHistory[2] + _sampleHistory[4]) / 4f;
 
         // Step 2: chroma is simply whatever's left after luma is removed.
         var rawChroma = sample - rawLuma;
@@ -165,7 +173,7 @@ public sealed class NtscYiqDecoder
         // scale the YIQ->RGB matrix below assumes - the same rescale factor
         // applies to chroma, since chroma's amplitude lives in the same
         // volts/byte units as luma does.
-        var scale = 255.0 / (whiteLevel - blackLevel);
+        var scale = 255f / (whiteLevel - blackLevel);
         Luma = Math.Clamp((rawLuma - blackLevel) * scale, 0, 255);
         var chroma = rawChroma * scale;
 
@@ -191,10 +199,10 @@ public sealed class NtscYiqDecoder
         // since Process runs once per composite-video sample, i.e. millions
         // of times per second of emulated time.
         var slot = (int)(_sampleCounter % 4);
-        var baseAngle = phaseOffsetRadians + BurstToIAxisRotationRadians;
+        var baseAngle = phaseOffsetRadians + (float)BurstToIAxisRotationRadians;
         _sampleCounter++;
 
-        var (baseSin, baseCos) = Math.SinCos(baseAngle);
+        var (baseSin, baseCos) = MathF.SinCos(baseAngle);
         var (cos, sin) = slot switch
         {
             0 => (baseCos, baseSin),
@@ -206,18 +214,17 @@ public sealed class NtscYiqDecoder
         _iProductHistory[slot] = chroma * cos;
         _qProductHistory[slot] = chroma * sin;
 
-        // Vector256<double> is always exactly 4 lanes on every platform (unlike
-        // System.Numerics.Vector<double>, whose width depends on the CPU - 2 on
-        // this machine's ARM64/NEON, not 4) - a natural fit for summing these
-        // fixed 4-element histories. Vector256.Create/Sum are cross-platform
-        // helpers that JIT-compile to real AVX instructions where available and
-        // fall back to equivalent scalar code otherwise, so this needs no
-        // platform guard.
-        var iSum = Vector256.Sum(Vector256.Create(_iProductHistory));
-        var qSum = Vector256.Sum(Vector256.Create(_qProductHistory));
+        // Vector128<float> is always exactly 4 lanes on every platform (unlike
+        // System.Numerics.Vector<float>, whose width depends on the CPU) - a
+        // natural fit for summing these fixed 4-element histories.
+        // Vector128.Create/Sum are cross-platform helpers that JIT-compile to
+        // real SSE/NEON instructions where available and fall back to
+        // equivalent scalar code otherwise, so this needs no platform guard.
+        var iSum = Vector128.Sum(Vector128.Create(_iProductHistory));
+        var qSum = Vector128.Sum(Vector128.Create(_qProductHistory));
 
-        I = 2.0 * iSum / 4.0;
-        Q = 2.0 * qSum / 4.0;
+        I = 2f * iSum / 4f;
+        Q = 2f * qSum / 4f;
 
         // Step 4: YIQ -> RGB. Real hardware does this with three resistor-
         // ratio-weighted analog summing amplifiers (the same "weighted sum"
@@ -233,12 +240,12 @@ public sealed class NtscYiqDecoder
         // R/G/B share the same Luma + coeffI*I + coeffQ*Q shape, one row of
         // the matrix per channel - a matrix-vector multiply, not three
         // unrelated scalar expressions, so it's done as two
-        // Vector256.FusedMultiplyAdd calls (one lane per channel, 4th lane
+        // Vector128.FusedMultiplyAdd calls (one lane per channel, 4th lane
         // unused) instead of 6 scalar multiplies/adds, with the 0-255 clamp
         // similarly done once across all three lanes.
-        var rgb = Vector256.FusedMultiplyAdd(RgbCoeffQ, Vector256.Create(Q),
-            Vector256.FusedMultiplyAdd(RgbCoeffI, Vector256.Create(I), Vector256.Create(Luma)));
-        var clamped = Vector256.Clamp(rgb, Vector256<double>.Zero, Vector256.Create(255.0));
+        var rgb = Vector128.FusedMultiplyAdd(RgbCoeffQ, Vector128.Create(Q),
+            Vector128.FusedMultiplyAdd(RgbCoeffI, Vector128.Create(I), Vector128.Create(Luma)));
+        var clamped = Vector128.Clamp(rgb, Vector128<float>.Zero, Vector128.Create(255f));
 
         Rgb = new RgbaByte((byte)clamped[0], (byte)clamped[1], (byte)clamped[2], 255);
     }

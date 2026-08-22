@@ -31,8 +31,8 @@ public class NtscRasterOscillatorsTests
         // lines/field (see docs/television-plan.md's "Existing state") -
         // measured here, not asserted exactly, since these are running
         // estimates over a real (if synthetic) signal, not configuration.
-        await Assert.That(oscillators.DetectedSamplesPerLine).IsBetween(905.0, 915.0);
-        await Assert.That(oscillators.DetectedLinesPerFrame).IsBetween(260.0, 265.0);
+        await Assert.That(oscillators.DetectedSamplesPerLine).IsBetween(905.0f, 915.0f);
+        await Assert.That(oscillators.DetectedLinesPerFrame).IsBetween(260.0f, 265.0f);
     }
 
     [Test]
@@ -63,8 +63,8 @@ public class NtscRasterOscillatorsTests
 
         // Apple II's own timing (see AppleIISystem.CompositeVideo.cs) is
         // 912 samples/line, 262 lines/field.
-        await Assert.That(oscillators.DetectedSamplesPerLine).IsBetween(907.0, 917.0);
-        await Assert.That(oscillators.DetectedLinesPerFrame).IsBetween(260.0, 264.0);
+        await Assert.That(oscillators.DetectedSamplesPerLine).IsBetween(907.0f, 917.0f);
+        await Assert.That(oscillators.DetectedLinesPerFrame).IsBetween(260.0f, 264.0f);
     }
 
     [Test]
@@ -97,6 +97,6 @@ public class NtscRasterOscillatorsTests
 
         // Should have stayed close to the nominal default throughout,
         // rather than drifting toward the bogus 300-sample rate.
-        await Assert.That(oscillators.DetectedSamplesPerLine).IsBetween(850.0, 970.0);
+        await Assert.That(oscillators.DetectedSamplesPerLine).IsBetween(850.0f, 970.0f);
     }
 }

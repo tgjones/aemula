@@ -26,7 +26,7 @@ public class NtscYiqDecoderTests
     // is warmed up) can be checked directly - the same "generate against the
     // decoder's own reference" approach NtscColorBurstPllTests already uses
     // for its synthetic burst.
-    private static byte BuildSample(int sampleIndex, double rawLuma, double amplitude, double extraAngle)
+    private static byte BuildSample(int sampleIndex, float rawLuma, float amplitude, float extraAngle)
     {
         var slot = sampleIndex % 4;
         var phase = Math.PI / 2.0 * slot + NtscYiqDecoder.BurstToIAxisRotationRadians + extraAngle;
@@ -44,9 +44,9 @@ public class NtscYiqDecoderTests
 
             if (i >= WarmupSamples)
             {
-                await Assert.That(decoder.Luma).IsBetween(149.99, 150.01);
-                await Assert.That(decoder.I).IsBetween(-0.01, 0.01);
-                await Assert.That(decoder.Q).IsBetween(-0.01, 0.01);
+                await Assert.That(decoder.Luma).IsBetween(149.99f, 150.01f);
+                await Assert.That(decoder.I).IsBetween(-0.01f, 0.01f);
+                await Assert.That(decoder.Q).IsBetween(-0.01f, 0.01f);
             }
         }
     }
@@ -58,8 +58,8 @@ public class NtscYiqDecoderTests
         // the decoder's own internal reference phase (no additional
         // rotation) - per the sin(extraAngle)/cos(extraAngle) identity in
         // BuildSample's remarks, that predicts I = 0, Q = amplitude.
-        const double rawLuma = 120;
-        const double amplitude = 30;
+        const float rawLuma = 120;
+        const float amplitude = 30;
 
         var decoder = new NtscYiqDecoder();
 
@@ -70,9 +70,9 @@ public class NtscYiqDecoderTests
 
             if (i >= WarmupSamples)
             {
-                await Assert.That(decoder.Luma).IsBetween(rawLuma - 0.5, rawLuma + 0.5);
-                await Assert.That(decoder.I).IsBetween(-0.5, 0.5);
-                await Assert.That(decoder.Q).IsBetween(amplitude - 0.5, amplitude + 0.5);
+                await Assert.That(decoder.Luma).IsBetween(rawLuma - 0.5f, rawLuma + 0.5f);
+                await Assert.That(decoder.I).IsBetween(-0.5f, 0.5f);
+                await Assert.That(decoder.Q).IsBetween(amplitude - 0.5f, amplitude + 0.5f);
             }
         }
     }
@@ -81,20 +81,20 @@ public class NtscYiqDecoderTests
     public async Task DemodulatesChromaAlignedWithIAxis()
     {
         // extraAngle = pi/2 predicts I = amplitude, Q = 0 - see BuildSample.
-        const double rawLuma = 120;
-        const double amplitude = 30;
+        const float rawLuma = 120;
+        const float amplitude = 30;
 
         var decoder = new NtscYiqDecoder();
 
         for (var i = 0; i < 40; i++)
         {
-            var sample = BuildSample(i, rawLuma, amplitude, extraAngle: Math.PI / 2.0);
+            var sample = BuildSample(i, rawLuma, amplitude, extraAngle: MathF.PI / 2f);
             decoder.Process(sample, phaseOffsetRadians: 0, blackLevel: 0, whiteLevel: 255);
 
             if (i >= WarmupSamples)
             {
-                await Assert.That(decoder.I).IsBetween(amplitude - 0.5, amplitude + 0.5);
-                await Assert.That(decoder.Q).IsBetween(-0.5, 0.5);
+                await Assert.That(decoder.I).IsBetween(amplitude - 0.5f, amplitude + 0.5f);
+                await Assert.That(decoder.Q).IsBetween(-0.5f, 0.5f);
             }
         }
     }
@@ -104,12 +104,12 @@ public class NtscYiqDecoderTests
     {
         // A non-axis-aligned angle exercises the general sin/cos split
         // rather than either of the two convenient special cases above.
-        const double rawLuma = 100;
-        const double amplitude = 40;
-        const double extraAngle = 0.9; // arbitrary, deliberately not a multiple of pi/2
+        const float rawLuma = 100;
+        const float amplitude = 40;
+        const float extraAngle = 0.9f; // arbitrary, deliberately not a multiple of pi/2
 
-        var expectedI = amplitude * Math.Sin(extraAngle);
-        var expectedQ = amplitude * Math.Cos(extraAngle);
+        var expectedI = amplitude * MathF.Sin(extraAngle);
+        var expectedQ = amplitude * MathF.Cos(extraAngle);
 
         var decoder = new NtscYiqDecoder();
 
@@ -120,8 +120,8 @@ public class NtscYiqDecoderTests
 
             if (i >= WarmupSamples)
             {
-                await Assert.That(decoder.I).IsBetween(expectedI - 0.5, expectedI + 0.5);
-                await Assert.That(decoder.Q).IsBetween(expectedQ - 0.5, expectedQ + 0.5);
+                await Assert.That(decoder.I).IsBetween(expectedI - 0.5f, expectedI + 0.5f);
+                await Assert.That(decoder.Q).IsBetween(expectedQ - 0.5f, expectedQ + 0.5f);
             }
         }
     }
@@ -151,14 +151,14 @@ public class NtscYiqDecoderTests
         // gives I = amplitude, Q = 0 once warmed up, letting the R/G/B
         // outputs be checked directly against the plan doc's cited
         // coefficients: R = Y + 0.956I, G = Y - 0.272I, B = Y - 1.106I.
-        const double rawLuma = 128;
-        const double amplitude = 40;
+        const float rawLuma = 128;
+        const float amplitude = 40;
 
         var decoder = new NtscYiqDecoder();
 
         for (var i = 0; i < 40; i++)
         {
-            var sample = BuildSample(i, rawLuma, amplitude, extraAngle: Math.PI / 2.0);
+            var sample = BuildSample(i, rawLuma, amplitude, extraAngle: MathF.PI / 2f);
             decoder.Process(sample, phaseOffsetRadians: 0, blackLevel: 0, whiteLevel: 255);
         }
 
@@ -178,8 +178,8 @@ public class NtscYiqDecoderTests
         // normal case for a real signal - see NtscSyncSeparator) should
         // rescale Luma up to the full 0-255 output range, not leave it
         // sitting wherever it fell on the raw byte scale.
-        const double blackLevel = 64;
-        const double whiteLevel = 191; // narrower swing than 0-255
+        const float blackLevel = 64;
+        const float whiteLevel = 191; // narrower swing than 0-255
 
         var decoder = new NtscYiqDecoder();
 
@@ -190,7 +190,7 @@ public class NtscYiqDecoderTests
             decoder.Process(191, phaseOffsetRadians: 0, blackLevel, whiteLevel);
         }
 
-        await Assert.That(decoder.Luma).IsBetween(254.0, 255.0);
+        await Assert.That(decoder.Luma).IsBetween(254.0f, 255.0f);
     }
 
     // This isn't a test of NtscYiqDecoder.Process at all - it's a check on
