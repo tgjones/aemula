@@ -1,4 +1,5 @@
 <Solution>
+  <Project Path="Aemula.Benchmarks/Aemula.Benchmarks.csproj" />
   <Project Path="Aemula.CodeGen/Aemula.CodeGen.csproj" />
   <Project Path="Aemula.Tests/Aemula.Tests.csproj" />
   <Project Path="Aemula.UI/Aemula.UI.csproj" />

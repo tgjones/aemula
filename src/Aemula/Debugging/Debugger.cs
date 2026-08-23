@@ -21,6 +21,14 @@ public abstract class Debugger
 
     public bool Stopped;
 
+    /// <summary>
+    /// Raised once per tick actually executed (free-run or single-step alike,
+    /// since both funnel through <see cref="RunForDuration"/>). Used by
+    /// <see cref="UI.LogicAnalyzer.LogicAnalyzerWindow"/> to sample channels -
+    /// see docs/oscilloscope-plan.md.
+    /// </summary>
+    public event Action? Ticked;
+
     public Debugger(EmulatedSystem system, in DebuggerMemoryCallbacks memoryCallbacks)
     {
         System = system;
@@ -49,6 +57,8 @@ public abstract class Debugger
             var previousPC = LastPC;
 
             TickSystem();
+
+            Ticked?.Invoke();
 
             if (ActiveStepModeIndex > -1)
             {

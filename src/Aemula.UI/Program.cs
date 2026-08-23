@@ -4,12 +4,14 @@ using System.Diagnostics;
 using System.IO;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using Aemula.Emulation.Systems.AppleII;
 using Aemula.Emulation.Systems.Atari2600;
 using Aemula.Emulation.Systems.Chip8;
 using Aemula.Emulation.Systems.Nes;
 using Aemula.Emulation.Systems.SpaceInvaders;
 using Hexa.NET.ImGui;
 using Hexa.NET.ImGui.Backends.SDL3;
+using Hexa.NET.ImPlot;
 using Hexa.NET.SDL3;
 
 namespace Aemula.UI;
@@ -18,6 +20,7 @@ public static class Program
 {
     private static readonly Dictionary<string, Func<EmulatedSystem>> Systems = new()
     {
+        { "appleii", () => new AppleIISystem() },
         { "atari2600", () => new Atari2600System() },
         { "chip8", () => new Chip8System() },
         { "nes", () => new NesSystem() },
@@ -72,11 +75,20 @@ public static class Program
 
         var ctx = ImGui.CreateContext();
         ImGui.SetCurrentContext(ctx);
+
+        var imPlotCtx = ImPlot.CreateContext();
+        ImPlot.SetCurrentContext(imPlotCtx);
+        ImPlot.SetImGuiContext(ctx);
+
         ImGuiIOPtr io = ImGui.GetIO();
         io.ConfigFlags |=
             ImGuiConfigFlags.NavEnableKeyboard
             | ImGuiConfigFlags.NavEnableGamepad
             | ImGuiConfigFlags.DockingEnable;
+        // Without this, WantCaptureKeyboard is true any time a window has nav focus (i.e. almost
+        // always), since ImGui itself wants keyboard for nav. That leaves no way for key events to
+        // reach the emulated system.
+        io.ConfigNavCaptureKeyboard = false;
 
         ImGui.StyleColorsDark();
         var style = ImGui.GetStyle();
@@ -119,6 +131,25 @@ public static class Program
             }
         }
 
+        // Perf counters shown in the main menu bar, so it's easy to notice when heavy
+        // debugger windows (e.g. TelevisionWindow, LogicAnalyzerWindow) push us below
+        // real-time. Cycle count comes from Debugger.Ticked so it reflects cycles
+        // actually executed, not the (clamped) cycle count RunForDuration was asked for.
+        var cyclesThisPerfWindow = 0UL;
+        if (debugger != null)
+        {
+            debugger.Ticked += () => cyclesThisPerfWindow++;
+        }
+
+        var perfWindowTime = TimeSpan.Zero;
+        var perfWindowUpdateTime = TimeSpan.Zero;
+        var perfWindowFrames = 0;
+
+        var perfFps = 0.0;
+        var perfMsPerFrame = 0.0;
+        var perfActualMHz = 0.0;
+        var perfNominalMHz = system.CyclesPerSecond / 1_000_000.0;
+
         unsafe
         {
             // We never free these, but that's okay, they're alive as long as this application is.
@@ -135,7 +166,8 @@ public static class Program
             ImGuiP.AddSettingsHandler(ref settingsHandler);
         }
 
-        system.LoadProgram(args[1]);
+        var programFilePath = args.Length > 1 ? args[1] : null;
+        system.LoadProgram(programFilePath ?? "");
 
         Vector4 clearColor = new(0.45f, 0.55f, 0.60f, 1.00f);
 
@@ -150,7 +182,8 @@ public static class Program
         {
             var elapsed = stopwatch.Elapsed;
 
-            var deltaTimeSpan = elapsed - lastTime;
+            var realDeltaTimeSpan = elapsed - lastTime;
+            var deltaTimeSpan = realDeltaTimeSpan;
             lastTime = elapsed;
 
             // TODO: Not right.
@@ -205,7 +238,7 @@ public static class Program
             debugger?.RunForDuration(deltaTimeSpan);
 
             DrawWindow(debuggerWindows, ref firstRun);
-            DrawMainMenu(debuggerWindows);
+            DrawMainMenu(debuggerWindows, perfFps, perfMsPerFrame, perfActualMHz, perfNominalMHz);
 
             foreach (var debuggerWindow in debuggerWindows)
             {
@@ -215,6 +248,26 @@ public static class Program
             ImGui.Render();
             var drawData = ImGui.GetDrawData();
             bool isMinimized = drawData.DisplaySize.X <= 0 || drawData.DisplaySize.Y <= 0;
+
+            // Everything up to here is the actual per-frame update/draw-building work.
+            // What follows waits for the next swapchain image (i.e. the frame flip), which
+            // is display-imposed idle time rather than work, so it's excluded from ms/frame.
+            var updateDuration = stopwatch.Elapsed - elapsed;
+
+            perfWindowTime += realDeltaTimeSpan;
+            perfWindowUpdateTime += updateDuration;
+            perfWindowFrames++;
+            if (perfWindowTime >= TimeSpan.FromSeconds(1))
+            {
+                perfFps = perfWindowFrames / perfWindowTime.TotalSeconds;
+                perfMsPerFrame = perfWindowUpdateTime.TotalMilliseconds / perfWindowFrames;
+                perfActualMHz = cyclesThisPerfWindow / perfWindowTime.TotalSeconds / 1_000_000.0;
+
+                perfWindowTime = TimeSpan.Zero;
+                perfWindowUpdateTime = TimeSpan.Zero;
+                perfWindowFrames = 0;
+                cyclesThisPerfWindow = 0;
+            }
 
             unsafe
             {
@@ -271,6 +324,7 @@ public static class Program
         SDL.WaitForGPUIdle(gpuDevice);
         ImGuiImplSDL3.Shutdown();
         ImGuiImplSDL3.SDLGPU3Shutdown();
+        ImPlot.DestroyContext();
         ImGui.DestroyContext();
 
         SDL.ReleaseWindowFromGPUDevice(gpuDevice, window);
@@ -319,7 +373,7 @@ public static class Program
         }
     }
 
-    private static unsafe void DrawMainMenu(List<DebuggerWindow> debuggerWindows)
+    private static unsafe void DrawMainMenu(List<DebuggerWindow> debuggerWindows, double fps, double msPerFrame, double actualMHz, double nominalMHz)
     {
         if (ImGui.BeginMainMenuBar())
         {
@@ -336,6 +390,26 @@ public static class Program
                 }
 
                 ImGui.EndMenu();
+            }
+
+            var perfText = $"{fps:F0} FPS  {msPerFrame:F2} ms  {actualMHz:F2} / {nominalMHz:F2} MHz";
+            var perfTextSize = ImGui.CalcTextSize(perfText);
+            var perfTextX = ImGui.GetWindowWidth() - perfTextSize.X - ImGui.GetStyle().ItemSpacing.X;
+            if (perfTextX > ImGui.GetCursorPosX())
+            {
+                ImGui.SetCursorPosX(perfTextX);
+            }
+
+            // Falling more than 5% behind the nominal clock is a sign that debugger
+            // windows (e.g. TelevisionWindow, LogicAnalyzerWindow) are too expensive
+            // to draw every frame and we're no longer keeping up with real-time.
+            if (actualMHz < nominalMHz * 0.95)
+            {
+                ImGui.TextColored(new Vector4(1.0f, 0.4f, 0.4f, 1.0f), perfText);
+            }
+            else
+            {
+                ImGui.TextUnformatted(perfText);
             }
 
             ImGui.EndMainMenuBar();
@@ -364,11 +438,12 @@ public static class Program
         var debuggerWindow = (DebuggerWindow)GCHandle.FromIntPtr((nint)entry).Target!;
 
         var lineString = Marshal.PtrToStringAnsi((nint)line);
-
-        if (lineString == "IsOpen=1")
+        if (lineString == null)
         {
-            debuggerWindow.IsOpen = true;
+            return;
         }
+
+        debuggerWindow.ApplyPersistedSettingsLine(lineString);
     }
 
     private static unsafe void ImGuiSettingsWriteAll(ImGuiContext* context, ImGuiSettingsHandler* handler, ImGuiTextBuffer* buffer)
@@ -386,9 +461,10 @@ public static class Program
             buffer->append("]["u8);
             buffer->append(debuggerWindow.Name);
             buffer->append("]\n"u8);
-            if (debuggerWindow.IsOpen)
+            foreach (var line in debuggerWindow.GetPersistedSettingsLines())
             {
-                buffer->append("IsOpen=1\n"u8);
+                buffer->append(line);
+                buffer->append("\n"u8);
             }
         }
     }

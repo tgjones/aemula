@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using Aemula.Emulation.Chips.Mos6502.UI;
 using Aemula.UI;
+using Aemula.UI.LogicAnalyzer;
 
 namespace Aemula.Emulation.Chips.Mos6502;
 
@@ -290,6 +291,26 @@ public partial class Mos6502Chip
     internal void CreateDebuggerWindows(List<DebuggerWindow> result)
     {
         result.Add(new CpuStateWindow(this));
+    }
+
+    /// <summary>
+    /// Owned here (rather than by each system that embeds a 6502) so every
+    /// system gets the same channel list for free - see
+    /// docs/oscilloscope-plan.md.
+    /// </summary>
+    internal ChannelGroup CreateChannelGroup()
+    {
+        return new ChannelGroup("MOS6502",
+        [
+            Channel.Bus("Address", 16, () => Address),
+            Channel.Bus("Data", 8, () => Data),
+            Channel.Digital("R/W", () => RW),
+            Channel.Digital("SYNC", () => Sync),
+            Channel.Digital("RDY", () => Rdy),
+            Channel.Digital("IRQ", () => Irq),
+            Channel.Digital("NMI", () => Nmi),
+            Channel.Digital("PHI2", () => Phi2),
+        ]);
     }
 }
 

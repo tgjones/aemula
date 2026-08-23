@@ -6,6 +6,7 @@
     <PackageVersion Include="FlawlessChips" Version="0.1.2" />
     <PackageVersion Include="Hexa.NET.ImGui" Version="2.2.9" />
     <PackageVersion Include="Hexa.NET.ImGui.Backends.SDL3" Version="1.0.18" />
+    <PackageVersion Include="Hexa.NET.ImPlot" Version="2.2.9" />
     <PackageVersion Include="Hexa.NET.SDL3" Version="1.2.17" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers" Version="3.3.4" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.7.0" />

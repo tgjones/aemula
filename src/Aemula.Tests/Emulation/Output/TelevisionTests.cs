@@ -1,166 +1,140 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
 using System.Threading.Tasks;
 
 namespace Aemula.Tests.Emulation.Output;
 
-internal class TelevisionTests
+// This test namespace nests under the root Aemula namespace, where the
+// older, unrelated Aemula.Television already lives (see the plan doc's
+// "Naming collision, explicitly out of scope" note). A using-alias placed
+// above the namespace declaration is compilation-unit-scoped, which loses
+// to that ancestor-namespace member during plain-name lookup - placing it
+// here, inside the namespace body, is what actually gives it priority.
+using Television = Aemula.Emulation.Output.Television;
+using Aemula.Emulation.Output.Ntsc;
+
+// Phase 0 of docs/television-plan.md. This file replaces an earlier
+// [Skip]ped prototype (System.Drawing.Bitmap-based, didn't run on CI) - see
+// the plan doc's "Testing" section for why it wasn't extended instead.
+public class TelevisionTests
 {
-    [Test, Skip("Doesn't work on CI because it uses a non-Linux-compatible library")]
-    public async Task CanDecodeNtsc()
+    [Test]
+    public async Task SmpteAssetNormalizesToFullByteRange()
     {
-        var ntscFilePath = Path.GetFullPath(Path.Combine("Emulation", "Output", "Assets", "smpte.ntsc"));
-        var ntscBytes = File.ReadAllBytes(ntscFilePath);
+        var normalized = SmpteAsset.LoadNormalized();
 
-        // NTSC signal format:
-        //
-        // Scanline:          63.5 µs (15.734 kHz)
-        //   Blanking:        10.9 µs
-        //     Front Porch:    1.5 µs at   0 IRE
-        //     Sync Tip:       4.7 µs at -40 IRE, 0V
-        //     Back Porch:     4.7 µs at   0 IRE (or 6.2)
-        //       Breezeway:    0.6 µs at   0 IRE
-        //       Color Burst:  2.5 µs centred at 0 IRE, with 40 IRE peak-to-peak amplitude, 9 +- 1 cycles
-        //   Active Video:    52.6 µs between 7.5 +- 2.5 and 100 IRE
-        //
-        // Vertical Blanking: equivalent to 9 lines in NTSC, 7.5 in PAL
-        //   Equalizing Pulses: 31.8 µs
-        //   Vertical Sync
-        //   Equalizing Pulses
-        //   Horizontal Pulses
-        //
-        // Vertical Serrations?
-        // First serration pulse triggers vertical sync.
+        // 955,500 bytes at 910 samples/line (63.5µs at exactly 4x the NTSC
+        // color subcarrier) is exactly 1050 lines, i.e. 525 lines x 2 fields
+        // - see the plan doc's "Existing state" section.
+        await Assert.That(normalized.Length).IsEqualTo(955_500);
 
-        // If VSYNC pulse occurs:
-        // - at the beginning of the scanline, it marks an odd field.
-        // - at the second half of the scanline, it marks an even field.
-        //
-        // IRE:
-        //   -40 IRE = -286mV
-        //     0 IRE =    0mV
-        //   100 IRE = +714mV
-        //
-        // Use a low-pass filter to separate the vertical sync.
+        // The raw asset's actual range is [4, 199] (confirmed by inspection,
+        // not assumed) - rescaled by *255/200 with integer truncation, that
+        // becomes [5, 253]. Asserting the exact rescaled extremes (rather
+        // than just "some values changed") catches an off-by-one in the
+        // rescale formula, not just its general direction.
+        var min = normalized[0];
+        var max = normalized[0];
 
-        // If vsync is not detected, the vertical oscillator should free-run at a slightly lower frequency than ~59.94 Hz.
-
-        const float ntscColorCarrierFrequency = 3_579_545f;
-        const float ntscSamplesPerSecond = ntscColorCarrierFrequency * 4;
-        const float ntscSamplesPerMicrosecond = ntscSamplesPerSecond / 1_000_000f;
-
-        const int syncLevel = 4; // Sync level should be 0, but we allow some leeway.
-        const int blankLevel = 40 / 140 * 200;
-
-        // Implement vertical and horizontal oscillator, which will free-run if no sync is detected.
-
-        var syncSamples = 0;
-#pragma warning disable CS0219 // Variable is assigned but its value is never used
-#pragma warning disable IDE0059 // Unnecessary assignment of a value
-        var foundHSync = false;
-        var foundVSync = false;
-#pragma warning restore IDE0059 // Unnecessary assignment of a value
-#pragma warning restore CS0219 // Variable is assigned but its value is never used
-
-        var samples = new List<double>();
-
-        var yPos = 0;
-        var xPos = 0;
-
-        var bitmap = new System.Drawing.Bitmap(2000, 2000);
-
-        for (var i = 0; i < ntscBytes.Length; i++)
+        foreach (var sample in normalized)
         {
-            var b = ntscBytes[i];
-
-            await Assert.That(b).IsLessThanOrEqualTo((byte)200);
-
-            samples.Add(b / 200.0f);
-
-            var isBelowSyncLevel = false;
-
-            if (b <= syncLevel)
-            {
-                syncSamples++;
-                isBelowSyncLevel = true;
-            }
-
-            var isBlanked = b < blankLevel;
-
-            // HSYNC is 4.7 microseconds long, +- 0.2 microseconds.
-            const float hSyncNominalDurationInMicroseconds = 4.7f;
-            const float hSyncToleranceInMicroseconds = 0.2f;
-            const float hSyncMinimumDurationInMicroseconds = hSyncNominalDurationInMicroseconds - hSyncToleranceInMicroseconds;
-            const int hSyncDuration = (int)(hSyncMinimumDurationInMicroseconds * ntscSamplesPerMicrosecond);
-            if (!isBelowSyncLevel && syncSamples >= hSyncDuration)
-            {
-                //if (foundHSyncAtLeastOnce)
-                //{
-                //    break;
-                //}
-#pragma warning disable IDE0059 // Unnecessary assignment of a value
-                foundHSync = true;
-#pragma warning restore IDE0059 // Unnecessary assignment of a value
-                xPos = 0;
-                yPos++;
-            }
-
-            // VSYNC
-            const int vSyncDuration = 380; // TODO
-            if (!isBelowSyncLevel && syncSamples >= vSyncDuration)
-            {
-#pragma warning disable IDE0059 // Unnecessary assignment of a value
-                foundVSync = true;
-#pragma warning restore IDE0059 // Unnecessary assignment of a value
-                yPos = 0;
-            }
-
-            if (!isBelowSyncLevel)
-            {
-                syncSamples = 0;
-            }
-
-            if (!isBlanked)
-            {
-                // Active video.
-                var y = (b - blankLevel) * 2; // Normalize to 0 IRE.
-                y = Math.Clamp(y, 0, 255);
-
-                var actualX = Math.Clamp(xPos, 0, bitmap.Width - 1);
-                bitmap.SetPixel(actualX, yPos, System.Drawing.Color.FromArgb(255, y, y, y));
-            }
-
-            // TODO: If it's been a certain amount of time since the last horizontal sync, we should assume the horizontal sync is starting.
-            // TODO: If it's been a certain amount of time since the last vertical sync, we should assume the vertical sync is starting.
-
-            xPos++;
+            if (sample < min) min = sample;
+            if (sample > max) max = sample;
         }
 
-        bitmap.Save("ntsc.png");
-
-        //var myPlot = new ScottPlot.Plot(4000, 600);
-        //myPlot.AddSignal(samples.ToArray());
-        //myPlot.SaveFig("signal.png");
+        await Assert.That(min).IsEqualTo((byte)5);
+        await Assert.That(max).IsEqualTo((byte)253);
     }
 
-    [Test, Skip("Not working yet")]
-    public void CanDecodePal()
+    // The "Done when" check for Phase 4: smpte.ntsc encodes the classic
+    // SMPTE 75% color-bar test pattern - a top strip of 7 equal-width solid
+    // vertical bars, in a fixed, well-known order: white, yellow, cyan,
+    // green, magenta, red, blue (left to right; see the plan doc's Testing
+    // section). This test decodes the whole asset through the real
+    // Television front door - sync separation, raster oscillators, burst
+    // PLL, and YIQ decode, exactly as a real caller would - then checks that
+    // the seven bars actually come out in that hue order and with the
+    // correct relative brightness (white brightest, blue darkest, matching
+    // the standard 75%-bars luma progression), with generous tolerances -
+    // per the plan doc, this project's accuracy bar is "recognizably
+    // correct", not broadcast-accurate colorimetry.
+    [Test]
+    public async Task DecodesSmpteColorBarsInExpectedHueAndLumaOrder()
     {
-        var wfmFilePath = Path.GetFullPath(Path.Combine("Emulation", "Output", "Assets", "nes.wmf"));
-#pragma warning disable IDE0059 // Unnecessary assignment of a value
-        var wmfFile = WfmFile.FromFile(wfmFilePath);
-#pragma warning restore IDE0059 // Unnecessary assignment of a value
-    }
-}
+        var samples = SmpteAsset.LoadNormalized();
+        var television = new Television();
 
-internal class WfmFile
-{
-    public static WfmFile FromFile(string filePath)
-    {
-        using var fileStream = File.OpenRead(filePath);
-        using var binaryReader = new BinaryReader(fileStream);
+        foreach (var sample in samples)
+        {
+            television.Decode(sample);
+        }
 
-        return new WfmFile();
+        var buffer = television.SampleBuffer;
+
+        // Any row comfortably within the top two-thirds of the frame shows
+        // the clean 7-bar strip for this asset (confirmed by inspection);
+        // the bottom third carries a different sub-pattern (-I/white/+Q
+        // strip, PLUGE) the plan doc doesn't ask this test to check.
+        var row = (int)(buffer.Height / 6);
+
+        // Each of the 7 bars is an equal fraction of the active-video
+        // width, offset by where active video actually starts within the
+        // line - Television.Decode writes every sample at its true raster
+        // column (see docs/television-plan.md's Phase 7's remarks on
+        // Television.Decode), so column 0 in the buffer is the start of the
+        // line (sync/blanking), not the start of the picture. Sampling at
+        // the middle of each bar keeps well clear of the transition columns
+        // between bars.
+        var barWidth = NtscTiming.ActiveVideoLengthSamples / 7.0;
+
+        RgbaByte SampleBar(int barIndex)
+        {
+            var column = (int)(NtscTiming.ActiveVideoStartSamples + (barIndex + 0.5) * barWidth);
+            return buffer.Data[row * buffer.Width + column].Color;
+        }
+
+        var white = SampleBar(0);
+        var yellow = SampleBar(1);
+        var cyan = SampleBar(2);
+        var green = SampleBar(3);
+        var magenta = SampleBar(4);
+        var red = SampleBar(5);
+        var blue = SampleBar(6);
+
+        // Hue checks: each bar's defining channel relationship, not exact
+        // values - e.g. yellow is "red and green both clearly outweigh
+        // blue", not a specific RGB triple.
+        await Assert.That(white.R).IsGreaterThan((byte)150);
+        await Assert.That(IsRoughlyEqual(white.R, white.G)).IsTrue();
+        await Assert.That(IsRoughlyEqual(white.G, white.B)).IsTrue();
+
+        await Assert.That(yellow.R > yellow.B + 50).IsTrue();
+        await Assert.That(yellow.G > yellow.B + 50).IsTrue();
+
+        await Assert.That(cyan.G > cyan.R + 50).IsTrue();
+        await Assert.That(cyan.B > cyan.R + 50).IsTrue();
+
+        await Assert.That(green.G > green.R + 50).IsTrue();
+        await Assert.That(green.G > green.B + 50).IsTrue();
+
+        await Assert.That(magenta.R > magenta.G + 50).IsTrue();
+        await Assert.That(magenta.B > magenta.G + 50).IsTrue();
+
+        await Assert.That(red.R > red.G + 50).IsTrue();
+        await Assert.That(red.R > red.B + 50).IsTrue();
+
+        await Assert.That(blue.B > blue.R + 50).IsTrue();
+        await Assert.That(blue.B > blue.G + 50).IsTrue();
+
+        // Luma ordering: the standard 75%-bars progression, brightest to
+        // darkest.
+        double Luma(RgbaByte c) => 0.299 * c.R + 0.587 * c.G + 0.114 * c.B;
+
+        var lumas = new[] { Luma(white), Luma(yellow), Luma(cyan), Luma(green), Luma(magenta), Luma(red), Luma(blue) };
+
+        for (var i = 0; i < lumas.Length - 1; i++)
+        {
+            await Assert.That(lumas[i]).IsGreaterThan(lumas[i + 1]);
+        }
     }
+
+    private static bool IsRoughlyEqual(byte a, byte b) => System.Math.Abs(a - b) < 20;
 }
