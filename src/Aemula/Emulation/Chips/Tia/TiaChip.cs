@@ -50,6 +50,45 @@ public sealed class TiaChip
     // "A digital phase shifter is included on this chip to provide a
     // single color output with fifteen (15) phase angles."
     // But for now we just output a 4-bit colour.
+    //
+    // Deliberately not fixed by this comment's own TODO, after actually
+    // designing and measuring the real-pin-accurate version: real Col is
+    // one analog pin carrying a phase-shifted square wave at the subcarrier
+    // rate (confirmed square, not sine - see an AtariAge thread specifically
+    // on this question, cited in the plan doc's hardware references), which
+    // would mean a *stored*, oversampled pin - e.g. 16 positions per tick,
+    // matching the real 15 phase taps - updated every Osc edge alongside
+    // Sync/Blk/Lum, rather than this plain hue index.
+    //
+    // That's a strictly more hardware-faithful shape, but it doesn't
+    // actually make the composite-video output more *accurate*, because of
+    // what has to happen to it downstream: Television.Decode only accepts
+    // 4 samples per subcarrier cycle, so an oversampled pin's real square
+    // wave still has to get reduced to 4 before it can be used. Measured
+    // both ways (box-averaging 16 sub-positions down to 4, vs. directly
+    // synthesizing a sine at the hue's phase - see
+    // Atari2600System.CompositeVideo.cs): the averaged square wave decodes
+    // with real, non-trivial error (up to ~24 degrees of hue rotation and
+    // ~29% saturation swing between hues that should be equally saturated -
+    // comparable to landing a whole hue-step off), while the synthesized
+    // sine decodes exactly, with zero error - not a smoother approximation
+    // but the mathematically exact answer, since a pure sinusoid sampled at
+    // exactly its own period has no aliasing to lose information to. That
+    // makes sense physically too: every real path from TIA to a receiver -
+    // the stock RF modulator, or a composite mod's own resistor/cap network
+    // - filters the raw square wave before anything downstream samples it
+    // (see the plan doc's COL-pin-shape note), and a sine is a much closer
+    // stand-in for that filtered signal than the raw square wave's own
+    // harmonics would be.
+    //
+    // So this stays a plain hue index rather than becoming an oversampled
+    // pin, and Atari2600System.CompositeVideo.cs reads it directly to
+    // synthesize the composite chroma sample itself, rather than sampling a
+    // TIA-level waveform - a deliberate accuracy-over-literalism trade, not
+    // an oversight. The real oversampled pin is still worth building
+    // eventually (e.g. so a future TIA logic-analyzer view can show Col's
+    // actual waveform rather than this simplified index), just not before
+    // something other than composite video actually needs it.
     /// <summary>
     /// Video color output. Also written by
     /// <see cref="PlayerAndMissile.DoPlayer"/>, hence the internal setter.
@@ -560,6 +599,33 @@ public sealed class TiaChip
     private bool _horizontalReset;
 
     /// <summary>
+    /// Whether TIA is currently forcing its color output onto the same
+    /// reference phase hue code 1 ("gold") uses, rather than whatever the
+    /// game's most recently written COLUBK/COLUPF/COLUPx selected - the real
+    /// color burst mechanism, per Andrew Towers' TIA Hardware Notes ("The
+    /// TIA produces a reference color output (color burst) during
+    /// horizontal blank..."): there's no separate burst oscillator or pin,
+    /// just the same phase-shift tap COL always uses, temporarily forced to
+    /// the reference position. Set one horizontal-counter state after
+    /// Towers' "Reset HSYNC" control line (approximating real NTSC's
+    /// breezeway gap - see <see cref="ExecuteClockLogic"/>) and cleared by
+    /// his "RCB"/"Reset Colour Burst" line, so this rides on TIA's free-
+    /// running horizontal timing exactly like every other blanking-interval
+    /// signal - including on vertical-blanking lines, matching real
+    /// broadcast NTSC (a receiver needs burst on every line to stay color-
+    /// locked, not just during active picture lines). The breezeway gap
+    /// isn't just cosmetic: without it, burst's own first sample would
+    /// immediately follow HSYNC's trailing edge - exactly the sample
+    /// NtscSyncSeparator uses to (re)calibrate its black-level estimate
+    /// each line - so a burst *peak* landing there, instead of genuine flat
+    /// blanking, drags that estimate away from the real black level, which
+    /// in turn misclassifies burst's own low half as more sync (confirmed
+    /// via a smoke test before this gap was added: the whole raster came
+    /// back misclassified as one long HSYNC region).
+    /// </summary>
+    private bool _colorBurst;
+
+    /// <summary>
     /// Controls whether latches I4..I5 are enabled.
     /// </summary>
     private bool _i45Enable;
@@ -618,7 +684,23 @@ public sealed class TiaChip
                 HorizontalSync = false;
                 break;
 
-            case 0b001111: // ColorBurst
+            // Not itself a control line named in Towers' notes - just the
+            // next horizontal-counter state after "Reset HSYNC" above, used
+            // here as the earliest available point (given this counter's
+            // existing 4-color-clock state granularity) to start color
+            // burst one state late rather than immediately on HSYNC's own
+            // trailing edge. That gap approximates real NTSC's ~0.6us
+            // "breezeway" between HSYNC and burst (coarser here - one 4-
+            // color-clock state, versus spec's ~2.15 color clocks - since
+            // Towers doesn't document a separately-named line for it) - see
+            // _colorBurst's own remarks for why this gap matters, not just
+            // for realism.
+            case 0b111011:
+                _colorBurst = true;
+                break;
+
+            case 0b001111: // Towers' "RCB" - Reset Colour Burst.
+                _colorBurst = false;
                 break;
 
             case 0b011100: // Reset HBLANK
@@ -701,7 +783,12 @@ public sealed class TiaChip
         if (HorizontalBlank || VerticalBlank)
         {
             Lum = 0;
-            Col = 0;
+
+            // Hue code 1 is TIA's own reference phase ("gold... the same
+            // phase as color burst" - Stella Programmer's Guide), so
+            // forcing Col to 1 here, rather than 0, is what actually
+            // transmits color burst - see _colorBurst's remarks.
+            Col = _colorBurst ? (byte)1 : (byte)0;
         }
     }
 
