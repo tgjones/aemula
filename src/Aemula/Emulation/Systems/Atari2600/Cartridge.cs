@@ -1,22 +1,24 @@
-﻿using System;
+using System;
 using static Aemula.BitUtility;
 
 namespace Aemula.Emulation.Systems.Atari2600;
 
-internal struct CartridgePins
+internal abstract class Cartridge
 {
     /// <summary>
     /// Address pins A0..A10/A11 are used to address the ROM memory.
-    /// Address pin A12 is used as a chip select.
+    /// Address pin A12 is used as a chip select (active high).
     /// </summary>
-    public ushort A;
+    public ushort Address { private get; set; }
 
-    public byte D;
-}
-
-internal abstract class Cartridge
-{
-    public CartridgePins Pins;
+    /// <summary>
+    /// Data pins. Real cartridge ROMs have no clock pin - an EPROM's output
+    /// is just "valid tPROP after the address is stable" - so this is purely
+    /// combinational, no cycle call needed. Null (high-impedance) when A12
+    /// isn't asserted, same shape as
+    /// <see cref="Aemula.Emulation.Chips.Ttl8T97Chip"/>'s tri-state outputs.
+    /// </summary>
+    public byte? Data => GetBitAsBoolean(Address, 12) ? ReadRom(Address) : null;
 
     public static Cartridge FromData(byte[] data)
     {
@@ -28,7 +30,7 @@ internal abstract class Cartridge
         };
     }
 
-    public abstract void Cycle();
+    protected abstract byte ReadRom(ushort address);
 
     public abstract byte ReadByteDebug(ushort address);
 }
@@ -42,19 +44,9 @@ internal sealed class Cartridge2K : Cartridge
         _data = data;
     }
 
-    public override void Cycle()
-    {
-        ref var pins = ref Pins;
-        if (GetBitAsBoolean(pins.A, 12))
-        {
-            pins.D = _data[pins.A & 0x7FF];
-        }
-    }
+    protected override byte ReadRom(ushort address) => _data[address & 0x7FF];
 
-    public override byte ReadByteDebug(ushort address)
-    {
-        return _data[address & 0x7FF];
-    }
+    public override byte ReadByteDebug(ushort address) => _data[address & 0x7FF];
 }
 
 internal sealed class Cartridge4K : Cartridge
@@ -66,17 +58,7 @@ internal sealed class Cartridge4K : Cartridge
         _data = data;
     }
 
-    public override void Cycle()
-    {
-        ref var pins = ref Pins;
-        if (GetBitAsBoolean(pins.A, 12))
-        {
-            pins.D = _data[pins.A & 0xFFF];
-        }
-    }
+    protected override byte ReadRom(ushort address) => _data[address & 0xFFF];
 
-    public override byte ReadByteDebug(ushort address)
-    {
-        return _data[address & 0xFFF];
-    }
+    public override byte ReadByteDebug(ushort address) => _data[address & 0xFFF];
 }

@@ -231,12 +231,19 @@ public sealed class Atari2600System : EmulatedSystem
             // If a cartridge is plugged in, always give it a chance to provide data.
             if (_cartridge != null)
             {
-                _cartridge.Pins.A = (ushort)(_cpu.Address & 0x1FFF);
-                _cartridge.Pins.D = _cpu.Data;
+                // Cartridge.Cycle() was replaced by the combinational Address
+                // property (Phase 2) - no cycle call needed, just read Data
+                // back afterward. Data is null (high-impedance) whenever A12
+                // isn't asserted, so the null-check here is what keeps a
+                // not-selected cycle from stomping _cpu.Data with cartridge
+                // output - the "am I selected" logic lives entirely in
+                // Cartridge itself now, not duplicated at this call site.
+                _cartridge.Address = (ushort)(_cpu.Address & 0x1FFF);
 
-                _cartridge.Cycle();
-
-                _cpu.Data = _cartridge.Pins.D;
+                if (_cartridge.Data is byte cartridgeData)
+                {
+                    _cpu.Data = cartridgeData;
+                }
             }
         }
         else
