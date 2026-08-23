@@ -39,7 +39,7 @@ public sealed class Atari2600System : EmulatedSystem
         _television = new Television();
 
         // TODO: Remove this - it sets B&W pin to Color.
-        _riot.Pins.DB = 0b1000;
+        _riot.DB = 0b1000;
 
         if (File.Exists("ntsc.tv"))
         {
@@ -97,7 +97,21 @@ public sealed class Atari2600System : EmulatedSystem
         {
             DoCpuCycle();
 
-            _riot.Cycle();
+            // Mos6532Chip.Cycle()/CpuCycle() were replaced by the single
+            // edge-triggered Phi2 property (Phase 1b) - the falling edge
+            // always ticks the interval timer (old Cycle()), the rising
+            // edge does a CS-gated RAM/register access (old CpuCycle()).
+            // DoCpuCycle() above already set CS1/CS2 per the address-decode
+            // switch, same as before this phase.
+            _riot.Phi2 = true;
+            _riot.Phi2 = false;
+
+            if (_riot.CS1)
+            {
+                // RIOT's data pins are fully bidirectional (unlike TIA's D6/D7-only),
+                // so a selected access can overwrite the whole data bus.
+                _cpu.Data = _riot.DB;
+            }
         }
 
         // TiaChip.Cycle() was replaced by the edge-triggered Osc property
@@ -169,17 +183,22 @@ public sealed class Atari2600System : EmulatedSystem
         // Decode which chips are selected based on A7 and A12.
         var address_7_12 = address & 0b0001000010000000;
 
+        // Default RIOT to not-selected; the RIOT case below asserts it.
+        // Real address-bit-driven CS wiring (CS1<-A7, CS2<-A12) is Phase 3's
+        // job - for now this switch is still what decides "is RIOT selected".
+        _riot.CS1 = false;
+        _riot.CS2 = true;
+
         switch (address_7_12)
         {
             case 0b0000000010000000: // RIOT (A7 hi, A12 lo)
-                _riot.Pins.RS = GetBitAsBoolean(address, 9); // RIOT RS is connected to A9.
-                _riot.Pins.RW = _cpu.RW;                     // RIOT RW is connected to CPU RW.
-                _riot.Pins.A = (byte)(address & 0b1111111);  // RIOT Address pins are connected to A0..A6.
-                _riot.Pins.DB = _cpu.Data;
+                _riot.RS = GetBitAsBoolean(address, 9); // RIOT RS is connected to A9.
+                _riot.RW = _cpu.RW;                     // RIOT RW is connected to CPU RW.
+                _riot.A = (byte)(address & 0b1111111);  // RIOT Address pins are connected to A0..A6.
+                _riot.DB = _cpu.Data;
 
-                _riot.CpuCycle();
-
-                _cpu.Data = _riot.Pins.DB;
+                _riot.CS1 = true;
+                _riot.CS2 = false;
 
                 break;
 
