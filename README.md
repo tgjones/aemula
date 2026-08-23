@@ -4,8 +4,6 @@
 
 Aemula is a pin-level hardware emulation of classic computers and game consoles from the 8-bit era.
 
-## Introduction
-
 Aemula emulates classic computers and consoles at the level of the chips that
 actually made them up, not the level of the programs they ran. Where many
 emulators implement a CPU as an instruction interpreter and a video chip as a
