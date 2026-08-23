@@ -14,14 +14,9 @@ public sealed class Atari2600System : EmulatedSystem
     // 3.58 MHZ
     public override ulong CyclesPerSecond => 3580000;
 
-    private readonly BinaryWriter _ntscWriter;
-
     private readonly Mos6507 _cpu;
     private readonly Mos6532Chip _riot;
     private readonly TiaChip _tia;
-    private readonly Television _television;
-
-    private byte _tiaCycle;
 
     private ushort _lastPC;
 
@@ -36,17 +31,8 @@ public sealed class Atari2600System : EmulatedSystem
         _riot = new Mos6532Chip();
         _tia = new TiaChip();
 
-        _television = new Television();
-
         // TODO: Remove this - it sets B&W pin to Color.
         _riot.DB = 0b1000;
-
-        if (File.Exists("ntsc.tv"))
-        {
-            File.Delete("ntsc.tv");
-        }
-
-        _ntscWriter = new BinaryWriter(File.OpenWrite("ntsc.tv"));
     }
 
     public override void Reset()
@@ -93,86 +79,26 @@ public sealed class Atari2600System : EmulatedSystem
 
     public override void Tick()
     {
-        if (_tiaCycle == 0)
-        {
-            DoCpuCycle();
-
-            // Mos6532Chip.Cycle()/CpuCycle() were replaced by the single
-            // edge-triggered Phi2 property (Phase 1b) - the falling edge
-            // always ticks the interval timer (old Cycle()), the rising
-            // edge does a CS-gated RAM/register access (old CpuCycle()).
-            // DoCpuCycle() above already set CS1/CS2 per the address-decode
-            // switch, same as before this phase.
-            _riot.Phi2 = true;
-            _riot.Phi2 = false;
-
-            if (_riot.CS1)
-            {
-                // RIOT's data pins are fully bidirectional (unlike TIA's D6/D7-only),
-                // so a selected access can overwrite the whole data bus.
-                _cpu.Data = _riot.DB;
-            }
-        }
-
-        // TiaChip.Cycle() was replaced by the edge-triggered Osc property
-        // (Phase 1) - pulse it low->high to run one color-clock tick, same
-        // cadence as the old unconditional _tia.Cycle() call. TIA doesn't
-        // drive the CPU clock yet (that's Phase 3) - this system still
-        // manages _tiaCycle/DoCpuCycle itself, same as before this phase.
+        // TIA generates the CPU clock, not the other way around: one master
+        // tick is one 3.579545MHz OSC pulse into TIA, which divides it by 3
+        // internally (TiaChip.Osc's setter) and drives its own Phi0 output
+        // from that division.
         _tia.Osc = false;
         _tia.Osc = true;
 
-        _television.Signal(
-            new TelevisionSignal(
-                _tia.Sync,
-                _tia.Blk,
-                false,
-                (byte)(_tia.Lum & 0b111 | (_tia.Col & 0xF) << 3)));
+        // Plain getter->setter propagation of TIA's Phi0 output into the
+        // 6507's Phi0 input, same pattern as the _cpu.Rdy = _tia.Rdy line
+        // below.
+        _cpu.Phi0 = _tia.Phi0;
 
-        _tiaCycle++;
-
-        if (_tiaCycle == 3)
-        {
-            _tiaCycle = 0;
-        }
+        DoAddressDecode();
 
         // TIA can pause CPU.
         _cpu.Rdy = _tia.Rdy;
-
-        // Prepare composite video output.
-        byte ntscSignal;
-        if (_tia.Sync)
-        {
-            ntscSignal = 0;
-        }
-        else if (_tia.Blk)
-        {
-            ntscSignal = ConvertRange(0, 140, 0, 240, 40);
-        }
-        else
-        {
-            ntscSignal = ConvertRange(0, 7, (byte)(45 / 140.0f * 240.0f), 240, _tia.Lum);
-        }
-        for (var i = 0; i < 4; i++)
-        {
-            _ntscWriter.Write(ntscSignal);
-        }
     }
 
-    private static byte ConvertRange(
-        byte originalStart, byte originalEnd, // original range
-        byte newStart, byte newEnd, // desired range
-        byte value) // value to convert
+    private void DoAddressDecode()
     {
-        var scale = (float)(newEnd - newStart) / (originalEnd - originalStart);
-        return (byte)(newStart + (value - originalStart) * scale);
-    }
-
-    private void DoCpuCycle()
-    {
-        _cpu.Phi0 = false;
-        _cpu.Phi0 = true;
-
         var address = _cpu.Address;
 
         if (_cpu.Sync)
@@ -180,54 +106,46 @@ public sealed class Atari2600System : EmulatedSystem
             _lastPC = address;
         }
 
-        // Decode which chips are selected based on A7 and A12.
-        var address_7_12 = address & 0b0001000010000000;
+        // Every chip sees the whole bus every cycle, same as real hardware -
+        // no address-range switch deciding which chip's cycle method to
+        // call. Each chip's own CS pins (driven here straight from address
+        // bits, matching their real wiring) are what make it selective.
+        _tia.RW = _cpu.RW;                         // TIA RW is connected to CPU RW.
+        _tia.Address = (byte)(address & 0b111111); // TIA Address pins are connected to A0..A5.
+        _tia.Data05 = (byte)(_cpu.Data & 0x3F);
+        _tia.Data67 = (byte)(_cpu.Data >> 6);
+        _tia.CS0 = GetBitAsBoolean(address, 12); // CS0 <- A12 (active low).
+        _tia.CS1 = true;                         // Tied to +5V (active high).
+        _tia.CS2 = false;                        // Tied to GND (active low).
+        _tia.CS3 = GetBitAsBoolean(address, 7);  // CS3 <- A7 (active low).
 
-        // Default RIOT to not-selected; the RIOT case below asserts it.
-        // Real address-bit-driven CS wiring (CS1<-A7, CS2<-A12) is Phase 3's
-        // job - for now this switch is still what decides "is RIOT selected".
-        _riot.CS1 = false;
-        _riot.CS2 = true;
+        _riot.RS = GetBitAsBoolean(address, 9); // RIOT RS is connected to A9.
+        _riot.RW = _cpu.RW;                     // RIOT RW is connected to CPU RW.
+        _riot.A = (byte)(address & 0b1111111);  // RIOT Address pins are connected to A0..A6.
+        _riot.DB = _cpu.Data;
+        _riot.CS1 = GetBitAsBoolean(address, 7);  // CS1 <- A7 (active high).
+        _riot.CS2 = GetBitAsBoolean(address, 12); // CS2 <- A12 (active low).
 
-        switch (address_7_12)
-        {
-            case 0b0000000010000000: // RIOT (A7 hi, A12 lo)
-                _riot.RS = GetBitAsBoolean(address, 9); // RIOT RS is connected to A9.
-                _riot.RW = _cpu.RW;                     // RIOT RW is connected to CPU RW.
-                _riot.A = (byte)(address & 0b1111111);  // RIOT Address pins are connected to A0..A6.
-                _riot.DB = _cpu.Data;
-
-                _riot.CS1 = true;
-                _riot.CS2 = false;
-
-                break;
-
-            case 0b0000000000000000: // TIA (A7 lo, A12 lo)
-                _tia.RW = _cpu.RW;                         // TIA RW is connected to CPU RW.
-                _tia.Address = (byte)(address & 0b111111); // TIA Address pins are connected to A0..A5.
-                _tia.Data05 = (byte)(_cpu.Data & 0x3F);
-                _tia.Data67 = (byte)(_cpu.Data >> 6);
-
-                // TiaChip.CpuCycle() was replaced by the CS-gated, edge-triggered
-                // Phi2 property (Phase 1). Real address-bit-driven CS wiring is
-                // Phase 3's job - for now this switch is still what decides "is
-                // TIA selected", so just drive the CS pins to TIA's selected
-                // combination and pulse Phi2, same cadence as the old call.
-                _tia.CS0 = false;
-                _tia.CS1 = true;
-                _tia.CS2 = false;
-                _tia.CS3 = false;
-                _tia.Phi2 = false;
-                _tia.Phi2 = true;
-
-                // On the TIA data pins, only pins 6 and 7 are bidirectional,
-                // so we combine those with the existing value on the CPU data bus.
-                _cpu.Data = (byte)(_cpu.Data & 0x3F | _tia.Data67 << 6);
-                break;
-        }
+        // Both chips decide for themselves (via their own CS-gated Phi2
+        // setter, Phase 1/1b) whether this edge means "do a register/RAM
+        // access".
+        _tia.Phi2 = _cpu.Phi2;
+        _riot.Phi2 = _cpu.Phi2;
 
         if (_cpu.RW)
         {
+            // On the TIA data pins, only pins 6 and 7 are bidirectional,
+            // so we combine those with the existing value on the CPU data bus.
+            _cpu.Data = (byte)(_cpu.Data & 0x3F | _tia.Data67 << 6);
+
+            // RIOT's data pins are fully bidirectional (unlike TIA's
+            // D6/D7-only), so only let a selected RIOT overwrite the whole
+            // data bus - an unselected RIOT's DB is stale.
+            if (_riot.CS1 && !_riot.CS2)
+            {
+                _cpu.Data = _riot.DB;
+            }
+
             // If a cartridge is plugged in, always give it a chance to provide data.
             if (_cartridge != null)
             {
@@ -235,10 +153,10 @@ public sealed class Atari2600System : EmulatedSystem
                 // property (Phase 2) - no cycle call needed, just read Data
                 // back afterward. Data is null (high-impedance) whenever A12
                 // isn't asserted, so the null-check here is what keeps a
-                // not-selected cycle from stomping _cpu.Data with cartridge
+                // not-selected access from stomping _cpu.Data with cartridge
                 // output - the "am I selected" logic lives entirely in
                 // Cartridge itself now, not duplicated at this call site.
-                _cartridge.Address = (ushort)(_cpu.Address & 0x1FFF);
+                _cartridge.Address = (ushort)(address & 0x1FFF);
 
                 if (_cartridge.Data is byte cartridgeData)
                 {
@@ -262,10 +180,5 @@ public sealed class Atari2600System : EmulatedSystem
         Cpu.CreateDebuggerWindows(result);
 
         _tia.CreateDebuggerWindows(result);
-    }
-
-    protected override void OnDispose()
-    {
-        _ntscWriter.Dispose();
     }
 }
