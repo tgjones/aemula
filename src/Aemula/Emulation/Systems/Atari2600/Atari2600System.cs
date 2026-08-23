@@ -9,7 +9,7 @@ using static Aemula.BitUtility;
 
 namespace Aemula.Emulation.Systems.Atari2600;
 
-public sealed class Atari2600System : EmulatedSystem
+public sealed partial class Atari2600System : EmulatedSystem
 {
     // 3.58 MHZ
     public override ulong CyclesPerSecond => 3580000;
@@ -85,6 +85,8 @@ public sealed class Atari2600System : EmulatedSystem
         // from that division.
         _tia.Osc = false;
         _tia.Osc = true;
+
+        TickCompositeVideo();
 
         // Plain getter->setter propagation of TIA's Phi0 output into the
         // 6507's Phi0 input, same pattern as the _cpu.Rdy = _tia.Rdy line
