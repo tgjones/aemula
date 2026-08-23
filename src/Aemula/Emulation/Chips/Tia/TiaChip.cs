@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using Aemula.Emulation.Chips.Tia.UI;
 using static Aemula.BitUtility;
 using static Aemula.Emulation.Chips.Tia.TiaUtility;
@@ -8,7 +8,547 @@ namespace Aemula.Emulation.Chips.Tia;
 
 public sealed class TiaChip
 {
-    public TiaPins Pins;
+    // Pins
+
+    /// <summary>
+    /// Ready pin (output).
+    /// </summary>
+    public bool Rdy { get; private set; }
+
+    /// <summary>
+    /// Combined vertical and horizontal sync pin (output).
+    /// </summary>
+    public bool Sync { get; private set; }
+
+    /// <summary>
+    /// Address pins A0..A5 (input).
+    /// </summary>
+    public byte Address { get; set; }
+
+    /// <summary>
+    /// Processor data pins. Pins 0 to 5 are inputs only.
+    /// </summary>
+    public byte Data05 { get; set; }
+
+    /// <summary>
+    /// Processor data pins. Pins 6 and 7 are bidirectional.
+    /// </summary>
+    public byte Data67 { get; set; }
+
+    /// <summary>
+    /// Read/write pin (input). Read = true, write = false.
+    /// </summary>
+    public bool RW { get; set; }
+
+    /// <summary>
+    /// Video luminance output (3 pins, LUM0..LUM2). Also written by
+    /// <see cref="PlayerAndMissile.DoPlayer"/>, hence the internal setter.
+    /// </summary>
+    public byte Lum { get; internal set; }
+
+    // TODO: This should be a single pin. From the spec:
+    // "A digital phase shifter is included on this chip to provide a
+    // single color output with fifteen (15) phase angles."
+    // But for now we just output a 4-bit colour.
+    /// <summary>
+    /// Video color output. Also written by
+    /// <see cref="PlayerAndMissile.DoPlayer"/>, hence the internal setter.
+    /// </summary>
+    public byte Col { get; internal set; }
+
+    /// <summary>
+    /// Combined vertical and horizontal blank output.
+    /// </summary>
+    public bool Blk { get; private set; }
+
+    /// <summary>
+    /// Color delay input.
+    /// </summary>
+    public bool Del { get; set; }
+
+    /// <summary>
+    /// Audio output 0.
+    /// </summary>
+    public bool Aud0 { get; private set; }
+
+    /// <summary>
+    /// Audio output 1.
+    /// </summary>
+    public bool Aud1 { get; private set; }
+
+    // TODO: May need to split these into separate pins.
+    /// <summary>
+    /// Dumped and latched inputs.
+    /// Dumped inputs (I0..I3) are used for paddles.
+    /// Latched inputs (I4..I5) are used for joystick / paddle triggers.
+    /// </summary>
+    public byte I { get; set; }
+
+    private bool _cs0;
+    /// <summary>
+    /// Chip select 0 (input). Wired to A12 on real hardware - active low.
+    /// </summary>
+    public bool CS0 { get => _cs0; set => _cs0 = value; }
+
+    private bool _cs1;
+    /// <summary>
+    /// Chip select 1 (input). Tied to +5V on real hardware - active high.
+    /// </summary>
+    public bool CS1 { get => _cs1; set => _cs1 = value; }
+
+    private bool _cs2;
+    /// <summary>
+    /// Chip select 2 (input). Tied to GND on real hardware - active low.
+    /// </summary>
+    public bool CS2 { get => _cs2; set => _cs2 = value; }
+
+    private bool _cs3;
+    /// <summary>
+    /// Chip select 3 (input). Wired to A7 on real hardware - active low.
+    /// </summary>
+    public bool CS3 { get => _cs3; set => _cs3 = value; }
+
+    /// <summary>
+    /// Whether the chip-select pins currently indicate this TIA is selected.
+    /// With CS0/CS3 wired to A12/A7 (active low) and CS1/CS2 tied to fixed
+    /// +5V/GND levels (active high/low respectively), this reduces to "A7 and
+    /// A12 are both low", matching the documented net effect.
+    /// </summary>
+    private bool Selected => !_cs0 && _cs1 && !_cs2 && !_cs3;
+
+    private bool _osc;
+
+    /// <summary>
+    /// Master oscillator clock input. Real TIA is clocked at 3.579545MHz
+    /// (the NTSC color subcarrier rate) via this pin.
+    /// </summary>
+    public bool Osc
+    {
+        get => _osc;
+        set
+        {
+            if (_osc == value)
+            {
+                return;
+            }
+
+            _osc = value;
+
+            if (!value)
+            {
+                return;
+            }
+
+            // TIA divides OSC by 3 internally to generate the 6507's clock
+            // (Phi0), matching the real 3.579545MHz -> 1.193182MHz relationship.
+            // _phi0Divider reflects the count as of the start of this edge, the
+            // same point at which the old Atari2600System.Tick()'s _tiaCycle
+            // check ran before calling _tia.Cycle().
+            _phi0 = _phi0Divider == 0;
+
+            ClockDiv4++;
+            if (ClockDiv4 > 3)
+            {
+                ClockDiv4 = 0;
+
+                HorizontalCounter.Increment();
+
+                if (HorizontalCounter.Value == 0b111111 || _horizontalReset)
+                {
+                    _playfieldCanReflect = false;
+                    _playfieldIndex = 0;
+                    _horizontalReset = false;
+                    HorizontalCounter.Reset();
+                    HorizontalBlank = true;
+                    Rdy = false;
+                }
+
+                ExecuteClockLogic();
+
+                if (_hmoveCounterEnabled)
+                {
+                    if (NoneEqual(_hmoveComparator, PlayerAndMissile0.HorizontalMotionPlayer))
+                    {
+                        _hmp0Latch = false;
+                    }
+
+                    if (NoneEqual(_hmoveComparator, PlayerAndMissile1.HorizontalMotionPlayer))
+                    {
+                        _hmp1Latch = false;
+                    }
+
+                    _hmoveComparator = (byte)(_hmoveComparator - 1 & 0b1111);
+                    if (_hmoveComparator == 0b1111)
+                    {
+                        _hmoveCounterEnabled = false;
+                    }
+                }
+
+                if (_hmp0Latch)
+                {
+                    PlayerAndMissile0.UpdatePlayerDiv4();
+                }
+
+                if (_hmp1Latch)
+                {
+                    PlayerAndMissile1.UpdatePlayerDiv4();
+                }
+            }
+
+            if (_playerCounterEnable)
+            {
+                PlayerAndMissile0.UpdatePlayerDiv4();
+                PlayerAndMissile1.UpdatePlayerDiv4();
+            }
+
+            DoPlayfield();
+
+            Blk = VerticalBlank || HorizontalBlank;
+            Sync = VerticalSync || HorizontalSync;
+
+            _phi0Divider++;
+            if (_phi0Divider > 2)
+            {
+                _phi0Divider = 0;
+            }
+        }
+    }
+
+    private byte _phi0Divider;
+    private bool _phi0;
+
+    /// <summary>
+    /// Clock output (to the 6507). Derived internally from <see cref="Osc"/>.
+    /// </summary>
+    public bool Phi0 => _phi0;
+
+    private bool _phi2;
+
+    /// <summary>
+    /// Clock input (from the 6507's Phi2 output). Runs a register read/write
+    /// on the rising edge, gated on the chip being <see cref="Selected"/>.
+    /// </summary>
+    public bool Phi2
+    {
+        get => _phi2;
+        set
+        {
+            if (_phi2 == value)
+            {
+                return;
+            }
+
+            _phi2 = value;
+
+            if (!value || !Selected)
+            {
+                return;
+            }
+
+            if (RW)
+            {
+                // Read registers.
+                //console.log(`TIA read register. Address = ${toHexString(pins.address, 2)}`);
+
+                switch (Address)
+                {
+                    // CXM0P - Read collision
+                    case 0x00:
+                        break;
+
+                    // TODO
+
+                    // Ignore invalid addresses
+                    default:
+                        break;
+                }
+            }
+            else
+            {
+                // Write registers.
+                //console.log(`TIA write register. Address = ${toHexString(pins.address, 2)}. Data67 = ${toHexString(pins.data67, 2)}, Data05 = ${toHexString(pins.data05, 2)}`);
+
+                switch (Address)
+                {
+                    // VSYNC - Vertical sync set/clear
+                    case 0x00:
+                        VerticalSync = GetBitAsBoolean(Data05, 1);
+                        break;
+
+                    // VBLANK - Vertical blank set/clear
+                    case 0x01:
+                        VerticalBlank = GetBitAsBoolean(Data05, 1);
+                        _i45Enable = GetBitAsBoolean(Data67, 0);
+                        _i03DumpToGround = GetBitAsBoolean(Data67, 1);
+                        break;
+
+                    // WSYNC - Wait for sync. Halts microprocessor by clearing RDY latch to zero.
+                    // RDY is set to false again by leading edge of horizontal blank.
+                    case 0x02:
+                        Rdy = true;
+                        break;
+
+                    // RSYNC - Reset horizontal sync counter.
+                    case 0x03:
+                        _horizontalReset = true;
+                        break;
+
+                    // NUSIZ0 - Number-size player-missile 0
+                    case 0x04:
+                        PlayerAndMissile0.NumberSizePlayer = (byte)(Data05 & 0b111);
+                        PlayerAndMissile0.NumberSizeMissile = (byte)(Data05 >> 3);
+                        break;
+
+                    // NUSIZ1 - Number-size player-missile 1
+                    case 0x05:
+                        PlayerAndMissile1.NumberSizePlayer = (byte)(Data05 & 0b111);
+                        PlayerAndMissile1.NumberSizeMissile = (byte)(Data05 >> 3);
+                        break;
+
+                    // COLUP0 - Color-luminance player 0
+                    case 0x06:
+                        PlayerAndMissile0.Color = (byte)(Data05 >> 4 | Data67 << 2);
+                        PlayerAndMissile0.Luminance = (byte)(Data05 >> 1 & 0b111);
+                        break;
+
+                    // COLUP1 - Color-luminance player 1
+                    case 0x07:
+                        PlayerAndMissile1.Color = (byte)(Data05 >> 4 | Data67 << 2);
+                        PlayerAndMissile1.Luminance = (byte)(Data05 >> 1 & 0b111);
+                        break;
+
+                    // COLUPF - Color-luminance playfield
+                    case 0x08:
+                        _playfieldColor = (byte)(Data05 >> 4 | Data67 << 2);
+                        _playfieldLuminance = (byte)(Data05 >> 1 & 0b111);
+                        break;
+
+                    // COLUBK - Color-luminance background
+                    case 0x09:
+                        _backgroundColor = (byte)(Data05 >> 4 | Data67 << 2);
+                        _backgroundLuminance = (byte)(Data05 >> 1 & 0b111);
+                        break;
+
+                    // CTRLPF - Control playfield ball size and collisions
+                    case 0x0A:
+                        // TODO
+                        _playfieldReflect = GetBitAsBoolean(Data05, 0);
+                        _playfieldScore = GetBitAsBoolean(Data05, 1);
+                        break;
+
+                    // REFP0 - Reflect player 0
+                    case 0x0B:
+                        PlayerAndMissile0.Reflect = GetBitAsBoolean(Data05, 3);
+                        break;
+
+                    // REFP1 - Reflect player 1
+                    case 0x0C:
+                        PlayerAndMissile1.Reflect = GetBitAsBoolean(Data05, 3);
+                        break;
+
+                    // PF0 - Playfield register byte 0
+                    //   D4 => PF19
+                    //   D5 => PF18
+                    //   D6 => PF17
+                    //   D7 => PF16
+                    case 0x0D:
+                        {
+                            var temp =
+                                GetBit(Data05, 4) << 3 |
+                                GetBit(Data05, 5) << 2 |
+                                GetBit(Data67, 0) << 1 |
+                                GetBit(Data67, 1) << 0;
+                            _playfield = (ushort)(temp << 16 | _playfield & 0xFFFF);
+                            break;
+                        }
+
+                    // PF1 - Playfield register byte 1
+                    //   D0 => PF08
+                    //   D1 => PF09
+                    //   D2 => PF10
+                    //   D3 => PF11
+                    //   D4 => PF12
+                    //   D5 => PF13
+                    //   D6 => PF14
+                    //   D7 => PF15
+                    case 0x0E:
+                        {
+                            var temp = (byte)(Data05 | Data67 << 6);
+                            _playfield = (ushort)(_playfield & 0xF00FF | temp << 8);
+                            break;
+                        }
+
+                    // PF2 - Playfield register byte 2
+                    //   D0 => P7
+                    //   D1 => P6
+                    //   D2 => P5
+                    //   D3 => P4
+                    //   D4 => P3
+                    //   D5 => P2
+                    //   D6 => P1
+                    //   D7 => P0
+                    case 0x0F:
+                        {
+                            var temp =
+                                GetBit(Data05, 0) << 7 |
+                                GetBit(Data05, 1) << 6 |
+                                GetBit(Data05, 2) << 5 |
+                                GetBit(Data05, 3) << 4 |
+                                GetBit(Data05, 4) << 3 |
+                                GetBit(Data05, 5) << 2 |
+                                GetBit(Data67, 0) << 1 |
+                                GetBit(Data67, 1) << 0;
+                            _playfield = (ushort)(_playfield & 0xFFF00 | temp);
+                            break;
+                        }
+
+                    // RESP0 - Reset player 0
+                    case 0x10:
+                        PlayerAndMissile0.Reset = true;
+                        PlayerAndMissile0.PlayerClockDiv4 = 0;
+                        break;
+
+                    // RESP1 - Reset player 1
+                    case 0x11:
+                        PlayerAndMissile1.Reset = true;
+                        PlayerAndMissile1.PlayerClockDiv4 = 0;
+                        break;
+
+                    // RESM0 - Reset missile 0
+                    case 0x12:
+                        break;
+
+                    // RESM1 - Reset missile 1
+                    case 0x13:
+                        break;
+
+                    // RESBL - Reset ball
+                    case 0x14:
+                        break;
+
+                    // AUDC0 - Audio control 0
+                    case 0x15:
+                        break;
+
+                    // AUDC1 - Audio control 1
+                    case 0x16:
+                        break;
+
+                    // AUDF0 - Audio frequency 0
+                    case 0x17:
+                        break;
+
+                    // AUDF1 - Audio frequency 1
+                    case 0x18:
+                        break;
+
+                    // AUDV0 - Audio volume 0
+                    case 0x19:
+                        break;
+
+                    // AUDv1 - Audio volume 1
+                    case 0x1A:
+                        break;
+
+                    // GRP0 - Graphics player 0
+                    case 0x1B:
+                        PlayerAndMissile0.Graphics = (byte)(Data05 | Data67 << 6);
+                        break;
+
+                    // GRP1 - Graphics player 1
+                    case 0x1C:
+                        PlayerAndMissile1.Graphics = (byte)(Data05 | Data67 << 6);
+                        break;
+
+                    // ENAM0 - Graphics (enable) missile 0
+                    case 0x1D:
+                        break;
+
+                    // ENAM1 - Graphics (enable) missile 1
+                    case 0x1E:
+                        break;
+
+                    // ENABL - Graphics (enable) ball
+                    case 0x1F:
+                        break;
+
+                    // HMP0 - Horizontal motion player 0
+                    case 0x20:
+                        // Invert HM bit 3 to simplify counting
+                        PlayerAndMissile0.HorizontalMotionPlayer = (byte)
+                            (Data05 >> 4 |
+                            (Data67 & 1) << 2 |
+                            (Data67 >> 1 == 1 ? 0b0000 : 0b1000));
+                        break;
+
+                    // HMP1 - Horizontal motion player 1
+                    case 0x21:
+                        PlayerAndMissile1.HorizontalMotionPlayer = (byte)
+                            (Data05 >> 4 |
+                            (Data67 & 1) << 2 |
+                            (Data67 >> 1 == 1 ? 0b0000 : 0b1000));
+                        break;
+
+                    // HMM0 - Horizontal motion missile 0
+                    case 0x22:
+                        break;
+
+                    // HMM1 - Horizontal motion missile 1
+                    case 0x23:
+                        break;
+
+                    // HMBL - Horizontal motion ball
+                    case 0x24:
+                        break;
+
+                    // VDELP0 - Vertical delay player 0
+                    case 0x25:
+                        break;
+
+                    // VDELP1 - Vertical delay player 1
+                    case 0x26:
+                        break;
+
+                    // VDELBL - Vertical delay ball
+                    case 0x27:
+                        break;
+
+                    // RESMP0 - Reset missile 0 to player 0
+                    case 0x28:
+                        break;
+
+                    // RESMP1 - Reset missile 1 to player 1
+                    case 0x29:
+                        break;
+
+                    // HMOVE - Apply horizontal motion
+                    case 0x2A:
+                        _hmove = true;
+                        _hmp0Latch = true;
+                        _hmp1Latch = true;
+                        _hmoveComparator = 0b1111;
+                        _hmoveCounterEnabled = true;
+                        break;
+
+                    // HMCLR - Clear horizontal motion registers
+                    case 0x2B:
+                        PlayerAndMissile0.HorizontalMotionPlayer = 0b1000;
+                        PlayerAndMissile1.HorizontalMotionPlayer = 0b1000;
+                        break;
+
+                    // CXCLR - Clear collision latches
+                    case 0x2C:
+                        break;
+
+                    // Ignore invalid addresses
+                    default:
+                        break;
+                }
+            }
+        }
+    }
+
+    // Internal state
 
     internal bool VerticalSync;
     internal bool VerticalBlank;
@@ -64,71 +604,6 @@ public sealed class TiaChip
     {
         PlayerAndMissile0 = new PlayerAndMissile();
         PlayerAndMissile1 = new PlayerAndMissile();
-    }
-
-    public void Cycle()
-    {
-        // TODO
-
-        ClockDiv4++;
-        if (ClockDiv4 > 3)
-        {
-            ClockDiv4 = 0;
-
-            HorizontalCounter.Increment();
-
-            if (HorizontalCounter.Value == 0b111111 || _horizontalReset)
-            {
-                _playfieldCanReflect = false;
-                _playfieldIndex = 0;
-                _horizontalReset = false;
-                HorizontalCounter.Reset();
-                HorizontalBlank = true;
-                Pins.Rdy = false;
-            }
-
-            ExecuteClockLogic();
-
-            if (_hmoveCounterEnabled)
-            {
-                if (NoneEqual(_hmoveComparator, PlayerAndMissile0.HorizontalMotionPlayer))
-                {
-                    _hmp0Latch = false;
-                }
-
-                if (NoneEqual(_hmoveComparator, PlayerAndMissile1.HorizontalMotionPlayer))
-                {
-                    _hmp1Latch = false;
-                }
-
-                _hmoveComparator = (byte)(_hmoveComparator - 1 & 0b1111);
-                if (_hmoveComparator == 0b1111)
-                {
-                    _hmoveCounterEnabled = false;
-                }
-            }
-
-            if (_hmp0Latch)
-            {
-                PlayerAndMissile0.UpdatePlayerDiv4();
-            }
-
-            if (_hmp1Latch)
-            {
-                PlayerAndMissile1.UpdatePlayerDiv4();
-            }
-        }
-
-        if (_playerCounterEnable)
-        {
-            PlayerAndMissile0.UpdatePlayerDiv4();
-            PlayerAndMissile1.UpdatePlayerDiv4();
-        }
-
-        DoPlayfield();
-
-        Pins.Blk = VerticalBlank || HorizontalBlank;
-        Pins.Sync = VerticalSync || HorizontalSync;
     }
 
     private void ExecuteClockLogic()
@@ -199,25 +674,25 @@ public sealed class TiaChip
                 // and the right side of the playfield using the color of sprite 1.
                 if (_playfieldCanReflect)
                 {
-                    Pins.Lum = PlayerAndMissile1.Luminance;
-                    Pins.Col = PlayerAndMissile1.Color;
+                    Lum = PlayerAndMissile1.Luminance;
+                    Col = PlayerAndMissile1.Color;
                 }
                 else
                 {
-                    Pins.Lum = PlayerAndMissile0.Luminance;
-                    Pins.Col = PlayerAndMissile0.Color;
+                    Lum = PlayerAndMissile0.Luminance;
+                    Col = PlayerAndMissile0.Color;
                 }
             }
             else
             {
-                Pins.Lum = _playfieldLuminance;
-                Pins.Col = _playfieldColor;
+                Lum = _playfieldLuminance;
+                Col = _playfieldColor;
             }
         }
         else
         {
-            Pins.Lum = _backgroundLuminance;
-            Pins.Col = _backgroundColor;
+            Lum = _backgroundLuminance;
+            Col = _backgroundColor;
         }
 
         PlayerAndMissile0.DoPlayer(this);
@@ -225,314 +700,8 @@ public sealed class TiaChip
 
         if (HorizontalBlank || VerticalBlank)
         {
-            Pins.Lum = 0;
-            Pins.Col = 0;
-        }
-    }
-
-    public void CpuCycle()
-    {
-        ref var pins = ref Pins;
-
-        if (pins.RW)
-        {
-            // Read registers.
-            //console.log(`TIA read register. Address = ${toHexString(pins.address, 2)}`);
-
-            switch (pins.Address)
-            {
-                // CXM0P - Read collision
-                case 0x00:
-                    break;
-
-                // TODO
-
-                // Ignore invalid addresses
-                default:
-                    break;
-            }
-        }
-        else
-        {
-            // Write registers.
-            //console.log(`TIA write register. Address = ${toHexString(pins.address, 2)}. Data67 = ${toHexString(pins.data67, 2)}, Data05 = ${toHexString(pins.data05, 2)}`);
-
-            switch (pins.Address)
-            {
-                // VSYNC - Vertical sync set/clear
-                case 0x00:
-                    VerticalSync = GetBitAsBoolean(pins.Data05, 1);
-                    break;
-
-                // VBLANK - Vertical blank set/clear
-                case 0x01:
-                    VerticalBlank = GetBitAsBoolean(pins.Data05, 1);
-                    _i45Enable = GetBitAsBoolean(pins.Data67, 0);
-                    _i03DumpToGround = GetBitAsBoolean(pins.Data67, 1);
-                    break;
-
-                // WSYNC - Wait for sync. Halts microprocessor by clearing RDY latch to zero.
-                // RDY is set to false again by leading edge of horizontal blank.
-                case 0x02:
-                    pins.Rdy = true;
-                    break;
-
-                // RSYNC - Reset horizontal sync counter.
-                case 0x03:
-                    _horizontalReset = true;
-                    break;
-
-                // NUSIZ0 - Number-size player-missile 0
-                case 0x04:
-                    PlayerAndMissile0.NumberSizePlayer = (byte)(pins.Data05 & 0b111);
-                    PlayerAndMissile0.NumberSizeMissile = (byte)(pins.Data05 >> 3);
-                    break;
-
-                // NUSIZ1 - Number-size player-missile 1
-                case 0x05:
-                    PlayerAndMissile1.NumberSizePlayer = (byte)(pins.Data05 & 0b111);
-                    PlayerAndMissile1.NumberSizeMissile = (byte)(pins.Data05 >> 3);
-                    break;
-
-                // COLUP0 - Color-luminance player 0
-                case 0x06:
-                    PlayerAndMissile0.Color = (byte)(pins.Data05 >> 4 | pins.Data67 << 2);
-                    PlayerAndMissile0.Luminance = (byte)(pins.Data05 >> 1 & 0b111);
-                    break;
-
-                // COLUP1 - Color-luminance player 1
-                case 0x07:
-                    PlayerAndMissile1.Color = (byte)(pins.Data05 >> 4 | pins.Data67 << 2);
-                    PlayerAndMissile1.Luminance = (byte)(pins.Data05 >> 1 & 0b111);
-                    break;
-
-                // COLUPF - Color-luminance playfield
-                case 0x08:
-                    _playfieldColor = (byte)(pins.Data05 >> 4 | pins.Data67 << 2);
-                    _playfieldLuminance = (byte)(pins.Data05 >> 1 & 0b111);
-                    break;
-
-                // COLUBK - Color-luminance background
-                case 0x09:
-                    _backgroundColor = (byte)(pins.Data05 >> 4 | pins.Data67 << 2);
-                    _backgroundLuminance = (byte)(pins.Data05 >> 1 & 0b111);
-                    break;
-
-                // CTRLPF - Control playfield ball size and collisions
-                case 0x0A:
-                    // TODO
-                    _playfieldReflect = GetBitAsBoolean(pins.Data05, 0);
-                    _playfieldScore = GetBitAsBoolean(pins.Data05, 1);
-                    break;
-
-                // REFP0 - Reflect player 0
-                case 0x0B:
-                    PlayerAndMissile0.Reflect = GetBitAsBoolean(pins.Data05, 3);
-                    break;
-
-                // REFP1 - Reflect player 1
-                case 0x0C:
-                    PlayerAndMissile1.Reflect = GetBitAsBoolean(pins.Data05, 3);
-                    break;
-
-                // PF0 - Playfield register byte 0
-                //   D4 => PF19
-                //   D5 => PF18
-                //   D6 => PF17
-                //   D7 => PF16
-                case 0x0D:
-                    {
-                        var temp =
-                            GetBit(pins.Data05, 4) << 3 |
-                            GetBit(pins.Data05, 5) << 2 |
-                            GetBit(pins.Data67, 0) << 1 |
-                            GetBit(pins.Data67, 1) << 0;
-                        _playfield = (ushort)(temp << 16 | _playfield & 0xFFFF);
-                        break;
-                    }
-
-                // PF1 - Playfield register byte 1
-                //   D0 => PF08
-                //   D1 => PF09
-                //   D2 => PF10
-                //   D3 => PF11
-                //   D4 => PF12
-                //   D5 => PF13
-                //   D6 => PF14
-                //   D7 => PF15
-                case 0x0E:
-                    {
-                        var temp = (byte)(pins.Data05 | pins.Data67 << 6);
-                        _playfield = (ushort)(_playfield & 0xF00FF | temp << 8);
-                        break;
-                    }
-
-                // PF2 - Playfield register byte 2
-                //   D0 => P7
-                //   D1 => P6
-                //   D2 => P5
-                //   D3 => P4
-                //   D4 => P3
-                //   D5 => P2
-                //   D6 => P1
-                //   D7 => P0
-                case 0x0F:
-                    {
-                        var temp =
-                            GetBit(pins.Data05, 0) << 7 |
-                            GetBit(pins.Data05, 1) << 6 |
-                            GetBit(pins.Data05, 2) << 5 |
-                            GetBit(pins.Data05, 3) << 4 |
-                            GetBit(pins.Data05, 4) << 3 |
-                            GetBit(pins.Data05, 5) << 2 |
-                            GetBit(pins.Data67, 0) << 1 |
-                            GetBit(pins.Data67, 1) << 0;
-                        _playfield = (ushort)(_playfield & 0xFFF00 | temp);
-                        break;
-                    }
-
-                // RESP0 - Reset player 0
-                case 0x10:
-                    PlayerAndMissile0.Reset = true;
-                    PlayerAndMissile0.PlayerClockDiv4 = 0;
-                    break;
-
-                // RESP1 - Reset player 1
-                case 0x11:
-                    PlayerAndMissile1.Reset = true;
-                    PlayerAndMissile1.PlayerClockDiv4 = 0;
-                    break;
-
-                // RESM0 - Reset missile 0
-                case 0x12:
-                    break;
-
-                // RESM1 - Reset missile 1
-                case 0x13:
-                    break;
-
-                // RESBL - Reset ball
-                case 0x14:
-                    break;
-
-                // AUDC0 - Audio control 0
-                case 0x15:
-                    break;
-
-                // AUDC1 - Audio control 1
-                case 0x16:
-                    break;
-
-                // AUDF0 - Audio frequency 0
-                case 0x17:
-                    break;
-
-                // AUDF1 - Audio frequency 1
-                case 0x18:
-                    break;
-
-                // AUDV0 - Audio volume 0
-                case 0x19:
-                    break;
-
-                // AUDv1 - Audio volume 1
-                case 0x1A:
-                    break;
-
-                // GRP0 - Graphics player 0
-                case 0x1B:
-                    PlayerAndMissile0.Graphics = (byte)(pins.Data05 | pins.Data67 << 6);
-                    break;
-
-                // GRP1 - Graphics player 1
-                case 0x1C:
-                    PlayerAndMissile1.Graphics = (byte)(pins.Data05 | pins.Data67 << 6);
-                    break;
-
-                // ENAM0 - Graphics (enable) missile 0
-                case 0x1D:
-                    break;
-
-                // ENAM1 - Graphics (enable) missile 1
-                case 0x1E:
-                    break;
-
-                // ENABL - Graphics (enable) ball
-                case 0x1F:
-                    break;
-
-                // HMP0 - Horizontal motion player 0
-                case 0x20:
-                    // Invert HM bit 3 to simplify counting
-                    PlayerAndMissile0.HorizontalMotionPlayer = (byte)
-                        (pins.Data05 >> 4 |
-                        (pins.Data67 & 1) << 2 |
-                        (pins.Data67 >> 1 == 1 ? 0b0000 : 0b1000));
-                    break;
-
-                // HMP1 - Horizontal motion player 1
-                case 0x21:
-                    PlayerAndMissile1.HorizontalMotionPlayer = (byte)
-                        (pins.Data05 >> 4 |
-                        (pins.Data67 & 1) << 2 |
-                        (pins.Data67 >> 1 == 1 ? 0b0000 : 0b1000));
-                    break;
-
-                // HMM0 - Horizontal motion missile 0
-                case 0x22:
-                    break;
-
-                // HMM1 - Horizontal motion missile 1
-                case 0x23:
-                    break;
-
-                // HMBL - Horizontal motion ball
-                case 0x24:
-                    break;
-
-                // VDELP0 - Vertical delay player 0
-                case 0x25:
-                    break;
-
-                // VDELP1 - Vertical delay player 1
-                case 0x26:
-                    break;
-
-                // VDELBL - Vertical delay ball
-                case 0x27:
-                    break;
-
-                // RESMP0 - Reset missile 0 to player 0
-                case 0x28:
-                    break;
-
-                // RESMP1 - Reset missile 1 to player 1
-                case 0x29:
-                    break;
-
-                // HMOVE - Apply horizontal motion
-                case 0x2A:
-                    _hmove = true;
-                    _hmp0Latch = true;
-                    _hmp1Latch = true;
-                    _hmoveComparator = 0b1111;
-                    _hmoveCounterEnabled = true;
-                    break;
-
-                // HMCLR - Clear horizontal motion registers
-                case 0x2B:
-                    PlayerAndMissile0.HorizontalMotionPlayer = 0b1000;
-                    PlayerAndMissile1.HorizontalMotionPlayer = 0b1000;
-                    break;
-
-                // CXCLR - Clear collision latches
-                case 0x2C:
-                    break;
-
-                // Ignore invalid addresses
-                default:
-                    break;
-            }
+            Lum = 0;
+            Col = 0;
         }
     }
 

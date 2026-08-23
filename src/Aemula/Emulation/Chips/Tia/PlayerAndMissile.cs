@@ -64,8 +64,8 @@ internal sealed class PlayerAndMissile
     {
         if (_graphicsDelay == 1)
         {
-            tia.Pins.Lum = Luminance;
-            tia.Pins.Col = Color;
+            tia.Lum = Luminance;
+            tia.Col = Color;
         }
 
         if (_graphicsDelay == 1)

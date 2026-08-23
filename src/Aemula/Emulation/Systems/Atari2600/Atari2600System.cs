@@ -100,14 +100,20 @@ public sealed class Atari2600System : EmulatedSystem
             _riot.Cycle();
         }
 
-        _tia.Cycle();
+        // TiaChip.Cycle() was replaced by the edge-triggered Osc property
+        // (Phase 1) - pulse it low->high to run one color-clock tick, same
+        // cadence as the old unconditional _tia.Cycle() call. TIA doesn't
+        // drive the CPU clock yet (that's Phase 3) - this system still
+        // manages _tiaCycle/DoCpuCycle itself, same as before this phase.
+        _tia.Osc = false;
+        _tia.Osc = true;
 
         _television.Signal(
             new TelevisionSignal(
-                _tia.Pins.Sync,
-                _tia.Pins.Blk,
+                _tia.Sync,
+                _tia.Blk,
                 false,
-                (byte)(_tia.Pins.Lum & 0b111 | (_tia.Pins.Col & 0xF) << 3)));
+                (byte)(_tia.Lum & 0b111 | (_tia.Col & 0xF) << 3)));
 
         _tiaCycle++;
 
@@ -117,21 +123,21 @@ public sealed class Atari2600System : EmulatedSystem
         }
 
         // TIA can pause CPU.
-        _cpu.Rdy = _tia.Pins.Rdy;
+        _cpu.Rdy = _tia.Rdy;
 
         // Prepare composite video output.
         byte ntscSignal;
-        if (_tia.Pins.Sync)
+        if (_tia.Sync)
         {
             ntscSignal = 0;
         }
-        else if (_tia.Pins.Blk)
+        else if (_tia.Blk)
         {
             ntscSignal = ConvertRange(0, 140, 0, 240, 40);
         }
         else
         {
-            ntscSignal = ConvertRange(0, 7, (byte)(45 / 140.0f * 240.0f), 240, _tia.Pins.Lum);
+            ntscSignal = ConvertRange(0, 7, (byte)(45 / 140.0f * 240.0f), 240, _tia.Lum);
         }
         for (var i = 0; i < 4; i++)
         {
@@ -178,16 +184,26 @@ public sealed class Atari2600System : EmulatedSystem
                 break;
 
             case 0b0000000000000000: // TIA (A7 lo, A12 lo)
-                _tia.Pins.RW = _cpu.RW;                         // TIA RW is connected to CPU RW.
-                _tia.Pins.Address = (byte)(address & 0b111111); // TIA Address pins are connected to A0..A5.
-                _tia.Pins.Data05 = (byte)(_cpu.Data & 0x3F);
-                _tia.Pins.Data67 = (byte)(_cpu.Data >> 6);
+                _tia.RW = _cpu.RW;                         // TIA RW is connected to CPU RW.
+                _tia.Address = (byte)(address & 0b111111); // TIA Address pins are connected to A0..A5.
+                _tia.Data05 = (byte)(_cpu.Data & 0x3F);
+                _tia.Data67 = (byte)(_cpu.Data >> 6);
 
-                _tia.CpuCycle();
+                // TiaChip.CpuCycle() was replaced by the CS-gated, edge-triggered
+                // Phi2 property (Phase 1). Real address-bit-driven CS wiring is
+                // Phase 3's job - for now this switch is still what decides "is
+                // TIA selected", so just drive the CS pins to TIA's selected
+                // combination and pulse Phi2, same cadence as the old call.
+                _tia.CS0 = false;
+                _tia.CS1 = true;
+                _tia.CS2 = false;
+                _tia.CS3 = false;
+                _tia.Phi2 = false;
+                _tia.Phi2 = true;
 
                 // On the TIA data pins, only pins 6 and 7 are bidirectional,
                 // so we combine those with the existing value on the CPU data bus.
-                _cpu.Data = (byte)(_cpu.Data & 0x3F | _tia.Pins.Data67 << 6);
+                _cpu.Data = (byte)(_cpu.Data & 0x3F | _tia.Data67 << 6);
                 break;
         }
 
