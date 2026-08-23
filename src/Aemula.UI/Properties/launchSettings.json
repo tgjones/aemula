@@ -2,7 +2,7 @@
   "profiles": {
     "Aemula.UI": {
       "commandName": "Project",
-      "commandLineArgs": "appleii"
+      "commandLineArgs": "atari2600 \"/Users/timjones/Downloads/Atari-2600-VCS-ROM-Collection/ROMS/Pitfall (AKA Pitfall!) (1983) (CCE) (C-813).bin\""
     }
   }
 }

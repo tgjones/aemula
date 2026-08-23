@@ -98,6 +98,7 @@ internal sealed class Atari2600Debugger : Debugger
         _system.CreateDebuggerWindows(result);
 
         result.Add(new BreakpointsWindow(this));
+        result.Add(new TelevisionWindow(_system.Television));
 
         //result.Add(new ScreenDisplayWindow(_system.VideoOutput.DisplayBuffer));
         //result.Add(new MemoryEditor(1, _system.ReadByteDebug, _system.WriteByteDebug));

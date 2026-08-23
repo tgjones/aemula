@@ -1,13 +1,7 @@
 using System;
+using Aemula.Emulation.Output;
 
 namespace Aemula.Emulation.Systems.Atari2600;
-
-// This namespace nests under the root Aemula namespace, where the older,
-// unrelated Aemula.Television already lives (see docs/television-plan.md's
-// "Naming collision, explicitly out of scope" note) - aliased here for the
-// same reason TelevisionWindow.cs and AppleIISystem.CompositeVideo.cs
-// already are.
-using Television = Aemula.Emulation.Output.Television;
 
 // Phase 4 of docs/atari2600-television-plan.md: unlike every earlier phase,
 // real 2600 hardware never outputs composite video at all (it only ever

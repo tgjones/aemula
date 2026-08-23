@@ -1,12 +1,7 @@
 using System;
+using Aemula.Emulation.Output;
 
 namespace Aemula.Emulation.Systems.AppleII;
-
-// This namespace nests under the root Aemula namespace, where the older,
-// unrelated Aemula.Television already lives (see docs/television-plan.md's
-// "Naming collision, explicitly out of scope" note) - aliased here for the
-// same reason TelevisionWindow.cs and AppleIIDebugger.cs already are.
-using Television = Aemula.Emulation.Output.Television;
 
 // Phase 3 of docs/apple-ii-ntsc-video-plan.md: the analog composite video
 // summing stage. Real hardware: Q3, an NPN emitter follower with three

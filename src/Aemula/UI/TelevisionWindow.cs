@@ -8,16 +8,6 @@ using Hexa.NET.SDL3;
 
 namespace Aemula.UI;
 
-// This namespace nests under the root Aemula namespace, where the older,
-// unrelated Aemula.Television already lives (see docs/television-plan.md's
-// "Naming collision, explicitly out of scope" note) - plain enclosing-
-// namespace lookup would find that one first, ahead of a plain `using
-// Aemula.Emulation.Output;` placed above the namespace declaration (which is
-// compilation-unit-scoped, and loses to an ancestor namespace's own member -
-// see TelevisionTests.cs's remarks on the same issue), so it's aliased here
-// instead, inside the namespace body, where it actually takes priority.
-using Television = Aemula.Emulation.Output.Television;
-
 // Phases 5-7 of docs/television-plan.md: a basic texture-upload render
 // (Phase 5), wired into a real system (Phase 6), plus the Saleae-style
 // niceties (Phase 7) - a dot-position crosshair at Television.CurrentColumn/

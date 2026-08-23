@@ -1,15 +1,8 @@
 using System.Threading.Tasks;
+using Aemula.Emulation.Output;
+using Aemula.Emulation.Output.Ntsc;
 
 namespace Aemula.Tests.Emulation.Output;
-
-// This test namespace nests under the root Aemula namespace, where the
-// older, unrelated Aemula.Television already lives (see the plan doc's
-// "Naming collision, explicitly out of scope" note). A using-alias placed
-// above the namespace declaration is compilation-unit-scoped, which loses
-// to that ancestor-namespace member during plain-name lookup - placing it
-// here, inside the namespace body, is what actually gives it priority.
-using Television = Aemula.Emulation.Output.Television;
-using Aemula.Emulation.Output.Ntsc;
 
 // Phase 0 of docs/television-plan.md. This file replaces an earlier
 // [Skip]ped prototype (System.Drawing.Bitmap-based, didn't run on CI) - see
