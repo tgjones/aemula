@@ -148,6 +148,22 @@ public sealed class NtscColorBurstPll
             // _inPhaseAccumulator and leaves _quadratureAccumulator at
             // zero; any nonzero quadrature accumulation *is* the phase
             // error this loop corrects.
+            //
+            // Worth being explicit, since it's easy to assume otherwise and
+            // NtscYiqDecoder's own rotation constant once *was* built on
+            // that wrong assumption: this loop has no 180-degree lock
+            // ambiguity. The incoming sample is correlated directly, and
+            // the error term below is the quadrature arm on its own - the
+            // signal is never squared, and the in-phase and quadrature arms
+            // are never multiplied together (that product is what makes a
+            // Costas loop sign-blind). For burst A*sin(90n + b) against a
+            // reference at 90n + P, the error works out to cos(b - P) and
+            // the correction to P -= gain*cos(b - P): fixed points at
+            // P = b +/- 90 degrees, of which only P = b - 90 is stable,
+            // since a small perturbation either side of it drives the loop
+            // back toward it while the same perturbation at P = b + 90
+            // drives it away. One stable lock, the same one for every
+            // signal, reached from any starting phase.
             (var sin, var cos) = MathF.SinCos(phase);
             _inPhaseAccumulator += acSample * cos;
             _quadratureAccumulator += acSample * sin;

@@ -31,8 +31,14 @@ public sealed partial class Atari2600System : EmulatedSystem
         _riot = new Mos6532Chip();
         _tia = new TiaChip();
 
-        // TODO: Remove this - it sets B&W pin to Color.
-        _riot.DB = 0b1000;
+        // Console switches (SWCHB, read via RIOT's PB pin - see
+        // Mos6532Chip.ReadIORegister): bit 3 is the TV Type switch,
+        // 1 = Color. Real hardware wires this (and the other switches)
+        // straight into RIOT's PB pins - there's no CPU/TIA involvement,
+        // so setting it once here at construction, rather than every
+        // tick, matches how a physical switch that isn't being touched
+        // actually behaves.
+        _riot.PB = 0b1000;
     }
 
     public override void Reset()
@@ -56,7 +62,11 @@ public sealed partial class Atari2600System : EmulatedSystem
         }
         else if ((address & 0x1280) == 0x80)
         {
-            return _riot.ReadByteDebug(address);
+            // Real RIOT only has 7 address pins (A0..A6) wired up - same
+            // masking DoAddressDecode applies to _riot.A below - so mask
+            // here too rather than relying on Mos6532Chip to reject an
+            // address outside its own RAM.
+            return _riot.ReadByteDebug((ushort)(address & 0b1111111));
         }
         else
         {

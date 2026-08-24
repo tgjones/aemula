@@ -118,7 +118,28 @@ public sealed partial class AppleIISystem
             // zero-crossing or a peak (0, +1, 0, -1), not a smooth curve -
             // still a real sine's *shape*, and a genuine step up from a
             // flat square wave, which is what this replaces.
-            var phase = 2.0 * Math.PI * (_masterTickCounter % 4) / 4.0;
+            //
+            // The +2 (half a subcarrier cycle) is a real, load-bearing part
+            // of the encoding, not cosmetic. Burst's job is to tell the
+            // receiver where zero phase is, so which of the four master
+            // ticks this sine starts on is what fixes every decoded hue on
+            // screen - and _masterTickCounter is only a free-running
+            // counter from power-on (see its own remarks), with no
+            // hardware-derived alignment of its own to the VIDEO DATA
+            // shift-register phase that actually carries the picture's
+            // chroma. So the offset between the two has to be calibrated
+            // against a known-correct landmark, exactly the way this file's
+            // EffectiveLogicHigh/TransistorVbe are solved from Gayler's
+            // measured levels rather than assumed. The landmark used is
+            // Sather's worked example (Understanding the Apple II, p.8-15,
+            // quoted in full in AppleIISystemTelevisionTests): $2A at even
+            // addresses / $55 at odd addresses "produces a short green
+            // line", and swapping the two produces violet. Without this
+            // offset those two decode to each other's colors - the picture
+            // stays perfectly self-consistent, just half a turn around the
+            // hue circle from real hardware, which is precisely the failure
+            // a burst phase is defined to prevent.
+            var phase = 2.0 * Math.PI * ((_masterTickCounter + 2) % 4) / 4.0;
             vOut += BurstAmplitudeVolts * Math.Sin(phase);
         }
 

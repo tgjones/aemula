@@ -315,11 +315,19 @@ You asked for this to be a real phase-locked loop rather than a per-line
   every line.
 - **Phase detector**: for each sample inside a detected color-burst window,
   compare it against what the local oscillator predicts at its current phase
-  (a quadrature/Costas-style comparison): project the burst sample onto the
+  (a plain quadrature comparison — *not* a Costas loop, see below): project
+  the burst sample onto the
   oscillator's *quadrature* axis (90° off from the in-phase reference axis).
   When the loop is correctly locked, burst energy lands entirely on the
   in-phase axis and the quadrature-axis projection is ~0; any nonzero
-  quadrature projection *is* the phase error signal.
+  quadrature projection *is* the phase error signal. Because the error term
+  is the quadrature projection *alone* — the burst sample is correlated
+  directly, never squared, and the in-phase and quadrature arms are never
+  multiplied together — this detector has **no 180° lock ambiguity**: of its
+  two fixed points only one is stable, so every signal converges to the same
+  lock. (This was originally described here as "Costas-style", which is
+  wrong, and a compensating 180° constant in `NtscYiqDecoder` was built on
+  that misreading — see that class's `BurstToIAxisRotationRadians` remarks.)
 - **Loop filter**: a single-pole exponential low-pass on that phase-error
   signal, scaled by a (tunable, empirically-set) loop gain, nudges the
   persistent phase-offset state a little on every burst-window sample —

@@ -65,6 +65,37 @@ public sealed partial class Atari2600System
     // to spare.
     private const float ChromaAmplitude = (BlankingLevel - SyncLevel) * 0.375f;
 
+    // How far one hue code steps around the color wheel. Not 360/15 = 24:
+    // TIA's hue generator is an analog delay line (see TiaChip.Col), and its
+    // fifteen taps do *not* add up to a clean single turn - the delay line's
+    // total is what the trim potentiometer on real 2600 boards adjusts, and
+    // no two consoles are trimmed identically. That per-step spacing is the
+    // one genuinely console-specific number in TIA color, and it's the
+    // parameter emulators expose as such: Stella models it as
+    // DEF_NTSC_SHIFT = 26.7 degrees, user-adjustable +/-4.5 degrees around
+    // that (src/common/PaletteHandler.hxx, exposed as -pal.phase_ntsc), and
+    // generates its whole NTSC palette from it. This project's own
+    // (Gopher2600-sourced, hardware-derived) Palette.NtscPalette
+    // independently averages 27.4 degrees per step, corroborating it.
+    //
+    // Worth being precise about what this is *not*: it is not an absolute
+    // hue rotation, and no absolute rotation belongs anywhere in this
+    // pipeline. Absolute phase is pinned by color burst, at both ends -
+    // TIA transmits burst off the same delay-line tap as hue 1, and
+    // NtscYiqDecoder rotates off recovered burst by the plain spec figure
+    // with no calibration on top (see BurstToIAxisRotationRadians). That is
+    // exactly why a period TV needed no re-tinting when swapping an Atari
+    // 2600 for an Apple II: burst is what makes absolute phase a fixed
+    // point rather than a per-source calibration. What the pot varies, and
+    // all it varies, is how far apart the hues land - which is this
+    // constant, and which no receiver-side tint control could correct
+    // anyway.
+    //
+    // Using 24 here instead accumulated 14 steps' worth of ~2.7-degree
+    // error, i.e. ~38 degrees of drift by hue 15 - measured, and previously
+    // mistaken for irreducible nonlinearity in Palette.NtscPalette itself.
+    private const float HueStepDegrees = 26.7f;
+
     private void TickCompositeVideo()
     {
         // TIA's digital outputs don't resolve any finer than once per OSC
@@ -113,8 +144,25 @@ public sealed partial class Atari2600System
                 // One full subcarrier cycle per call (see above), so the 4
                 // sub-samples are exactly 90 degrees apart; hue code 1 is
                 // TIA's own reference phase (0 degrees, the same phase as
-                // color burst - see TiaChip._colorBurst's remarks), so hues
-                // 2-15 fall at (Col-1)*24 degrees from there.
+                // color burst - see TiaChip._colorBurst's remarks, and note
+                // that this file needs no special case to make that true:
+                // TiaChip drives Col = 1 for the burst window itself, so
+                // burst is literally hue 1, exactly as the real delay line's
+                // shared tap makes it), so hues 2-15 fall at
+                // (Col-1)*HueStepDegrees from there.
+                //
+                // Negative, not positive: real TIA's hue generator is a
+                // phase-*delay* line (see TiaChip.Col's own doc comment -
+                // "a digital phase shifter... with fifteen phase angles"),
+                // and delaying a sinusoid in time is a negative phase
+                // shift, not a positive one - increasing hue code adds more
+                // delay, so it should rotate the phase backward, not
+                // forward. Corroborated independently by the reference
+                // palette: converting Palette.NtscPalette's own entries back
+                // to chroma phase walks the hue circle in exactly this
+                // direction as the hue code rises (gold, orange, red,
+                // purple, blue, cyan, green), which on a standard NTSC
+                // vectorscope is decreasing phase.
                 //
                 // A sine, not the real square wave TIA's Col pin actually
                 // outputs - see TiaChip.Col's own doc comment for why: this
@@ -124,7 +172,7 @@ public sealed partial class Atari2600System
                 // (direct 4-point evaluation, or averaging finer
                 // sub-samples down to 4) introduced real, measured hue and
                 // saturation error instead.
-                var phaseRadians = (subSample * 90f + (col - 1) * 24f) * MathF.PI / 180f;
+                var phaseRadians = (subSample * 90f - (col - 1) * HueStepDegrees) * MathF.PI / 180f;
                 chroma = ChromaAmplitude * MathF.Sin(phaseRadians);
             }
 

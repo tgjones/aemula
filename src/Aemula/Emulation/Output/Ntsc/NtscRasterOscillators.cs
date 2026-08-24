@@ -182,6 +182,41 @@ public sealed class NtscRasterOscillators
         private float _samplesSinceAccepted;
         private bool _hasEverAccepted;
 
+        // Re-acquisition tracking - deliberately independent of
+        // _samplesSinceAccepted above. A real captured Atari2600 signal
+        // exposed a genuine deadlock this fixes: one anomalous or
+        // misclassified pulse (confirmed against a real 2600 ROM - an
+        // early, not-yet-settled TIA horizontal-counter state produced one
+        // pulse shaped like neither a clean HSYNC nor a clean VSYNC) can
+        // leave _samplesSinceAccepted stranded outside captureRangeFraction
+        // of PeriodEstimate forever, since that counter only ever resets on
+        // an accept, and PeriodEstimate only ever moves via one - every
+        // later, perfectly genuine pulse then also gets rejected, with no
+        // way back. This tracks time since the last *offered* pulse
+        // regardless of whether it was accepted, so several consecutive
+        // offers landing at the same new interval - evidence of a real
+        // recurring signal, not noise - can re-lock even from that dead
+        // stop. Mirrors how a real hardware AFC/vertical-hold circuit
+        // recovers after losing lock rather than staying derailed by one
+        // glitch forever - see the class doc-comment's real-hardware
+        // capture-range citations.
+        private float _samplesSinceLastOffer = float.MaxValue;
+        private float _lastOfferedInterval;
+        private int _consistentOfferStreak;
+
+        // How many consecutive offered pulses at a self-consistent interval
+        // it takes to re-lock - enough that a single stray pulse landing
+        // near a genuine one by coincidence can't trigger it, small enough
+        // to recover within a handful of lines/fields of a real signal
+        // reappearing.
+        private const int ReacquisitionConfirmCount = 3;
+
+        // How close two consecutive offered-pulse intervals need to be to
+        // count as "the same recurring signal" for re-acquisition - wider
+        // than captureRangeFraction on purpose: this is asking "is this
+        // periodic at all", not "does it already match our stale estimate".
+        private const float ReacquisitionIntervalToleranceFraction = 0.05f;
+
         /// <summary>
         /// Advances by one sample. <paramref name="pulseOffered"/> is
         /// whether a sync pulse was detected on this exact sample.
@@ -193,40 +228,77 @@ public sealed class NtscRasterOscillators
         {
             Position += 1f;
             _samplesSinceAccepted += 1f;
+            _samplesSinceLastOffer += 1f;
 
-            if (pulseOffered && IsWithinCaptureRange())
+            if (pulseOffered)
             {
-                // A period is a measurement *between* two points - the very
-                // first pulse this oscillator ever sees only establishes
-                // where "phase zero" is, the same way a real set's
-                // oscillator has to grab an arbitrary first reference point
-                // before it has any interval to measure yet. Nudging
-                // PeriodEstimate toward that first (essentially arbitrary,
-                // depends only on where in the stream decoding happened to
-                // start) Position would just be adding noise, not signal -
-                // wait for the *second* accept, which is the first one with
-                // a genuine measured interval behind it.
-                if (_hasEverAccepted)
+                if (IsWithinCaptureRange())
                 {
-                    var measuredPeriod = _samplesSinceAccepted;
-                    var target = PeriodEstimate + (measuredPeriod - PeriodEstimate) * smoothingRate;
+                    // A period is a measurement *between* two points - the
+                    // very first pulse this oscillator ever sees only
+                    // establishes where "phase zero" is, the same way a
+                    // real set's oscillator has to grab an arbitrary first
+                    // reference point before it has any interval to measure
+                    // yet. Nudging PeriodEstimate toward that first
+                    // (essentially arbitrary, depends only on where in the
+                    // stream decoding happened to start) Position would
+                    // just be adding noise, not signal - wait for the
+                    // *second* accept, which is the first one with a
+                    // genuine measured interval behind it.
+                    if (_hasEverAccepted)
+                    {
+                        var measuredPeriod = _samplesSinceAccepted;
+                        var target = PeriodEstimate + (measuredPeriod - PeriodEstimate) * smoothingRate;
 
-                    // A real oscillator can be nudged, not retuned -
-                    // bounding the estimate to a fixed band around nominal
-                    // is what guarantees a wildly-wrong pulse train can
-                    // never be mistaken for genuine sync, no matter how
-                    // many times it's (partially) accepted - see
-                    // MaxPeriodDriftFraction above.
-                    PeriodEstimate = Math.Clamp(
-                        target,
-                        _nominalPeriod * (1 - MaxPeriodDriftFraction),
-                        _nominalPeriod * (1 + MaxPeriodDriftFraction));
+                        // A real oscillator can be nudged, not retuned -
+                        // bounding the estimate to a fixed band around
+                        // nominal is what guarantees a wildly-wrong pulse
+                        // train can never be mistaken for genuine sync, no
+                        // matter how many times it's (partially) accepted -
+                        // see MaxPeriodDriftFraction above.
+                        PeriodEstimate = Math.Clamp(
+                            target,
+                            _nominalPeriod * (1 - MaxPeriodDriftFraction),
+                            _nominalPeriod * (1 + MaxPeriodDriftFraction));
+                    }
+
+                    Accept();
+                    return true;
                 }
 
-                Position = 0;
-                _samplesSinceAccepted = 0;
-                _hasEverAccepted = true;
-                return true;
+                // Outside the fine-lock capture range - see whether this
+                // offer is at least consistent with the previous one
+                // (rather than immediately giving up on it, which is what
+                // deadlocked this oscillator against the real signal
+                // described above).
+                if (_consistentOfferStreak > 0 &&
+                    Math.Abs(_samplesSinceLastOffer - _lastOfferedInterval) <= _lastOfferedInterval * ReacquisitionIntervalToleranceFraction)
+                {
+                    _consistentOfferStreak++;
+                }
+                else
+                {
+                    _consistentOfferStreak = 1;
+                }
+
+                if (_consistentOfferStreak >= ReacquisitionConfirmCount)
+                {
+                    // Re-lock directly to the newly measured interval
+                    // rather than smoothing toward it, the same way the
+                    // very first accept above also skips smoothing - this
+                    // is recovery from a lost lock, not a fine adjustment
+                    // to an already-good estimate.
+                    PeriodEstimate = Math.Clamp(
+                        _samplesSinceLastOffer,
+                        _nominalPeriod * (1 - MaxPeriodDriftFraction),
+                        _nominalPeriod * (1 + MaxPeriodDriftFraction));
+
+                    Accept();
+                    return true;
+                }
+
+                _lastOfferedInterval = _samplesSinceLastOffer;
+                _samplesSinceLastOffer = 0;
             }
 
             if (Position >= PeriodEstimate)
@@ -236,6 +308,15 @@ public sealed class NtscRasterOscillators
             }
 
             return false;
+        }
+
+        private void Accept()
+        {
+            Position = 0;
+            _samplesSinceAccepted = 0;
+            _hasEverAccepted = true;
+            _consistentOfferStreak = 0;
+            _samplesSinceLastOffer = 0;
         }
 
         private bool IsWithinCaptureRange()

@@ -88,7 +88,7 @@ public partial class Mos6502Chip
                 return;
             }
 
-            // TODO: NMI, IRQ, RDY
+            // TODO: NMI, IRQ
 
             if (value)
             {
@@ -106,6 +106,24 @@ public partial class Mos6502Chip
             {
                 // Transitioning from high to low.
                 // Will be executing instruction.
+
+                // Real 6502 hardware only stalls on RDY during a read cycle
+                // - a cycle already in progress as a write always completes.
+                // Both of this codebase's Rdy consumers (TiaChip's WSYNC,
+                // Ricoh2A03Chip's OAM DMA) only ever assert Rdy as part of -
+                // or immediately after - the write that requests it, so the
+                // very next cycle is always a fresh opcode fetch (Sync)
+                // already; gating on Sync here is exactly equivalent to
+                // "stall on the next read cycle" for both real use cases,
+                // without needing to know a not-yet-decoded future cycle's
+                // read/write nature in general. Every field involved in an
+                // opcode fetch (_ir, _tr, PC, _address, _rw, _data) is left
+                // untouched below, so the exact same fetch simply repeats
+                // every cycle until Rdy deasserts.
+                if (_rdy && _sync)
+                {
+                    return;
+                }
 
                 // IRQ is level-sensitive (reacts to a low signal level).
                 // So as long as it's low, and so as long as interrupts are enabled,
@@ -242,7 +260,11 @@ public partial class Mos6502Chip
     /// </summary>
     public bool RW => _rw;
 
-    // TODO: Implement this.
+    /// <summary>
+    /// Ready pin (input). Freezes the CPU - repeating the same opcode fetch
+    /// every cycle - for as long as this is asserted true, starting from the
+    /// next opcode-fetch boundary (see Phi0's setter).
+    /// </summary>
     public bool Rdy
     {
         // Exposed for testing, even though this is a write-only pin.

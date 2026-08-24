@@ -50,32 +50,45 @@ public sealed class NtscYiqDecoder
     // fact ("burst leads I by 57 degrees" / "I is 57 degrees behind
     // burst"), corroborating the geometric derivation above independently.
     //
-    // What spec derivation *can't* pin down is which of two directions this
-    // particular implementation needs the correction applied in: burst's
-    // phase is recovered by NtscColorBurstPll's phase detector, which - like
-    // any squaring/Costas-style detector (see that class's remarks) -
-    // cannot distinguish a lock from a lock 180 degrees away, since burst =
-    // +A*cos(phase) and burst = -A*cos(phase) both drive its quadrature
-    // error to zero equally well. Which of the two this implementation's
-    // loop actually settles into for a given real signal isn't something
-    // the broadcast spec specifies (it depends on this decoder's own
-    // cos/sin-to-in-phase/quadrature assignment and the real signal's
-    // recorded polarity) - exactly the kind of thing a real TV's "tint"
-    // knob exists to compensate for. Resolved here, once, against the one
-    // real reference this project has (confirmed empirically: 180 degrees
-    // added to the -57-degree spec figure, i.e. +123 degrees, is what
-    // actually locks this implementation to the real burst - see
-    // TelevisionTests' SMPTE bar assertions).
+    // The spec figure above is the whole answer - there is deliberately no
+    // empirical "which way round does this implementation need it" fudge on
+    // top of it, and adding one would be a bug, not a calibration.
+    //
+    // An earlier version of this constant added a further 180 degrees,
+    // justified as resolving a supposed lock-branch ambiguity in
+    // NtscColorBurstPll's phase detector ("a squaring/Costas-style detector
+    // can't tell a lock from a lock 180 degrees away"). That reasoning was
+    // wrong on both counts. NtscColorBurstPll is not a Costas loop: it
+    // correlates the incoming sample *directly* against its own cos/sin
+    // references and uses the quadrature accumulation alone as its error
+    // term (see that class's Process/FinishBurstWindow) - it never squares
+    // the signal, and never multiplies its in-phase and quadrature arms
+    // together, which is the step that actually creates a Costas loop's
+    // sign ambiguity. With burst A*sin(90n + b) and reference 90n + P, that
+    // loop's error is cos(b - P) and its update is P -= gain*cos(b - P), so
+    // its fixed points are P = b +/- 90 degrees and only P = b - 90 is
+    // *stable* (the other one diverges under the same perturbation). One
+    // stable lock, reached from any starting phase, identical for every
+    // signal - so there is nothing here for a per-source constant to
+    // resolve, and no source-dependent branch for a "tint knob" to chase.
+    //
+    // What the +180 was really compensating for was a defect in the one
+    // reference signal this project had at the time: smpte.ntsc transmits
+    // its burst 180 degrees away from where RS-170A puts it (measured
+    // directly from the asset's raw bytes - see SmpteAsset's own remarks,
+    // which now corrects it at load instead). Two 180-degree errors
+    // cancelling made the SMPTE bars decode correctly while leaving every
+    // spec-conformant source - Atari 2600's TIA in particular, whose burst
+    // and hue 1 are the same delay-line tap - decoding a full half-turn
+    // around the hue circle from its real colors.
     private const double IAxisFromVAxisDegrees = 33.0;
     private const double VAxisFromUAxisDegrees = 90.0;
     private const double BurstFromUAxisDegrees = 180.0;
     private const double SpecBurstToIAxisDegrees =
         (VAxisFromUAxisDegrees + IAxisFromVAxisDegrees) - BurstFromUAxisDegrees; // -57
 
-    private const double PllLockBranchDegrees = 180.0;
-
     internal const double BurstToIAxisRotationRadians =
-        (SpecBurstToIAxisDegrees + PllLockBranchDegrees) * Math.PI / 180.0; // +123 degrees
+        SpecBurstToIAxisDegrees * Math.PI / 180.0; // -57 degrees
 
     // Step 4's R/G/B coefficients (see Process), laid out as one lane per
     // output channel (the unused 4th lane keeps these Vector128<float>-width
