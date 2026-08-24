@@ -1,4 +1,5 @@
 using System;
+using Aemula.UI.LogicAnalyzer;
 
 namespace Aemula.Emulation.Chips.Mos6532;
 
@@ -346,5 +347,27 @@ public sealed class Mos6532Chip
             0b11 => 1024,
             _ => throw new InvalidOperationException()
         };
+    }
+
+    /// <summary>
+    /// Owned here (rather than by the system that embeds a RIOT) so every
+    /// system gets the same channel list for free.
+    /// </summary>
+    internal ChannelGroup CreateChannelGroup()
+    {
+        return new ChannelGroup("RIOT",
+        [
+            Channel.Bus("Address", 7, () => A),
+            Channel.Bus("Data", 8, () => DB),
+            Channel.Digital("R/W", () => RW),
+            Channel.Digital("RS", () => RS),
+            Channel.Digital("CS1", () => CS1),
+            Channel.Digital("CS2", () => CS2),
+            Channel.Digital("RES", () => Res),
+            Channel.Digital("IRQ", () => Irq),
+            Channel.Bus("PA", 8, () => PA),
+            Channel.Bus("PB", 8, () => PB),
+            Channel.Digital("PHI2", () => Phi2),
+        ]);
     }
 }

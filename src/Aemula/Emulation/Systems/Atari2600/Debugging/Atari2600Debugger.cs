@@ -2,6 +2,7 @@
 using Aemula.Debugging;
 using Aemula.Emulation.Chips.Mos6502.Debugging;
 using Aemula.UI;
+using Aemula.UI.LogicAnalyzer;
 
 namespace Aemula.Emulation.Systems.Atari2600.Debugging;
 
@@ -99,6 +100,16 @@ internal sealed class Atari2600Debugger : Debugger
 
         result.Add(new BreakpointsWindow(this));
         result.Add(new TelevisionWindow(_system.Television));
+
+        // Composite Video (and every other channel alongside it) is recorded
+        // at TIA's true 4x-oversampled rate, not the 1x tick rate Ticked
+        // otherwise implies - see Atari2600System.CompositeVideoSampled's
+        // remarks.
+        var compositeVideoSampleClock = new SampleClock(
+            _system.CyclesPerSecond * 4,
+            h => _system.CompositeVideoSampled += h,
+            h => _system.CompositeVideoSampled -= h);
+        result.Add(new LogicAnalyzerWindow(this, _system.CreateChannelNodes(), compositeVideoSampleClock));
 
         //result.Add(new ScreenDisplayWindow(_system.VideoOutput.DisplayBuffer));
         //result.Add(new MemoryEditor(1, _system.ReadByteDebug, _system.WriteByteDebug));

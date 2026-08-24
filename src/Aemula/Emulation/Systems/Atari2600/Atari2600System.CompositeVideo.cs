@@ -95,6 +95,21 @@ public sealed partial class Atari2600System
     // mistaken for irreducible nonlinearity in Palette.NtscPalette itself.
     private const float HueStepDegrees = 26.7f;
 
+    // The most recently written composite-video sample - exposed as an
+    // Analog scope channel alongside the TIA pins. One Tick() call produces
+    // 4 sub-samples (see the loop below), so this is specifically the last
+    // of those 4, matching the value Television itself decoded most
+    // recently as of this tick.
+    public byte CurrentCompositeVideoSample { get; private set; }
+
+    // Fires once per composite-video sub-sample - 4x per Tick() - rather
+    // than once per Tick() like Debugger.Ticked. This is what lets
+    // LogicAnalyzerWindow record Composite Video (and every other channel,
+    // held constant across the extra samples) at its true 4x-oversampled
+    // rate instead of being capped at TIA's own 3.58MHz tick rate - see
+    // Atari2600Debugger.CreateDebuggerWindows' SampleClock construction.
+    internal event Action? CompositeVideoSampled;
+
     private void TickCompositeVideo()
     {
         // TIA's digital outputs don't resolve any finer than once per OSC
@@ -177,6 +192,10 @@ public sealed partial class Atari2600System
             var sample = (byte)Math.Clamp(MathF.Round(luma + chroma), 0, 255);
 
             Television.Decode(sample);
+
+            CurrentCompositeVideoSample = sample;
+
+            CompositeVideoSampled?.Invoke();
         }
     }
 }

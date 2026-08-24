@@ -5,6 +5,7 @@ using Aemula.Emulation.Chips.Mos6532;
 using Aemula.Emulation.Chips.Tia;
 using Aemula.Emulation.Systems.Atari2600.Debugging;
 using Aemula.UI;
+using Aemula.UI.LogicAnalyzer;
 using static Aemula.BitUtility;
 
 namespace Aemula.Emulation.Systems.Atari2600;
@@ -191,5 +192,19 @@ public sealed partial class Atari2600System : EmulatedSystem
         Cpu.CreateDebuggerWindows(result);
 
         _tia.CreateDebuggerWindows(result);
+    }
+
+    internal IReadOnlyList<ChannelNode> CreateChannelNodes()
+    {
+        return
+        [
+            Cpu.CreateChannelGroup(),
+            _tia.CreateChannelGroup(),
+            _riot.CreateChannelGroup(),
+            new ChannelGroup("Composite Video",
+            [
+                Channel.Analog("Composite Video", () => CurrentCompositeVideoSample, SyncLevel, WhiteLevel, ""),
+            ]),
+        ];
     }
 }

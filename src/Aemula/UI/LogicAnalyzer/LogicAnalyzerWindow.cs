@@ -58,12 +58,37 @@ public sealed class LogicAnalyzerWindow : DebuggerWindow
     private readonly IReadOnlyList<ChannelNode> _roots;
     private readonly LogicAnalyzerRecorder _recorder;
     private readonly Dictionary<Channel, int> _channelIndex;
+    private readonly SampleClock _sampleClock;
     private readonly double _cyclesPerSecond;
 
     // Shared x-axis view range (absolute sample index units), backing every row's
     // (and the timescale ruler's) linked axis while stopped - see class remarks.
-    private double _viewMin;
-    private double _viewMax;
+    //
+    // Backed by a pinned array rather than plain fields: ImPlot's SetupAxisLinks
+    // doesn't just read these once - it retains the addresses we hand it and
+    // writes drag/zoom updates back through them on later frames, the same
+    // contract a native `static double*` would satisfy. A plain field's
+    // address is only stable for the duration of the `fixed`/`ref` pin around
+    // that one interop call; the next compacting GC is then free to move this
+    // object, leaving ImPlot holding a dangling pointer that corrupts the
+    // managed heap the next time a scroll/zoom gesture writes through it.
+    // GC.AllocateArray(pinned: true) keeps this array's address stable for
+    // its entire lifetime, so the pointer ImPlot holds stays valid
+    // indefinitely instead of just for one call.
+    private readonly double[] _viewRange = GC.AllocateArray<double>(2, pinned: true);
+
+    private double _viewMin
+    {
+        get => _viewRange[0];
+        set => _viewRange[0] = value;
+    }
+
+    private double _viewMax
+    {
+        get => _viewRange[1];
+        set => _viewRange[1] = value;
+    }
+
     private bool _wasStopped;
 
     // Pixel bounds of the timescale ruler's own plot, captured each frame in
@@ -87,12 +112,13 @@ public sealed class LogicAnalyzerWindow : DebuggerWindow
 
     public override Pane PreferredPane => Pane.Bottom;
 
-    public LogicAnalyzerWindow(Debugger debugger, IReadOnlyList<ChannelNode> channels)
+    public LogicAnalyzerWindow(Debugger debugger, IReadOnlyList<ChannelNode> channels, SampleClock? sampleClock = null)
     {
         _debugger = debugger;
         _roots = channels;
         _recorder = new LogicAnalyzerRecorder(channels);
-        _cyclesPerSecond = debugger.System.CyclesPerSecond;
+        _sampleClock = sampleClock ?? new SampleClock(debugger.System.CyclesPerSecond, h => debugger.Ticked += h, h => debugger.Ticked -= h);
+        _cyclesPerSecond = _sampleClock.Hz;
         // One sample per pixel, matching the fixed zoom phases 1/2 used as a
         // starting point.
         _millisecondsPer100Px = 100_000.0 / _cyclesPerSecond;
@@ -103,7 +129,7 @@ public sealed class LogicAnalyzerWindow : DebuggerWindow
             _channelIndex[_recorder.Channels[i]] = i;
         }
 
-        _debugger.Ticked += OnTicked;
+        _sampleClock.Subscribe(OnTicked);
     }
 
     private void OnTicked()
@@ -444,7 +470,7 @@ public sealed class LogicAnalyzerWindow : DebuggerWindow
             {
                 ImPlot.SetupAxisZoomConstraints(ImAxis.X1, 2.0, axisUpperBound - oldestRetained);
             }
-            ImPlot.SetupAxisLinks(ImAxis.X1, ref _viewMin, ref _viewMax);
+            ImPlot.SetupAxisLinks(ImAxis.X1, ref _viewRange[0], ref _viewRange[1]);
         }
         else
         {
@@ -833,6 +859,6 @@ public sealed class LogicAnalyzerWindow : DebuggerWindow
     {
         base.Dispose();
 
-        _debugger.Ticked -= OnTicked;
+        _sampleClock.Unsubscribe(OnTicked);
     }
 }
