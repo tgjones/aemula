@@ -2,8 +2,6 @@ using System;
 
 namespace Aemula.Emulation.Output.Ntsc;
 
-// Phase 2 of docs/television-plan.md.
-//
 // A CRT draws a picture by sweeping an electron beam left-to-right along
 // each line, then jumping back and starting the next line slightly lower -
 // and doing that whole thing over and over, top-to-bottom, ~60 times a
@@ -95,8 +93,7 @@ public sealed class NtscRasterOscillators
 
     /// <summary>
     /// The current running estimate of samples-per-line, measured from real
-    /// HSYNC spacing rather than configured - see the plan doc's "Raster
-    /// oscillators" section.
+    /// HSYNC spacing rather than configured.
     /// </summary>
     public float DetectedSamplesPerLine => _horizontal.PeriodEstimate;
 

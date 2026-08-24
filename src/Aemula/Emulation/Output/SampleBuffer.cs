@@ -8,9 +8,9 @@ namespace Aemula.Emulation.Output;
 // place (see Resize) whenever Television's detected timing changes, the
 // same "resize on detected-timing-change" behavior the older, more generic
 // Aemula.DisplayBuffer already has elsewhere in this codebase. Deliberately
-// a separate type rather than reusing DisplayBuffer here - see
-// docs/television-plan.md's Phase 7 - since this needs to carry per-sample
-// data (Region today, more later - see Sample's own remarks) nothing else
+// a separate type rather than reusing DisplayBuffer here, since this needs
+// to carry per-sample data (Region today, more later - see Sample's own
+// remarks) nothing else
 // in this codebase's DisplayBuffer consumers (ScreenDisplayWindow,
 // Atari2600's VideoOutput, etc.) needs or should have to know about.
 public sealed class SampleBuffer

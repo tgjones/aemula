@@ -1,8 +1,8 @@
 namespace Aemula.Emulation.Output;
 
-// Phase 7 of docs/television-plan.md - TelevisionWindow's Saleae-style
-// overlay nicety needs a name for "what part of the signal produced this
-// sample", the same way a logic analyzer names the regions of a waveform
+// TelevisionWindow's Saleae-style overlay nicety needs a name for "what part
+// of the signal produced this sample", the same way a logic analyzer names
+// the regions of a waveform
 // it's showing you. Television.Decode determines this live, per sample, from
 // state the decode pipeline's own earlier stages already computed for their
 // own reasons, and stores the result in that sample's Sample.Region, rather
@@ -14,9 +14,9 @@ namespace Aemula.Emulation.Output;
 //
 // Lives here, one level up from the Ntsc/ classes that currently populate it
 // (rather than under Ntsc/ itself, unlike almost everything else this
-// decoder needed - see docs/television-plan.md's "Standard detection seam"),
-// because - unlike the sample-rate assumptions, the YIQ matrix, or the burst
-// PLL's phase stepping - a sync pulse, a color-burst reference, blanking, and
+// decoder needed), because - unlike the sample-rate assumptions, the YIQ
+// matrix, or the burst PLL's phase stepping - a sync pulse, a color-burst
+// reference, blanking, and
 // active picture aren't NTSC-specific concepts: PAL has all four too, with
 // its own timing but the same names. Nothing about that claim is NTSC-vs-PAL
 // speculative the way a shared base class between their decode pipelines

@@ -28,9 +28,9 @@ public class NtscRasterOscillatorsTests
         var (_, oscillators) = RunPipeline(samples);
 
         // smpte.ntsc's own byte count implies 910 samples/line, 262.5
-        // lines/field (see docs/television-plan.md's "Existing state") -
-        // measured here, not asserted exactly, since these are running
-        // estimates over a real (if synthetic) signal, not configuration.
+        // lines/field - measured here, not asserted exactly, since these
+        // are running estimates over a real (if synthetic) signal, not
+        // configuration.
         await Assert.That(oscillators.DetectedSamplesPerLine).IsBetween(905.0f, 915.0f);
         await Assert.That(oscillators.DetectedLinesPerFrame).IsBetween(260.0f, 265.0f);
     }

@@ -53,8 +53,8 @@ public sealed class Channel : ChannelNode
 
     // BitWidth is unused for Analog (rendered as a continuous line, not a
     // hex band), but a byte sample still fits the shared ulong storage
-    // unchanged - see docs/apple-ii-ntsc-video-plan.md's phase 5. The raw
-    // sample is always a 0-255 byte (Read's own range); min/max are this
+    // unchanged. The raw sample is always a 0-255 byte (Read's own range);
+    // min/max are this
     // channel's own real-world range that byte gets linearly scaled into,
     // and unit is appended to the two labels LogicAnalyzerWindow generates
     // at the axis endpoints (e.g. "0 V"/"2 V") - every Analog channel

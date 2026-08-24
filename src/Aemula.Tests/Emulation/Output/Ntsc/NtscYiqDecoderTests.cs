@@ -4,9 +4,9 @@ using Aemula.Emulation.Output.Ntsc;
 
 namespace Aemula.Tests.Emulation.Output.Ntsc;
 
-// Isolated, synthetic-signal tests for NtscYiqDecoder - see the plan doc's
-// Testing section: full smpte.ntsc property assertions belong in
-// TelevisionTests, focused per-class math checks belong here.
+// Isolated, synthetic-signal tests for NtscYiqDecoder: full smpte.ntsc
+// property assertions belong in TelevisionTests, focused per-class math
+// checks belong here.
 public class NtscYiqDecoderTests
 {
     // Both the comb filter and the I/Q box-average are 4-sample rolling
@@ -149,7 +149,7 @@ public class NtscYiqDecoderTests
     {
         // I-axis-aligned chroma (see DemodulatesChromaAlignedWithIAxis)
         // gives I = amplitude, Q = 0 once warmed up, letting the R/G/B
-        // outputs be checked directly against the plan doc's cited
+        // outputs be checked directly against the standard YIQ-to-RGB
         // coefficients: R = Y + 0.956I, G = Y - 0.272I, B = Y - 1.106I.
         const float rawLuma = 128;
         const float amplitude = 40;

@@ -3,21 +3,18 @@ using Aemula.Emulation.Output;
 
 namespace Aemula.Emulation.Systems.AppleII;
 
-// Phase 3 of docs/apple-ii-ntsc-video-plan.md: the analog composite video
-// summing stage. Real hardware: Q3, an NPN emitter follower with three
-// weighted resistor inputs (R7=1.5K VIDEO DATA, R8=2K SYNC, R6=2.7K COLOR
-// BURST). Modelled as a weighted-sum-then-clamp formula rather than
-// transistor-level simulation, calibrated directly against Gayler's
-// measured output levels - see the plan doc's "Summing formula" section
-// for the derivation this file implements.
+// The analog composite video summing stage. Real hardware: Q3, an NPN
+// emitter follower with three weighted resistor inputs (R7=1.5K VIDEO DATA,
+// R8=2K SYNC, R6=2.7K COLOR BURST). Modelled as a weighted-sum-then-clamp
+// formula rather than transistor-level simulation, calibrated directly
+// against Gayler's measured output levels.
 public sealed partial class AppleIISystem
 {
-    // Phase 6 of docs/television-plan.md: fed one sample at a time from
-    // TickCompositeVideo below, live, the same tick the analog summing
-    // stage produces it - the same way every other signal in this
-    // emulator propagates through the chips/systems that consume it,
-    // rather than a UI window pulling a backlog from a ring buffer once
-    // per frame.
+    // Fed one sample at a time from TickCompositeVideo below, live, the
+    // same tick the analog summing stage produces it - the same way every
+    // other signal in this emulator propagates through the chips/systems
+    // that consume it, rather than a UI window pulling a backlog from a
+    // ring buffer once per frame.
     public readonly Television Television = new();
 
     // Real resistor values (kΩ) from the video-summing circuit.
@@ -48,14 +45,14 @@ public sealed partial class AppleIISystem
     // Targets the measured 0.7Vpp burst window (Gayler Fig. 4-4), added on
     // top of the digital-only baseline - which already lands exactly on
     // BlackVoltage during the burst window, since VIDEO DATA is blanked
-    // and SYNC is high there (see the plan doc's "Composite sync" section).
+    // and SYNC is high there.
     private const double BurstAmplitudeVolts = 0.35;
 
     // One byte sample per master tick; a fixed-capacity ring buffer sized to
     // one frame's worth of samples. Every line is 912 ticks, not just some
-    // of them - phase 4 verification found every line carries one long
+    // of them - verification found every line carries one long
     // (16-tick) PHASE0 cycle among its 65 (64*14+16=912), not just one line
-    // in 65 as this plan originally assumed; see "Sample rate" below.
+    // in 65 as originally assumed; see "Sample rate" below.
     private const int CompositeVideoCapacity = 262 * 912;
 
     public readonly byte[] CompositeVideo = new byte[CompositeVideoCapacity];
@@ -70,8 +67,7 @@ public sealed partial class AppleIISystem
     // line "long cycle" stretch (one 16-tick cell among the line's 65)
     // adds 2 extra ticks that VideoDataBit below simply holds the last
     // tick's value through, rather than modelling exactly which tick
-    // really gets stretched on real hardware - an accepted approximation,
-    // see docs/apple-ii-ntsc-video-plan.md's "Sample rate" section.
+    // really gets stretched on real hardware - an accepted approximation.
     private int _ticksSincePhase0Edge;
 
     // Free-running master-tick counter for the burst sine's phase - never
@@ -83,13 +79,12 @@ public sealed partial class AppleIISystem
 
     // The digital VIDEO DATA bit for whichever master tick the clock is
     // currently within - the same per-tick array TickCompositeVideo uses
-    // below to build vOut, exposed as a scope channel
-    // (docs/apple-ii-ntsc-video-plan.md phase 5).
+    // below to build vOut, exposed as a scope channel.
     public bool VideoDataBit => _videoDataBits[Math.Min(_ticksSincePhase0Edge, 13)];
 
     // The most recently written composite-video sample, i.e. this tick's
     // value - exposed as an Analog scope channel alongside the digital
-    // sync/blanking rows (docs/apple-ii-ntsc-video-plan.md phase 5).
+    // sync/blanking rows.
     public byte CurrentCompositeVideoSample =>
         CompositeVideo[(CompositeVideoWriteIndex + CompositeVideoCapacity - 1) % CompositeVideoCapacity];
 
@@ -113,10 +108,9 @@ public sealed partial class AppleIISystem
         if (ColorBurstGate)
         {
             // Only 4 samples/cycle are achievable at this sample rate (the
-            // subcarrier is exactly master/4 - see "Sample rate" in the
-            // plan doc). That lands every sample exactly on a
-            // zero-crossing or a peak (0, +1, 0, -1), not a smooth curve -
-            // still a real sine's *shape*, and a genuine step up from a
+            // subcarrier is exactly master/4). That lands every sample
+            // exactly on a zero-crossing or a peak (0, +1, 0, -1), not a
+            // smooth curve - still a real sine's *shape*, and a genuine step up from a
             // flat square wave, which is what this replaces.
             //
             // The +2 (half a subcarrier cycle) is a real, load-bearing part

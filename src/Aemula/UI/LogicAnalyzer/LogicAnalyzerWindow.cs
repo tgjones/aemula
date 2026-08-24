@@ -12,8 +12,7 @@ namespace Aemula.UI.LogicAnalyzer;
 /// Logic-analyzer-style debugger window: one merged tree/waveform view, channel
 /// name to the left of its own row's trace, grouped under non-collapsible
 /// headers (visual organization only). All channels are always recorded and
-/// shown - no per-channel hide toggle. See docs/oscilloscope-plan.md for the
-/// phased plan.
+/// shown - no per-channel hide toggle.
 ///
 /// X-axis is in absolute sample index units (one tick = one <see cref="Debugger.Ticked"/>
 /// call). The time ruler is drawn exactly once, as a frozen header row above the
@@ -23,7 +22,7 @@ namespace Aemula.UI.LogicAnalyzer;
 /// frame (no interaction); once stopped, <see cref="_viewMin"/>/<see cref="_viewMax"/>
 /// back ImPlot's own pan/zoom via SetupAxisLinks (see <see cref="SetupSharedXAxis"/>),
 /// shared across every row's independent BeginPlot so they stay in sync without
-/// ImPlot.BeginSubplots (see "Layout false starts" in the plan doc). The zoom level
+/// ImPlot.BeginSubplots. The zoom level
 /// can also be driven directly via the +/- buttons or the "ms / 100px" textbox in
 /// the toolbar, Saleae Logic-style.
 /// </summary>
@@ -675,9 +674,9 @@ public sealed class LogicAnalyzerWindow : DebuggerWindow
 
     // Analog rendering: PlotStairs, same as Digital - the underlying signal
     // really is a discrete step at one sample per master tick (no
-    // between-sample interpolation is modelled, docs/apple-ii-ntsc-video-plan.md
-    // "Sample rate"), so a step trace is the faithful rendering for the
-    // black/white/sync portions. The color-burst sine only has 4
+    // between-sample interpolation is modelled), so a step trace is the
+    // faithful rendering for the black/white/sync portions. The
+    // color-burst sine only has 4
     // samples/cycle at this sample rate (TickCompositeVideo's comment) and
     // so still reads as a jagged staircase rather than a smooth curve, but
     // that's the actual signal, not a rendering artifact - PlotLine's
@@ -711,7 +710,7 @@ public sealed class LogicAnalyzerWindow : DebuggerWindow
     // samples, so edges land exactly at value-change points, with the hex value
     // centered in the rectangle when there's room for it. ImPlot has no built-in
     // "bus" mark, so this draws directly into plot pixel space via
-    // GetPlotDrawList()/PlotToPixels() - see "Open risks" in the plan doc.
+    // GetPlotDrawList()/PlotToPixels().
     private static void DrawBusTrace(Channel channel, Vector4 color, long visStart, int visibleCount, ReadOnlySpan<double> ys)
     {
         const double BandTop = 0.85;

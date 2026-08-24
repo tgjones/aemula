@@ -139,8 +139,7 @@ public sealed partial class Atari2600System : EmulatedSystem
         _riot.CS2 = GetBitAsBoolean(address, 12); // CS2 <- A12 (active low).
 
         // Both chips decide for themselves (via their own CS-gated Phi2
-        // setter, Phase 1/1b) whether this edge means "do a register/RAM
-        // access".
+        // setter) whether this edge means "do a register/RAM access".
         _tia.Phi2 = _cpu.Phi2;
         _riot.Phi2 = _cpu.Phi2;
 
@@ -162,8 +161,8 @@ public sealed partial class Atari2600System : EmulatedSystem
             if (_cartridge != null)
             {
                 // Cartridge.Cycle() was replaced by the combinational Address
-                // property (Phase 2) - no cycle call needed, just read Data
-                // back afterward. Data is null (high-impedance) whenever A12
+                // property - no cycle call needed, just read Data back
+                // afterward. Data is null (high-impedance) whenever A12
                 // isn't asserted, so the null-check here is what keeps a
                 // not-selected access from stomping _cpu.Data with cartridge
                 // output - the "am I selected" logic lives entirely in

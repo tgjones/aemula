@@ -1,7 +1,5 @@
 namespace Aemula.Emulation.Output.Ntsc;
 
-// Phase 1 of docs/television-plan.md.
-//
 // A composite video signal carries picture, sync, and (during a short
 // window each line) a color reference burst all mixed together as one
 // analog waveform. Before any of that can be decoded into pixels, a real TV
@@ -14,13 +12,12 @@ namespace Aemula.Emulation.Output.Ntsc;
 //   3. Where's "white" (the brightest part of the picture)?
 //
 // A TV can't just hardcode these as fixed voltages, because real signals
-// drift - cable loss, source quirks (see docs/television-plan.md's "Voltage
-// levels" section for how far off the real Apple II's own output runs from
-// the official spec), temperature, etc. Real sets solve this with an AGC
-// (automatic gain control) and a "clamp" circuit that continuously re-
-// measure these three reference points from the signal itself. This class
-// is the software equivalent: three self-calibrating running estimates,
-// updated every sample.
+// drift - cable loss, source quirks (the real Apple II's own output runs
+// noticeably off the official spec), temperature, etc. Real sets solve
+// this with an AGC (automatic gain control) and a "clamp" circuit that
+// continuously re-measure these three reference points from the signal
+// itself. This class is the software equivalent: three self-calibrating
+// running estimates, updated every sample.
 //
 // Once it knows roughly where "sync tip" is, it can also tell picture from
 // sync moment-to-moment (anything close to the sync tip level is sync, not
@@ -35,7 +32,7 @@ public sealed class NtscSyncSeparator
     // estimate. The lower bound also keeps this class from being fooled by
     // the shorter equalizing pulses (~2.3µs, roughly half an HSYNC pulse)
     // that bracket real vertical blanking - those fall below
-    // HSyncToleranceLowerFraction and are simply ignored (Phase 1 doesn't
+    // HSyncToleranceLowerFraction and are simply ignored (this class doesn't
     // need to specifically recognize them, only to not misclassify them).
     private const float HSyncToleranceLowerFraction = 0.5f;
     private const float HSyncToleranceUpperFraction = 1.5f;
@@ -44,8 +41,7 @@ public sealed class NtscSyncSeparator
     // normal ~4.7µs HSYNC pulse - so "way longer than a normal HSYNC pulse"
     // is measured as a multiple of the current HSYNC-width estimate rather
     // than a fixed sample count. This is what lets the same logic work
-    // whether a line is 910 samples (smpte.ntsc) or 912 samples (Apple II) -
-    // see docs/television-plan.md's "Raster oscillators" section.
+    // whether a line is 910 samples (smpte.ntsc) or 912 samples (Apple II).
     private const float VSyncWidthMultiplier = 3.0f;
 
     // How many consecutive below-sync-level samples a low run has to reach
@@ -71,15 +67,15 @@ public sealed class NtscSyncSeparator
     // recent samples after snapping to a new extreme (see Process below).
     // How fast the HSYNC-width and black-level estimates smooth toward a
     // newly classified pulse. All four are free parameters with no single
-    // "correct" value from first principles - see docs/television-plan.md's
-    // Open risks; expect to tune these once real signals are decoding.
+    // "correct" value from first principles; expect to tune these once real
+    // signals are decoding.
     private const float LevelDecayRate = 0.0005f;
     private const float HSyncWidthSmoothingRate = 0.1f;
     private const float BlackLevelSmoothingRate = 0.05f;
 
-    // Seeded from the Apple II's own measured levels (see the plan doc's
-    // "Voltage levels" section) so decoding is sane from sample 1, without
-    // waiting for the running estimates to converge: sync tip = byte 0,
+    // Seeded from the Apple II's own measured levels so decoding is sane
+    // from sample 1, without waiting for the running estimates to
+    // converge: sync tip = byte 0,
     // black ≈ byte 64 (0.5V on Apple II's own 0V-2.0V scale), white = byte
     // 255. These are just a starting guess, not a hard assumption - real
     // incoming samples immediately start pulling all three estimates
@@ -235,10 +231,10 @@ public sealed class NtscSyncSeparator
 
             // Same fast-attack, slow-decay idea, mirrored to track a
             // running *maximum* instead of minimum - approximates "peak of
-            // active video" (the plan doc's AGC white-level reference)
-            // without needing to know precisely where active video starts
-            // and ends (that's the raster oscillators' job, Phase 2): non-
-            // sync samples are dominated by genuine active-video whites
+            // active video" (an AGC white-level reference) without needing
+            // to know precisely where active video starts and ends (that's
+            // the raster oscillators' job): non-sync samples are dominated
+            // by genuine active-video whites
             // simply because active video occupies most (~83%) of a
             // scanline's duration, so the observed peak among non-sync
             // samples is realistically going to land on real picture
@@ -290,7 +286,8 @@ public sealed class NtscSyncSeparator
         }
         // Otherwise: too short to be a normal HSYNC pulse, not long enough
         // to be a VSYNC pulse either - most likely a vertical-blanking
-        // equalizing pulse. Phase 1 doesn't need to specifically recognize
-        // these, only to avoid misclassifying them as one of the other two.
+        // equalizing pulse. This class doesn't need to specifically
+        // recognize these, only to avoid misclassifying them as one of the
+        // other two.
     }
 }

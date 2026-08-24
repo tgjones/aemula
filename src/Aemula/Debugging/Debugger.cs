@@ -24,8 +24,7 @@ public abstract class Debugger
     /// <summary>
     /// Raised once per tick actually executed (free-run or single-step alike,
     /// since both funnel through <see cref="RunForDuration"/>). Used by
-    /// <see cref="UI.LogicAnalyzer.LogicAnalyzerWindow"/> to sample channels -
-    /// see docs/oscilloscope-plan.md.
+    /// <see cref="UI.LogicAnalyzer.LogicAnalyzerWindow"/> to sample channels.
     /// </summary>
     public event Action? Ticked;
 

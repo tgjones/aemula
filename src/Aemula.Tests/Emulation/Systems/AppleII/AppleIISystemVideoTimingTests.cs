@@ -174,9 +174,8 @@ public class AppleIISystemVideoTimingTests
     [Test]
     public async Task HSyncPulseIsFourHCountsImmediatelyBeforeColorBurstGate()
     {
-        // docs/apple-ii-ntsc-video-plan.md, "Composite sync": HSync is a
-        // 4-H-count pulse, immediately followed by the already-implemented
-        // ColorBurstGate window.
+        // HSync is a 4-H-count pulse, immediately followed by the
+        // already-implemented ColorBurstGate window.
         var system = new AppleIISystem();
         system.LoadProgram("");
 
@@ -219,8 +218,8 @@ public class AppleIISystemVideoTimingTests
     [Test]
     public async Task HSyncAndVSyncPulsesMatchDocumentedEquations()
     {
-        // docs/apple-ii-ntsc-video-plan.md, "Composite sync": cross-checks
-        // HSyncPulse/VSyncPulse against the documented boolean equations
+        // Cross-checks HSyncPulse/VSyncPulse against the documented boolean
+        // equations
         // (RFI-revision: vertical serration term (H5+H4+H3)) independently
         // re-derived from the packed scanner state, across a real run long
         // enough to pass through the vertical sync region (V=480-483, ~480

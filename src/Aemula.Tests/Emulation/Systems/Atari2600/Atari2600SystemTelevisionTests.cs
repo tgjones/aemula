@@ -7,9 +7,9 @@ using Aemula.Emulation.Systems.Atari2600;
 
 namespace Aemula.Tests.Emulation.Systems.Atari2600;
 
-// Phase 6 of docs/atari2600-television-plan.md: the code-verified
-// replacement for "eyeball the Television window and hope it looks right" -
-// loads a small hand-assembled cartridge that paints three solid
+// The code-verified replacement for "eyeball the Television window and hope
+// it looks right" - loads a small hand-assembled cartridge that paints three
+// solid
 // background-color bands (COLUBK held at a different value for roughly a
 // third of a frame each), runs it, and checks that
 // Atari2600System.Television.SampleBuffer (fed live from
@@ -128,8 +128,7 @@ public class Atari2600SystemTelevisionTests
     // No boot ROM on the Atari 2600 (unlike AppleIISystemTelevisionTests'
     // BootToIdle) - just run enough frames that Television's self-
     // calibrating sync/level tracking, raster oscillators, and color-burst
-    // PLL (docs/television-plan.md's Phases 1-3) are locked well before the
-    // frame under test is captured.
+    // PLL are locked well before the frame under test is captured.
     private static void RunFrames(Atari2600System system, int frameCount)
     {
         // 262 lines * 228 OSC ticks/line - see EmitColorBand's remarks.

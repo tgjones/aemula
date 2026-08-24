@@ -3,8 +3,6 @@ using System.Runtime.Intrinsics;
 
 namespace Aemula.Emulation.Output.Ntsc;
 
-// Phase 4 of docs/television-plan.md.
-//
 // Everything up to this point (NtscSyncSeparator, NtscRasterOscillators,
 // NtscColorBurstPll) exists to answer "where in the raster is this sample,
 // and what phase is the color subcarrier at" - genuinely important
@@ -152,10 +150,10 @@ public sealed class NtscYiqDecoder
     /// </summary>
     public void Process(byte sample, float phaseOffsetRadians, float blackLevel, float whiteLevel)
     {
-        // Step 1: luma via a comb filter. Every sample is exactly 90 degrees
-        // of subcarrier phase from its neighbors (the 4x-fsc assumption -
-        // see docs/television-plan.md's "Input signal contract"), so a
-        // sample 2 positions back is exactly 180 degrees - i.e. exactly
+        // Step 1: luma via a comb filter. Every sample is exactly 90
+        // degrees of subcarrier phase from its neighbors (the 4x-fsc
+        // assumption), so a sample 2 positions back is exactly 180
+        // degrees - i.e. exactly
         // inverted - chroma, and a sample 4 positions back is a full cycle
         // (360 degrees) - i.e. same-phase - chroma. Weighting those three
         // taps 1:2:1 (X[n] + 2*X[n-2] + X[n-4]) makes the two 180-degree-
@@ -246,9 +244,9 @@ public sealed class NtscYiqDecoder
         // table. Coefficients are the standard NTSC/FCC-derived matrix
         // (independently confirmed via MATLAB's ntsc2rgb and the classic
         // FCC-derived coefficients commonly reproduced in video-engineering
-        // references - see the plan doc's YIQ section); different sources'
-        // coefficients drift very slightly, but this set is the most
-        // commonly cited one and well within this project's accuracy bar.
+        // references); different sources' coefficients drift very
+        // slightly, but this set is the most commonly cited one and well
+        // within this project's accuracy bar.
         //
         // R/G/B share the same Luma + coeffI*I + coeffQ*Q shape, one row of
         // the matrix per channel - a matrix-vector multiply, not three

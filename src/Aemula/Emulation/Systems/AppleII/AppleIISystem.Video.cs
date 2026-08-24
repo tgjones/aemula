@@ -98,10 +98,10 @@ public sealed partial class AppleIISystem
     // YIQ values") through the standard NTSC YIQ->RGB matrix. This is the
     // same shortcut real "RGB card" Apple II hardware took - reading the
     // 4-bit color value straight into a digital-RGB monitor, bypassing
-    // composite decoding entirely. True NTSC artifact rendering (needed for
-    // HIRES, which has no direct per-bit color) waits for the composite
-    // encoder described in the plan's "Future goal: analog composite video
-    // into Television" section - not yet built.
+    // composite decoding entirely. True NTSC artifact rendering into this
+    // same Display buffer (needed for HIRES, which has no direct per-bit
+    // color) isn't built yet - real composite decoding exists separately,
+    // through Television, but isn't wired into Display's own pixels.
     private static readonly RgbaByte[] LoresPalette =
     [
         new RgbaByte(0x00, 0x00, 0x00, 0xFF), // 0 Black
@@ -136,12 +136,11 @@ public sealed partial class AppleIISystem
     // Display's (currently monochrome-only) HIRES pixels: which of the 4
     // color-subcarrier phase quadrants each HIRES dot's edge falls in. Not
     // consumed by anything yet - Display still renders HIRES black/white,
-    // since actually turning this into a color needs the NTSC decode this
-    // plan's "Future goal: analog composite video into Television" section
-    // defers. Sized and indexed exactly like Display.Data; only meaningful
-    // where/when HIRES was actually being scanned (garbage - not zeroed
-    // between frames - everywhere else). Resolved (docs/apple-ii-ntsc-video-plan.md
-    // phase 4, AppleIISystemCompositeVideoTests.HiresColorPhaseMatchesAbsoluteSubcarrierPhaseAcrossScanlines):
+    // since actually turning this into a color needs the NTSC decode
+    // Display doesn't have wired in yet. Sized and indexed exactly like
+    // Display.Data; only meaningful where/when HIRES was actually being
+    // scanned (garbage - not zeroed between frames - everywhere else).
+    // Resolved (AppleIISystemCompositeVideoTests.HiresColorPhaseMatchesAbsoluteSubcarrierPhaseAcrossScanlines):
     // yes, a fixed column's phase is identical on every line, verified
     // directly against the composite encoder's free-running master-tick
     // counter, not just assumed from the once-per-line "long cycle"
@@ -150,9 +149,9 @@ public sealed partial class AppleIISystem
     // rather than approximate.
     public readonly byte[] HiresColorPhase;
 
-    // docs/apple-ii-ntsc-video-plan.md phase 2: the real digital PICTURE/
-    // VIDEO DATA line for the 14 master ticks of whichever cell TickVideo()
-    // just scanned - one entry per master tick, not per dot. TEXT/HIRES
+    // The real digital PICTURE/VIDEO DATA line for the 14 master ticks of
+    // whichever cell TickVideo() just scanned - one entry per master tick,
+    // not per dot. TEXT/HIRES
     // shift once per dot (7M, i.e. every 2 master ticks), so those two
     // just write the same per-dot bit into both of a dot's tick slots; but
     // LORES's circulating 4-bit shift register genuinely is clocked at the
@@ -229,8 +228,8 @@ public sealed partial class AppleIISystem
         var address = (ushort)(lowAddress | highAddress);
 
         // Bypasses the CPU's memory decode chips and reads the RAM array
-        // directly - the plan's fidelity exception for bulk storage covers
-        // this the same way it covers the CPU's own RAM access. Fetched
+        // directly, the same accepted fidelity exception for bulk storage
+        // the CPU's own RAM access already uses. Fetched
         // unconditionally, including during HBL/VBL, since this access is
         // what the DRAM refresh side effect rides on.
         var screenByte = _ram[address];
@@ -351,8 +350,7 @@ public sealed partial class AppleIISystem
         // get this rate wrong and a decoder's comb filter/PLL (built around
         // exactly 4 samples/cycle) sees a period-8 signal it can't cancel,
         // which is what full per-sample luma/chroma noise inside an
-        // otherwise solid LORES block turned out to be, in practice (see
-        // docs/television-plan.md's Phase 6 investigation).
+        // otherwise solid LORES block turned out to be, in practice.
         //
         // Sather is also explicit about *which* bit starts the rotation,
         // not just the rate: "either its least significant bit (Q0) or its

@@ -8,9 +8,8 @@ using Hexa.NET.SDL3;
 
 namespace Aemula.UI;
 
-// Phases 5-7 of docs/television-plan.md: a basic texture-upload render
-// (Phase 5), wired into a real system (Phase 6), plus the Saleae-style
-// niceties (Phase 7) - a dot-position crosshair at Television.CurrentColumn/
+// A basic texture-upload render, wired into a real system, plus the
+// Saleae-style niceties - a dot-position crosshair at Television.CurrentColumn/
 // CurrentRow, translucent overlays naming the HSYNC/VSYNC/blanking/color-
 // burst regions of the raster (independently toggleable from a crop down to
 // just the picture - see DrawSidebar), a legend for those overlay colors,
@@ -24,10 +23,10 @@ namespace Aemula.UI;
 // Same overall GPU-texture-upload *shape* as ScreenDisplayWindow (allocate
 // a transfer buffer + texture, map/upload/copy each frame, draw via
 // ImGui.Image, release on Dispose), but a deliberately independent
-// implementation - no shared base class or composition with it. Per the
-// plan doc's "TelevisionWindow" section, ScreenDisplayWindow is slated for
-// removal once this class replaces it, so tying the two together now would
-// just create a removal headache later for no benefit today.
+// implementation - no shared base class or composition with it.
+// ScreenDisplayWindow is slated for removal once this class replaces it, so
+// tying the two together now would just create a removal headache later for
+// no benefit today.
 public sealed class TelevisionWindow : DebuggerWindow
 {
     // Saleae-style translucent region colors - deliberately distinct hues
@@ -112,8 +111,9 @@ public sealed class TelevisionWindow : DebuggerWindow
     private uint _transferBufferSizeInBytes;
 
     // Saleae-style toggle: crop out sync/blanking/color burst entirely and
-    // show just the picture, the same view Phase 5/6 always showed. Defaults
-    // on so opening this window looks the same as it did before Phase 7.
+    // show just the picture, the same view this window always showed before
+    // the region-overlay/crosshair niceties were added. Defaults on so
+    // opening this window looks the same as it always did.
     // Independent of _showRegionOverlay below - a checked region can still
     // be interesting to see even while cropped (e.g. a VSYNC-classified
     // sample can land inside what would otherwise read as the active-video
@@ -138,9 +138,9 @@ public sealed class TelevisionWindow : DebuggerWindow
     public override string DisplayName => "Television";
 
     // Takes the whole Television instance, not just its DisplayBuffer
-    // (unlike ScreenDisplayWindow) - the dot-position/region overlays added
-    // in Phase 7 need CurrentColumn/CurrentRow/IsActiveVideo from the live
-    // decoder, not just the pixels it already produced from them.
+    // (unlike ScreenDisplayWindow) - the dot-position/region overlays need
+    // CurrentColumn/CurrentRow/IsActiveVideo from the live decoder, not
+    // just the pixels it already produced from them.
     public TelevisionWindow(Television television)
     {
         _television = television;
@@ -264,7 +264,7 @@ public sealed class TelevisionWindow : DebuggerWindow
     // real video tooling applies when showing a broadcast-format capture
     // on a square-pixel screen) - it stretches only how large ImGui.Image
     // draws the texture, not SampleBuffer's actual data, which stays at
-    // native sample/line resolution for Phase 7's overlays (and any other
+    // native sample/line resolution for the region overlays (and any other
     // consumer that needs raw positions).
     private float VerticalStretchFactor(float activeLineCount) =>
         (_television.ActiveVideoLengthSamples / activeLineCount) / (4f / 3f);
@@ -302,8 +302,9 @@ public sealed class TelevisionWindow : DebuggerWindow
         // twice. See ComputeVerticalActiveRange's own remarks.
         var (verticalActiveStart, verticalActiveCount) = ComputeVerticalActiveRange();
 
-        // "Active video only" shows exactly what Phase 5/6 always showed:
-        // just the picture, cropped out of the full raster via ImGui.Image's
+        // "Active video only" shows exactly what this window always showed
+        // before the region overlays were added: just the picture, cropped
+        // out of the full raster via ImGui.Image's
         // own uv0/uv1 (a plain texture-sampling crop - SampleBuffer's actual
         // data is untouched either way). Unchecked instead shows the
         // *whole* raster - sync, blanking, color burst, and vertical
@@ -605,12 +606,11 @@ public sealed class TelevisionWindow : DebuggerWindow
             fineX[m] = rawX[0] + kf;
 
             // Fixed 90-degrees-per-real-sample slope (the 4x-fsc input
-            // contract - see docs/television-plan.md), anchored at each
-            // stored discrete phase rather than lerping between the two
-            // stored values directly - that would need unwrapping across
-            // any line-boundary phase-offset nudge, and the true
-            // instantaneous rate never actually changes (a nudge only
-            // shifts *future* phase by a constant - see
+            // contract), anchored at each stored discrete phase rather than
+            // lerping between the two stored values directly - that would
+            // need unwrapping across any line-boundary phase-offset nudge,
+            // and the true instantaneous rate never actually changes (a
+            // nudge only shifts *future* phase by a constant - see
             // NtscColorBurstPll's own flywheel remarks).
             var carrierPhase = phases[k] + t * (Math.PI / 2.0);
             var iAxisPhase = carrierPhase + NtscYiqDecoder.BurstToIAxisRotationRadians;
@@ -828,9 +828,8 @@ public sealed class TelevisionWindow : DebuggerWindow
     // value Television.Decode stored there from the pipeline's own live
     // classification (see Television.ClassifyCurrentSample's remarks) -
     // rather than this class (or anything else) re-deriving it from NTSC's
-    // timing constants - see docs/television-plan.md's Phase 7 and
-    // RasterRegion's own remarks on why an earlier, nominal-timing-based
-    // version of this was replaced.
+    // timing constants - see RasterRegion's own remarks on why an earlier,
+    // nominal-timing-based version of this was replaced.
     //
     // Scans every row (not one "representative" row standing in for all of
     // them, the way an earlier version of this did) because VSYNC genuinely

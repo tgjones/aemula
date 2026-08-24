@@ -3,10 +3,9 @@ using Aemula.Emulation.Output.Ntsc;
 
 namespace Aemula.Emulation.Output;
 
-// See docs/television-plan.md. This class is the "front door" the rest of
-// the codebase talks to: feed it one composite-video sample at a time via
-// Decode, and it runs that sample through the whole decode pipeline built
-// up over the earlier phases of the plan - sync separation (where's sync,
+// This class is the "front door" the rest of the codebase talks to: feed it
+// one composite-video sample at a time via Decode, and it runs that sample
+// through the whole decode pipeline - sync separation (where's sync,
 // black, white?), raster oscillators (where in the picture is this sample?),
 // the color-burst PLL (what phase is the color subcarrier at right now?),
 // and finally the YIQ decoder (turn this sample into an actual RGB pixel) -
@@ -37,8 +36,7 @@ public sealed class Television
     // Seeded at the nominal NTSC frame shape so there's a sensible buffer
     // from sample 1, and resized in Decode below once the raster
     // oscillators' own measured timing (which can differ slightly per
-    // signal - see docs/television-plan.md's "Raster oscillators" section)
-    // is known.
+    // signal) is known.
     public readonly SampleBuffer SampleBuffer = new(
         (uint)MathF.Round(NtscTiming.NominalSamplesPerLine),
         (uint)MathF.Round(NtscTiming.NominalLinesPerField));
@@ -48,11 +46,10 @@ public sealed class Television
     private float _samplesSincePulseStart = float.MaxValue;
     private bool _isVerticallyBlanked;
 
-    // Hardcoded for now - see docs/television-plan.md's "Standard detection
-    // seam". A real multi-standard TV works this out from the incoming
-    // signal itself (line/frame rate, and PAL's line-to-line burst-phase
-    // alternation), but this class doesn't have a PAL decode path to switch
-    // to yet, so there's nothing to detect.
+    // Hardcoded for now. A real multi-standard TV works this out from the
+    // incoming signal itself (line/frame rate, and PAL's line-to-line
+    // burst-phase alternation), but this class doesn't have a PAL decode
+    // path to switch to yet, so there's nothing to detect.
     public TelevisionStandard Standard => TelevisionStandard.Ntsc;
 
     /// <summary>
@@ -143,8 +140,7 @@ public sealed class Television
 
     /// <summary>
     /// Feeds one composite-video sample into the decoder. Every caller is
-    /// assumed to sample at exactly 4x the NTSC color subcarrier - see
-    /// docs/television-plan.md's "Input signal contract".
+    /// assumed to sample at exactly 4x the NTSC color subcarrier.
     /// </summary>
     public void Decode(byte sample)
     {
@@ -176,10 +172,9 @@ public sealed class Television
         var region = ClassifyCurrentSample();
 
         // Every sample is written here, at its true raster position - not
-        // just active video - so TelevisionWindow's Phase 7 full-raster view
-        // has real pixels for its region overlays to sit over (see
-        // docs/television-plan.md's "Output" section, which left this choice
-        // open for Phase 7 to make). But only active video gets its full
+        // just active video - so TelevisionWindow's full-raster view has
+        // real pixels for its region overlays to sit over. But only active
+        // video gets its full
         // decoded *color* - sync/blanking/color-burst samples decode to real
         // but meaningless chroma (NtscYiqDecoder's own remarks), and writing
         // that as-is would paint color burst's own reference-phase flicker

@@ -249,9 +249,8 @@ public class AppleIISystemVideoModesTests
     [Test]
     public async Task VideoDataBitIsForcedLowDuringBlanking()
     {
-        // docs/apple-ii-ntsc-video-plan.md phase 2: matches Gayler's "A9"
-        // blanking-gated video-data selector - no mode setup needed, HBL
-        // occurs every line regardless of mode.
+        // Matches Gayler's "A9" blanking-gated video-data selector - no
+        // mode setup needed, HBL occurs every line regardless of mode.
         var system = new AppleIISystem();
         system.LoadProgram("");
 

@@ -4,9 +4,6 @@ using Aemula.Emulation.Output.Ntsc;
 
 namespace Aemula.Tests.Emulation.Output;
 
-// Phase 0 of docs/television-plan.md. This file replaces an earlier
-// [Skip]ped prototype (System.Drawing.Bitmap-based, didn't run on CI) - see
-// the plan doc's "Testing" section for why it wasn't extended instead.
 public class TelevisionTests
 {
     [Test]
@@ -15,8 +12,7 @@ public class TelevisionTests
         var normalized = SmpteAsset.LoadNormalized();
 
         // 955,500 bytes at 910 samples/line (63.5µs at exactly 4x the NTSC
-        // color subcarrier) is exactly 1050 lines, i.e. 525 lines x 2 fields
-        // - see the plan doc's "Existing state" section.
+        // color subcarrier) is exactly 1050 lines, i.e. 525 lines x 2 fields.
         await Assert.That(normalized.Length).IsEqualTo(955_500);
 
         // The raw asset's actual range is [4, 199] (confirmed by inspection,
@@ -37,18 +33,17 @@ public class TelevisionTests
         await Assert.That(max).IsEqualTo((byte)253);
     }
 
-    // The "Done when" check for Phase 4: smpte.ntsc encodes the classic
-    // SMPTE 75% color-bar test pattern - a top strip of 7 equal-width solid
-    // vertical bars, in a fixed, well-known order: white, yellow, cyan,
-    // green, magenta, red, blue (left to right; see the plan doc's Testing
-    // section). This test decodes the whole asset through the real
+    // smpte.ntsc encodes the classic SMPTE 75% color-bar test pattern - a
+    // top strip of 7 equal-width solid vertical bars, in a fixed,
+    // well-known order: white, yellow, cyan, green, magenta, red, blue
+    // (left to right). This test decodes the whole asset through the real
     // Television front door - sync separation, raster oscillators, burst
     // PLL, and YIQ decode, exactly as a real caller would - then checks that
     // the seven bars actually come out in that hue order and with the
     // correct relative brightness (white brightest, blue darkest, matching
-    // the standard 75%-bars luma progression), with generous tolerances -
-    // per the plan doc, this project's accuracy bar is "recognizably
-    // correct", not broadcast-accurate colorimetry.
+    // the standard 75%-bars luma progression), with generous tolerances,
+    // since this project's accuracy bar is "recognizably correct", not
+    // broadcast-accurate colorimetry.
     [Test]
     public async Task DecodesSmpteColorBarsInExpectedHueAndLumaOrder()
     {
@@ -65,15 +60,14 @@ public class TelevisionTests
         // Any row comfortably within the top two-thirds of the frame shows
         // the clean 7-bar strip for this asset (confirmed by inspection);
         // the bottom third carries a different sub-pattern (-I/white/+Q
-        // strip, PLUGE) the plan doc doesn't ask this test to check.
+        // strip, PLUGE) that this test doesn't check.
         var row = (int)(buffer.Height / 6);
 
         // Each of the 7 bars is an equal fraction of the active-video
         // width, offset by where active video actually starts within the
         // line - Television.Decode writes every sample at its true raster
-        // column (see docs/television-plan.md's Phase 7's remarks on
-        // Television.Decode), so column 0 in the buffer is the start of the
-        // line (sync/blanking), not the start of the picture. Sampling at
+        // column, so column 0 in the buffer is the start of the line
+        // (sync/blanking), not the start of the picture. Sampling at
         // the middle of each bar keeps well clear of the transition columns
         // between bars.
         var barWidth = NtscTiming.ActiveVideoLengthSamples / 7.0;

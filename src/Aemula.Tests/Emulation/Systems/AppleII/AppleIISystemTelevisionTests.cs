@@ -5,8 +5,8 @@ using Aemula.Emulation.Systems.AppleII;
 
 namespace Aemula.Tests.Emulation.Systems.AppleII;
 
-// Phase 6 of docs/television-plan.md: the code-verified replacement for
-// "eyeball the Television window and hope it looks right" - pokes a HIRES
+// The code-verified replacement for "eyeball the Television window and hope
+// it looks right" - pokes a HIRES
 // byte pattern with a documented expected NTSC artifact color (from Jim
 // Sather's "Understanding the Apple II", p.8-15/8-16 - see below) into
 // screen memory, runs a frame, and checks the resulting pixels in
@@ -23,8 +23,8 @@ public class AppleIISystemTelevisionTests
     // time boot alone finishes, AppleIISystem.Television has already
     // processed hundreds of thousands of live composite-video samples, so
     // its self-calibrating sync/level tracking, raster oscillators, and
-    // burst PLL (see docs/television-plan.md's Phases 1-3) are already
-    // locked well before the pattern under test is even poked in.
+    // burst PLL are already locked well before the pattern under test is
+    // even poked in.
     private static void BootToIdle(AppleIISystem system)
     {
         for (var i = 0; i < 500_000; i++)

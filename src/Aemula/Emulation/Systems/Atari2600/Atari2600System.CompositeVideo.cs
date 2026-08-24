@@ -3,10 +3,9 @@ using Aemula.Emulation.Output;
 
 namespace Aemula.Emulation.Systems.Atari2600;
 
-// Phase 4 of docs/atari2600-television-plan.md: unlike every earlier phase,
-// real 2600 hardware never outputs composite video at all (it only ever
-// drives an RF modulator) - so, per that phase's checkpoint, turning TIA's
-// digital outputs into one composite-video byte is a design choice modeled
+// Real 2600 hardware never outputs composite video at all (it only ever
+// drives an RF modulator) - so turning TIA's digital outputs into one
+// composite-video byte is a design choice modeled
 // on how real composite mods and AppleIISystem.CompositeVideo.cs both do
 // it ("weighted sum, landmark-calibrated"), not something read off a
 // schematic. Color burst itself, though, *is* real TIA behavior (TiaChip's
@@ -113,9 +112,8 @@ public sealed partial class Atari2600System
             : BlankingLevel + (WhiteLevel - BlankingLevel) * (lum / 7f);
 
         // Television.Decode needs samples at exactly 4x the NTSC color
-        // subcarrier (~14.318MHz) - see docs/television-plan.md's "Input
-        // signal contract". TIA's OSC input is the subcarrier rate itself
-        // (3.579545MHz), not 4x it - there's no faster clock anywhere on
+        // subcarrier (~14.318MHz). TIA's OSC input is the subcarrier rate
+        // itself (3.579545MHz), not 4x it - there's no faster clock anywhere on
         // real 2600 hardware, so unlike AppleIISystem (whose own master
         // clock genuinely is 4x its dot clock already), the 4x oversampling
         // Television needs has to be synthesized here, purely as part of

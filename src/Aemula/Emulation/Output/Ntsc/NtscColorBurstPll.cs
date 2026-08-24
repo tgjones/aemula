@@ -2,8 +2,6 @@ using System;
 
 namespace Aemula.Emulation.Output.Ntsc;
 
-// Phase 3 of docs/television-plan.md.
-//
 // Every line's back porch carries a short burst of the color subcarrier -
 // not picture information, just a reference: "here is what 0 degrees of
 // color phase looks like, right now." A receiver needs this because the
@@ -22,10 +20,9 @@ namespace Aemula.Emulation.Output.Ntsc;
 // the oscillator's own phase state), not "read the sign of a few samples
 // and reset a variable".
 //
-// The 4x-the-subcarrier sample rate this whole decoder assumes (see
-// docs/television-plan.md's "Input signal contract") is what keeps the
-// "local oscillator" almost trivial to generate: every sample is either 0,
-// 90, 180, or 270 degrees of subcarrier phase, in a fixed repeating
+// The 4x-the-subcarrier sample rate this whole decoder assumes is what
+// keeps the "local oscillator" almost trivial to generate: every sample is
+// either 0, 90, 180, or 270 degrees of subcarrier phase, in a fixed repeating
 // sequence - so there's no unknown *frequency* to track here, only an
 // unknown, slowly-drifting *phase offset* against that fixed 4-step
 // sequence.
@@ -37,7 +34,7 @@ public sealed class NtscColorBurstPll
     // 4x-subcarrier sample rate, just a phase nudge) so the estimate
     // settles smoothly across many lines rather than chasing noise on any
     // one of them. A free parameter with no single correct value from
-    // first principles - see docs/television-plan.md's Open risks.
+    // first principles.
     private const float LoopGain = 0.1f;
 
     // A completed burst window only counts as "burst was actually there"
@@ -97,10 +94,9 @@ public sealed class NtscColorBurstPll
     /// <see cref="BurstDetected"/> (which only finalizes once a whole line's
     /// window has closed). This is the literal window this class's own
     /// phase detector correlates that sample against, not a separately
-    /// re-derived one - see docs/television-plan.md's Phase 7, which needed
-    /// a per-sample "was this really burst" answer sourced from the same
-    /// decision the pipeline already made, not a second reconstruction of
-    /// it.
+    /// re-derived one - needed for a per-sample "was this really burst"
+    /// answer sourced from the same decision the pipeline already made,
+    /// not a second reconstruction of it.
     /// </summary>
     public bool IsInBurstWindow { get; private set; }
 
@@ -204,8 +200,8 @@ public sealed class NtscColorBurstPll
 
         // Whether or not burst was found, reset for the next line - but
         // note _phaseOffsetRadians itself is untouched when burst wasn't
-        // found: the flywheel behavior the plan doc calls for. A missed
-        // burst (weak signal, noise, a blanking line with no picture at
+        // found: deliberate flywheel behavior. A missed burst (weak
+        // signal, noise, a blanking line with no picture at
         // all) doesn't cause a visible hue glitch, it just means this one
         // line's phase estimate didn't get refined.
         _inPhaseAccumulator = 0;

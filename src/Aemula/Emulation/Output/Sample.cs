@@ -3,9 +3,9 @@ namespace Aemula.Emulation.Output;
 // One decoded composite-video sample's worth of Television output - not
 // just the RGB color a viewer would see, but the diagnostic context the
 // decode pipeline actually used to produce it. Region (see RasterRegion)
-// is the first field that needs this - docs/television-plan.md's Phase 7
-// wanted TelevisionWindow's region overlays driven by what the pipeline
-// really decided for each sample (NtscSyncSeparator's own live pulse-width
+// is the first field that needs this - TelevisionWindow's region overlays
+// are driven by what the pipeline really decided for each sample
+// (NtscSyncSeparator's own live pulse-width
 // classification, NtscColorBurstPll's own live burst-window flag), not a
 // separate reconstruction from nominal timing that could quietly disagree
 // with the real decode. A plain struct (not a class) since SampleBuffer
@@ -22,9 +22,9 @@ public struct Sample
     public RgbaByte Color;
     public RasterRegion Region;
 
-    // Diagnostic context for TelevisionWindow's per-sample hover tooltip
-    // (docs/television-plan.md's Phase 7) - the raw composite byte
-    // Television.Decode was given for this exact raster position, the
+    // Diagnostic context for TelevisionWindow's per-sample hover tooltip -
+    // the raw composite byte Television.Decode was given for this exact
+    // raster position, the
     // color-burst PLL's resolved local-oscillator phase at the moment it
     // decoded that byte (see NtscColorBurstPll.CurrentPhaseRadians), and the
     // Luma/I/Q components NtscYiqDecoder derived from it. None of these feed

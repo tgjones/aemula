@@ -317,8 +317,7 @@ public partial class Mos6502Chip
 
     /// <summary>
     /// Owned here (rather than by each system that embeds a 6502) so every
-    /// system gets the same channel list for free - see
-    /// docs/oscilloscope-plan.md.
+    /// system gets the same channel list for free.
     /// </summary>
     internal ChannelGroup CreateChannelGroup()
     {

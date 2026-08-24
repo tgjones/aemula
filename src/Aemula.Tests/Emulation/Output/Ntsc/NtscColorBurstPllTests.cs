@@ -64,19 +64,19 @@ public class NtscColorBurstPllTests
             lastColumn = pipeline.Oscillators.CurrentColumn;
         }
 
-        // 1050 lines total (see docs/television-plan.md's "Existing state");
-        // ~37 of those are vertical-blanking lines with no real picture or
-        // burst, matching real NTSC's vertical blanking interval - so
+        // 1050 lines total; ~37 of those are vertical-blanking lines with
+        // no real picture or burst, matching real NTSC's vertical blanking
+        // interval - so
         // "nearly every" active line is checked with a generous, not exact,
         // threshold.
         await Assert.That(lineCount).IsEqualTo(1050);
         await Assert.That(detectedCount).IsGreaterThanOrEqualTo(950);
     }
 
-    // Phase 7's IsInBurstWindow: the literal per-sample flag Process' own
-    // phase detector already correlates samples against, exposed live rather
-    // than only summarized after the fact via BurstDetected - see
-    // docs/television-plan.md's Phase 7 and this property's own remarks.
+    // IsInBurstWindow: the literal per-sample flag Process' own phase
+    // detector already correlates samples against, exposed live rather
+    // than only summarized after the fact via BurstDetected - see this
+    // property's own remarks.
     [Test]
     public async Task IsInBurstWindowTracksTheFixedBurstWindowLiveWithinALine()
     {

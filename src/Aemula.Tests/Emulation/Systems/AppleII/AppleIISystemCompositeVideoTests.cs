@@ -4,9 +4,8 @@ using Aemula.Emulation.Systems.AppleII;
 
 namespace Aemula.Tests.Emulation.Systems.AppleII;
 
-// Phase 3 of docs/apple-ii-ntsc-video-plan.md: cross-checks the analog
-// composite summing-stage formula against the anchor byte values from the
-// plan's "Signal representation" table.
+// Cross-checks the analog composite summing-stage formula against known
+// anchor byte values.
 public class AppleIISystemCompositeVideoTests
 {
     // Same boot budget AppleIISystemVideoModesTests uses - the ROM's boot
@@ -126,42 +125,39 @@ public class AppleIISystemCompositeVideoTests
         }
 
         // Only 4 samples/cycle are achievable at this sample rate (the
-        // subcarrier is exactly master/4 - see the plan doc's "Sample
-        // rate" section), landing every sample exactly on a zero-crossing
-        // or a peak: the black baseline (64), and the two extremes of
-        // +/-0.35V around it (byte 19 and 108 - not exactly the
+        // subcarrier is exactly master/4), landing every sample exactly on
+        // a zero-crossing or a peak: the black baseline (64), and the two
+        // extremes of +/-0.35V around it (byte 19 and 108 - not exactly the
         // Gayler-quoted 13-102, since this formula centers the burst on
         // BlackVoltage (0.5V) rather than Gayler's measured 0.45V center;
-        // an accepted small offset, see the plan doc's "Summing formula").
+        // an accepted small offset).
         await Assert.That(observed.Count).IsEqualTo(3);
         await Assert.That(observed.Contains((byte)64)).IsTrue();
         await Assert.That(observed.Contains((byte)19)).IsTrue();
         await Assert.That(observed.Contains((byte)108)).IsTrue();
     }
 
-    // Phase 4 of docs/apple-ii-ntsc-video-plan.md: line/frame length tests
-    // against the already-implemented video scanner, plus the
-    // HiresColorPhase phase-lock question, using the two things phase 3
-    // added: this composite encoder's free-running _masterTickCounter, and
-    // HSyncPulse as an already-verified once-per-line marker.
+    // Line/frame length tests against the already-implemented video
+    // scanner, plus the HiresColorPhase phase-lock question, using two
+    // things established above: this composite encoder's free-running
+    // _masterTickCounter, and HSyncPulse as an already-verified
+    // once-per-line marker.
 
     [Test]
     public async Task LineAndFrameLengthMatchDocumentedTickCounts()
     {
-        // Cross-checks the plan doc's "Sample rate" tick-count claims
-        // directly against HSyncPulse (one rising edge per line) and the
-        // vertical scanner state (which repeats every frame), rather than
-        // re-trusting the prose - and, as it turns out, catching a real
-        // error in it: every line measures 912 ticks, not "910 normally,
-        // 912 on the once-per-65-lines long-cycle line" as originally
-        // written. Phase0IsElongatedOnceEverySixtyFiveCycles (in
+        // Cross-checks tick-count claims directly against HSyncPulse (one
+        // rising edge per line) and the vertical scanner state (which
+        // repeats every frame), rather than re-trusting prose: every line
+        // measures 912 ticks, not "910 normally, 912 on the
+        // once-per-65-lines long-cycle line" as once assumed.
+        // Phase0IsElongatedOnceEverySixtyFiveCycles (in
         // AppleIISystemVideoTimingTests.cs) already establishes that 1 of
-        // every 65 PHASE0 cycles is long (16 ticks, not 14) - the doc's
-        // mistake was reading that as "1 line in 65", when a line *is* 65
-        // PHASE0 cycles, so it's really "1 (long) cycle in every line"
+        // every 65 PHASE0 cycles is long (16 ticks, not 14) - the mistake
+        // was reading that as "1 line in 65", when a line *is* 65 PHASE0
+        // cycles, so it's really "1 (long) cycle in every line"
         // (64*14 + 16 = 912). AppleIISystem.VideoTiming.cs's own comment
-        // already had this right ("once-per-scanline 'long cycle'") - only
-        // this plan doc's restatement of it was wrong.
+        // already had this right ("once-per-scanline 'long cycle'").
         var system = new AppleIISystem();
         system.LoadProgram("");
 
@@ -224,19 +220,19 @@ public class AppleIISystemCompositeVideoTests
     public async Task HiresColorPhaseMatchesAbsoluteSubcarrierPhaseAcrossScanlines()
     {
         // Settles the open question flagged on HiresColorPhase
-        // (AppleIISystem.Video.cs / docs/apple-ii-ntsc-video-plan.md's
-        // "Open risks"): does HiresColorPhase's column-parity-derived
-        // quadrant (fixed for a given column, on every line, by
-        // construction) actually match the true absolute subcarrier phase -
+        // (AppleIISystem.Video.cs): does HiresColorPhase's
+        // column-parity-derived quadrant (fixed for a given column, on
+        // every line, by construction) actually match the true absolute
+        // subcarrier phase -
         // this phase's free-running _masterTickCounter - consistently line
         // to line, or does it only hold within one line?
         //
         // It matches, line to line, indefinitely. LineAndFrameLengthMatchDocumentedTickCounts
         // (this file) establishes every line is exactly 912 master ticks,
-        // which is itself a multiple of 4 (unlike the plan doc's original,
-        // now-corrected "910 normally" assumption - 910 %4 == 2, which
-        // would have made this drift by half a subcarrier cycle every
-        // line). Because the real per-line total is a multiple of 4, a
+        // which is itself a multiple of 4 (unlike the original, now-
+        // corrected "910 normally" assumption - 910 %4 == 2, which would
+        // have made this drift by half a subcarrier cycle every line).
+        // Because the real per-line total is a multiple of 4, a
         // fixed column always lands on the identical absolute subcarrier
         // quadrant on every single line - which is exactly what the
         // once-per-line "long cycle" stretch exists to guarantee (Sather,

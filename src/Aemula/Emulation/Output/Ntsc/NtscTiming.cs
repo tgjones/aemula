@@ -1,12 +1,11 @@
 namespace Aemula.Emulation.Output.Ntsc;
 
 // Shared nominal timing constants every Ntsc* class in this decoder starts
-// from - see docs/television-plan.md's "Input signal contract". These are
-// only *starting points*/search centers for self-calibrating estimates
-// elsewhere in this decoder (NtscSyncSeparator's HSYNC width tracking,
-// NtscRasterOscillators' horizontal/vertical period tracking) - nothing in
-// this decoder hardcodes an assumption that real signals match these
-// exactly.
+// from. These are only *starting points*/search centers for
+// self-calibrating estimates elsewhere in this decoder (NtscSyncSeparator's
+// HSYNC width tracking, NtscRasterOscillators' horizontal/vertical period
+// tracking) - nothing in this decoder hardcodes an assumption that real
+// signals match these exactly.
 internal static class NtscTiming
 {
     // 4x the NTSC color subcarrier (3.579545MHz) - every Decode() caller in
@@ -26,8 +25,7 @@ internal static class NtscTiming
     // nominal value covers both a non-interlaced 262-line source (Apple II)
     // and a genuinely interlaced 525-line/2-field source (smpte.ntsc)
     // without this decoder needing to know which kind of source it's
-    // looking at - see docs/television-plan.md's "Raster oscillators"
-    // section.
+    // looking at.
     public const float NominalLinesPerField = 262.5f;
 
     public const float NominalSamplesPerField = NominalLinesPerField * NominalSamplesPerLine; // ~238,691 samples

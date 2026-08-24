@@ -106,10 +106,10 @@ public class NtscSyncSeparatorTests
         await Assert.That(vsyncIndex).IsEqualTo(highSegmentLength + vsyncWidth);
     }
 
-    // Phase 7's CurrentSyncRegion: unlike HSyncDetected/VSyncDetected (which
-    // only fire once, on the sample where a completed pulse's trailing edge
-    // is found), this is live for every sample of an in-progress pulse - see
-    // docs/television-plan.md's Phase 7 and this property's own remarks.
+    // CurrentSyncRegion: unlike HSyncDetected/VSyncDetected (which only fire
+    // once, on the sample where a completed pulse's trailing edge is
+    // found), this is live for every sample of an in-progress pulse - see
+    // this property's own remarks.
     [Test]
     public async Task CurrentSyncRegionIsHSyncThroughoutANormalPulseAndNullOutsideIt()
     {

@@ -55,8 +55,8 @@ public sealed class TiaChip
     // designing and measuring the real-pin-accurate version: real Col is
     // one analog pin carrying a phase-shifted square wave at the subcarrier
     // rate (confirmed square, not sine - see an AtariAge thread specifically
-    // on this question, cited in the plan doc's hardware references), which
-    // would mean a *stored*, oversampled pin - e.g. 16 positions per tick,
+    // on this question), which would mean a *stored*, oversampled pin - e.g.
+    // 16 positions per tick,
     // matching the real 15 phase taps - updated every Osc edge alongside
     // Sync/Blk/Lum, rather than this plain hue index.
     //
@@ -76,10 +76,9 @@ public sealed class TiaChip
     // exactly its own period has no aliasing to lose information to. That
     // makes sense physically too: every real path from TIA to a receiver -
     // the stock RF modulator, or a composite mod's own resistor/cap network
-    // - filters the raw square wave before anything downstream samples it
-    // (see the plan doc's COL-pin-shape note), and a sine is a much closer
-    // stand-in for that filtered signal than the raw square wave's own
-    // harmonics would be.
+    // - filters the raw square wave before anything downstream samples it,
+    // and a sine is a much closer stand-in for that filtered signal than
+    // the raw square wave's own harmonics would be.
     //
     // So this stays a plain hue index rather than becoming an oversampled
     // pin, and Atari2600System.CompositeVideo.cs reads it directly to
