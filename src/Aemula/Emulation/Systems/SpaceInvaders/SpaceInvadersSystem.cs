@@ -93,7 +93,10 @@ public sealed class SpaceInvadersSystem : EmulatedSystem
 
     private void TickCpu()
     {
-        _cpu.Cycle();
+        _cpu.Phi1 = true;
+        _cpu.Phi1 = false;
+        _cpu.Phi2 = true;
+        _cpu.Phi2 = false;
 
         if (_cpu.Sync)
         {

@@ -18,6 +18,9 @@ public sealed partial class Intel8080Chip
     private bool _condition; // Most-recently-evaluated condition
     private bool _interruptLatch;
 
+    // Staged by SetNextCycle, applied on the next Phi1 rising edge (see ApplyPendingCycleTransition).
+    private MachineCycleType? _pendingMachineCycleType;
+
     // Registers
     public PCRegister PC;
     public BCRegister BC;
@@ -34,8 +37,9 @@ public sealed partial class Intel8080Chip
     /// <summary>
     /// Address bus.
     /// </summary>
-    public ushort Address { get; set; }
+    public ushort Address { get; private set; }
 
+    // TODO: Make this tri-state: read, write, or high-impedance.
     /// <summary>
     /// Data bus.
     /// </summary>
@@ -44,52 +48,273 @@ public sealed partial class Intel8080Chip
     /// <summary>
     /// Clears the program counter, and INTE and HLDA flip/flops.
     /// </summary>
-    public bool Reset { get; set; }
+    public bool Reset { internal get; set; }
 
     /// <summary>
     /// Requests the CPU to enter the HOLD state.
     /// </summary>
-    public bool Hold { get; set; }
+    public bool Hold { internal get; set; }
 
     /// <summary>
     /// Interrupt request. Will be recognized at the end of the current instruction or while halted.
     /// </summary>
-    public bool Int { get; set; }
+    public bool Int { internal get; set; }
 
     /// <summary>
     /// Interrupt enable. Indicates the content of the internal interrupt enable flip/flop.
     /// </summary>
-    public bool IntE { get; set; }
+    public bool IntE { get; private set; }
 
     /// <summary>
     /// Data bus in. Indicates that the data bus is in the input mode.
     /// </summary>
-    public bool DBIn { get; set; }
+    public bool DBIn { get; private set; }
 
     /// <summary>
     /// Write. Used for memory write or I/O output control.
     /// </summary>
-    public bool Wr { get; set; }
+    public bool Wr { get; private set; }
 
     /// <summary>
     /// Synchronizing signal. Indicates the beginning of each machine cycle.
     /// </summary>
-    public bool Sync { get; set; }
+    public bool Sync { get; private set; }
 
     /// <summary>
     /// Acknowledges that the CPU is in a WAIT state.
     /// </summary>
-    public bool Wait { get; set; }
+    public bool Wait { get; private set; }
 
     /// <summary>
     /// Indicates to the CPU that valid memory or input data is available on the data bus.
     /// </summary>
-    public bool Ready { get; set; }
+    public bool Ready { internal get; set; }
 
     /// <summary>
     /// Hold acknowledge. Appears in response to the HOLD signal.
     /// </summary>
-    public bool HldA { get; set; }
+    public bool HldA { get; private set; }
+
+    private bool _phi1;
+
+    /// <summary>
+    /// Clock phase 1 input. Real 8080 hardware has no internal clock generator - Phi1 and Phi2 are
+    /// both independent external inputs (normally driven by an 8224 clock generator), non-overlapping,
+    /// with every T-state beginning on a Phi1 rising edge.
+    /// </summary>
+    public bool Phi1
+    {
+        set
+        {
+            if (_phi1 == value)
+            {
+                return;
+            }
+
+            _phi1 = value;
+
+            if (!value)
+            {
+                return;
+            }
+
+            // The T-state boundary: apply whichever machine-cycle/state transition was staged
+            // during the previous T-state's processing, or just advance to the next T-state of
+            // the current machine cycle if nothing was staged.
+            if (_pendingMachineCycleType.HasValue)
+            {
+                ApplyPendingCycleTransition();
+            }
+            else
+            {
+                _state = _state switch
+                {
+                    State.T1 => State.T2,
+                    State.T2 => State.T3,
+                    State.T3 => State.T4,
+                    State.T4 => State.T5,
+                    _ => _state,
+                };
+            }
+
+            var machineCycleTypeAndState = CombineMachineCycleTypeAndState(_machineCycleType, _state);
+
+            switch (machineCycleTypeAndState)
+            {
+                // WR deasserted, left over from a possible previous write.
+                case FetchT1:
+                    Wr = true;
+                    if (_interruptLatch)
+                    {
+                        IntE = false;
+                    }
+                    break;
+
+                case MemoryReadT1:
+                case MemoryWriteT1:
+                case StackReadT1:
+                case StackWriteT1:
+                case InputReadT1:
+                case OutputWriteT1:
+                    Wr = true;
+                    break;
+
+                // WR asserted - the one write-side edge that's Phi1-, rather than Phi2-, referenced.
+                case MemoryWriteT3:
+                case StackWriteT3:
+                case OutputWriteT3:
+                    Wr = false;
+                    HandleInstruction(machineCycleTypeAndState);
+                    break;
+
+                // WR deasserted again, for machine cycles extended past T3 (e.g. XTHL's 5-state StackWrite).
+                case StackWriteT4:
+                    Wr = true;
+                    HandleInstruction(machineCycleTypeAndState);
+                    break;
+
+                // T4/T5 states, and the internal-only Dad cycle, have no generic pin action of their
+                // own, so all their (opcode-specific, internal-only) work rides Phi1 instead.
+                case FetchT4:
+                case FetchT5:
+                case StackWriteT5:
+                case DadT1:
+                case DadT2:
+                case DadT3:
+                    HandleInstruction(machineCycleTypeAndState);
+                    break;
+            }
+        }
+    }
+
+    private bool _phi2;
+
+    /// <summary>
+    /// Clock phase 2 input. See <see cref="Phi1"/>.
+    /// </summary>
+    public bool Phi2
+    {
+        set
+        {
+            if (_phi2 == value)
+            {
+                return;
+            }
+
+            _phi2 = value;
+
+            if (!value)
+            {
+                // TODO: Sample READY and HOLD pins (wait-state insertion / HOLD latching).
+                return;
+            }
+
+            var machineCycleTypeAndState = CombineMachineCycleTypeAndState(_machineCycleType, _state);
+
+            switch (machineCycleTypeAndState)
+            {
+                case FetchT1:
+                    Data = _interruptLatch ? StatusWordInterruptAcknowledge : StatusWordFetch;
+                    Sync = true;
+                    Address = PC.Value; // This will be overridden by some instructions like CALL and RET.
+                    break;
+
+                case FetchT2:
+                    DBIn = true;
+                    Sync = false;
+                    // TODO: Check for HALT instruction.
+                    if (!_interruptLatch)
+                    {
+                        PC.Value++;
+                    }
+                    break;
+
+                case FetchT3:
+                    _interruptLatch = false;
+                    DBIn = false;
+                    _ir = Data;
+                    break;
+
+                case MemoryReadT1:
+                    Data = StatusWordMemoryRead;
+                    Sync = true;
+                    break;
+
+                case MemoryReadT2:
+                    Sync = false;
+                    DBIn = true;
+                    break;
+
+                case MemoryReadT3:
+                    DBIn = false;
+                    break;
+
+                case MemoryWriteT1:
+                    Data = StatusWordMemoryWrite;
+                    Sync = true;
+                    break;
+
+                case MemoryWriteT2:
+                    Sync = false;
+                    break;
+
+                case StackReadT1:
+                    Data = StatusWordStackRead;
+                    Sync = true;
+                    Address = SP.Value;
+                    break;
+
+                case StackReadT2:
+                    Sync = false;
+                    DBIn = true;
+                    break;
+
+                case StackReadT3:
+                    DBIn = false;
+                    break;
+
+                case StackWriteT1:
+                    Data = StatusWordStackWrite;
+                    Sync = true;
+                    Address = SP.Value;
+                    break;
+
+                case StackWriteT2:
+                    Sync = false;
+                    break;
+
+                case InputReadT1:
+                    Data = StatusWordInputRead;
+                    Sync = true;
+                    Address = _wz.Value;
+                    break;
+
+                case InputReadT2:
+                    Sync = false;
+                    DBIn = true;
+                    break;
+
+                case InputReadT3:
+                    DBIn = false;
+                    break;
+
+                case OutputWriteT1:
+                    Data = StatusWordOutputWrite;
+                    Sync = true;
+                    Address = _wz.Value;
+                    break;
+
+                case OutputWriteT2:
+                    Sync = false;
+                    break;
+
+                default:
+                    return;
+            }
+
+            HandleInstruction(machineCycleTypeAndState);
+        }
+    }
 
     public MachineCycleType CurrentMachineCycle => _machineCycleType;
     public State CurrentState => _state;
@@ -101,163 +326,22 @@ public sealed partial class Intel8080Chip
         SetNextCycle(MachineCycleType.Fetch);
     }
 
-    public void Cycle()
-    {
-        var machineCycleTypeAndState = CombineMachineCycleTypeAndState(_machineCycleType, _state);
-
-        switch (machineCycleTypeAndState)
-        {
-            case FetchT1:
-                Data = _interruptLatch ? StatusWordInterruptAcknowledge : StatusWordFetch;
-                Sync = true;
-                Wr = true;
-                Address = PC.Value; // This will be overridden by some instructions like CALL and RET.
-                if (_interruptLatch)
-                {
-                    IntE = false;
-                }
-                break;
-
-            case FetchT2:
-                DBIn = true;
-                Sync = false;
-                // TODO: Sample READY and HOLD pins
-                // TODO: Check for HALT instruction.
-                if (!_interruptLatch)
-                {
-                    PC.Value++;
-                }
-                break;
-
-            case FetchT3:
-                _interruptLatch = false;
-                DBIn = false;
-                _ir = Data;
-                break;
-
-            case MemoryReadT1:
-                Data = StatusWordMemoryRead;
-                Sync = true;
-                Wr = true;
-                break;
-
-            case MemoryReadT2:
-                Sync = false;
-                DBIn = true;
-                break;
-
-            case MemoryReadT3:
-                DBIn = false;
-                break;
-
-            case MemoryWriteT1:
-                Data = StatusWordMemoryWrite;
-                Sync = true;
-                Wr = true;
-                break;
-
-            case MemoryWriteT2:
-                Sync = false;
-                break;
-
-            case MemoryWriteT3:
-                Wr = false;
-                break;
-
-            case StackReadT1:
-                Data = StatusWordStackRead;
-                Sync = true;
-                Wr = true;
-                Address = SP.Value;
-                break;
-
-            case StackReadT2:
-                Sync = false;
-                DBIn = true;
-                break;
-
-            case StackReadT3:
-                DBIn = false;
-                break;
-
-            case StackWriteT1:
-                Data = StatusWordStackWrite;
-                Sync = true;
-                Wr = true;
-                Address = SP.Value;
-                break;
-
-            case StackWriteT2:
-                Sync = false;
-                break;
-
-            case StackWriteT3:
-                Wr = false;
-                break;
-
-            case StackWriteT4:
-                Wr = true;
-                break;
-
-            case InputReadT1:
-                Data = StatusWordInputRead;
-                Sync = true;
-                Wr = true;
-                Address = _wz.Value;
-                break;
-
-            case InputReadT2:
-                Sync = false;
-                DBIn = true;
-                break;
-
-            case InputReadT3:
-                DBIn = false;
-                break;
-
-            case OutputWriteT1:
-                Data = StatusWordOutputWrite;
-                Sync = true;
-                Wr = true;
-                Address = _wz.Value;
-                break;
-
-            case OutputWriteT2:
-                Sync = false;
-                break;
-
-            case OutputWriteT3:
-                Wr = false;
-                break;
-        }
-
-        switch (_state)
-        {
-            case State.T1:
-                _state = State.T2;
-                break;
-
-            case State.T2:
-                _state = State.T3;
-                break;
-
-            case State.T3:
-                _state = State.T4;
-                break;
-
-            case State.T4:
-                _state = State.T5;
-                break;
-        }
-
-        HandleInstruction(machineCycleTypeAndState);
-    }
-
     private void SetNextCycle(MachineCycleType machineCycleType)
     {
-        _machineCycleType = machineCycleType;
+        // The actual machine-cycle/state bookkeeping and interrupt-latch check (today's
+        // SetNextCycle body) is deferred to the next Phi1 rising edge - the real T-state
+        // boundary - rather than applied immediately here, since this can be called from
+        // a HandleInstruction dispatch on either a Phi1 or a Phi2 case, depending on which
+        // T-state it's for. See ApplyPendingCycleTransition.
+        _pendingMachineCycleType = machineCycleType;
+    }
 
-        if (machineCycleType == MachineCycleType.Fetch)
+    private void ApplyPendingCycleTransition()
+    {
+        _machineCycleType = _pendingMachineCycleType!.Value;
+        _pendingMachineCycleType = null;
+
+        if (_machineCycleType == MachineCycleType.Fetch)
         {
             // This means the current state is the last state of the last cycle of the current instruction.
             // Time to check the interrupt pin.

@@ -43,7 +43,10 @@ public class Intel8080ChipTests
 
         while (true)
         {
-            cpu.Cycle();
+            cpu.Phi1 = true;
+            cpu.Phi1 = false;
+            cpu.Phi2 = true;
+            cpu.Phi2 = false;
 
             if (cpu.Sync)
             {

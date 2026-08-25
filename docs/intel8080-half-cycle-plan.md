@@ -237,13 +237,20 @@ decode logic wired to the actual pins) would see it.
   of pin:
   - **CPU-driven outputs** — pins only ever assigned inside
     `Intel8080Chip.cs` itself, never by a consuming system — become
-    get-only properties backed by a private field, the chip setting the
-    field internally (`Mos6502Chip.Address => _address` /
-    `.Sync => _sync`, `Mos6502Chip.cs:15-27`). Applies to `Address`,
-    `Sync`, `DBIn`, `Wr`, `IntE`, `HldA`, `Wait` — all seven are
-    exclusively chip-driven in the current `Cycle()` body and in
-    `SpaceInvadersSystem`/`Intel8080ChipTests`, which only ever *read*
-    them.
+    `{ get; private set; }` auto-properties: get-only from outside the
+    class, settable (via the property itself, not a separately-named
+    field) from anywhere inside it. This is `Mos6532Chip.Irq`'s shape
+    (`Mos6532Chip.cs:65`), not `Mos6502Chip.Address => _address`'s
+    manual-backing-field one — the manual-field shape only earns its
+    keep when the getter computes something (e.g. `Mos6502Chip.Phi1 =>
+    !_phi0`); a pin that's pure storage with no setter logic has nothing
+    for a named field to buy over the compiler-generated one, and reusing
+    a single name (`Address`) for both the internal write and the
+    external read beats juggling `_address`/`Address` as two names for
+    the same value. Applies to `Address`, `Sync`, `DBIn`, `Wr`, `IntE`,
+    `HldA`, `Wait` — all seven are exclusively chip-driven in the current
+    `Cycle()` body and in `SpaceInvadersSystem`/`Intel8080ChipTests`,
+    which only ever *read* them.
   - **Genuinely bidirectional bus** — `Data` keeps a public getter *and*
     setter, the same as `Mos6502Chip.Data` (`Mos6502Chip.cs:19-24`, with
     its own `// TODO: Make this tri-state` note carried over here too),
@@ -290,8 +297,8 @@ existing `Intel8080ChipTests` cycle-count assertions should pass unmodified
 Using the derived edge-protocol table above:
 - Assign every pin its true accessibility per the three shapes in Target
   shape above: `Address`/`Sync`/`DBIn`/`Wr`/`IntE`/`HldA`/`Wait` become
-  get-only (private backing field, set only from inside
-  `Intel8080Chip.cs`); `Data` keeps public get/set; `Reset`/`Hold`/`Int`/
+  `{ get; private set; }` (get-only from outside `Intel8080Chip.cs`,
+  settable from anywhere inside it); `Data` keeps public get/set; `Reset`/`Hold`/`Int`/
   `Ready` become `internal get`/public `set`. `Phi1`/`Phi2` get their own
   private-backing-field/edge-gated-setter treatment as described below,
   rather than either of the other three shapes. This is a mechanical
