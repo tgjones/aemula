@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using Aemula.Emulation.Chips;
 using Aemula.Emulation.Chips.Intel8080;
 using Aemula.Debugging;
 using Aemula.Emulation.Chips.MB14241;
@@ -10,7 +11,7 @@ using Hexa.NET.SDL3;
 
 namespace Aemula.Emulation.Systems.SpaceInvaders;
 
-public sealed class SpaceInvadersSystem : EmulatedSystem
+public sealed partial class SpaceInvadersSystem : EmulatedSystem
 {
     private readonly Intel8080Chip _cpu;
 
@@ -21,7 +22,6 @@ public sealed class SpaceInvadersSystem : EmulatedSystem
 
     private byte _lastStatusWord;
     private ulong _masterClock;
-    private uint _pixelClock;
     private byte _nextInterrupt;
 
     public override ulong CyclesPerSecond => 19968000;
@@ -39,6 +39,13 @@ public sealed class SpaceInvadersSystem : EmulatedSystem
         _ram = new byte[0x2000];
 
         _shifter = new MB14241Chip();
+
+        _hCounterLow = new Ttl74161Chip();
+        _hCounterHigh = new Ttl74161Chip();
+        _vCounterLow = new Ttl74161Chip();
+        _vCounterHigh = new Ttl74161Chip();
+        _blankingFlipFlops = new Ttl7474Chip();
+        _interruptFlipFlop = new Ttl7474Chip();
 
         Display = new DisplayBuffer(256, 256);
     }
@@ -64,46 +71,8 @@ public sealed class SpaceInvadersSystem : EmulatedSystem
     {
         _masterClock++;
 
-        if (_masterClock % 4 == 0)
-        {
-            _pixelClock++;
-        }
-
         TickCpuClock();
-
-        // Video timing sourced from computerarcheology.com's Space Invaders hardware
-        // writeup (https://www.computerarcheology.com/Arcade/SpaceInvaders/Hardware.html):
-        // the CPU's INT line is latched via a D flip-flop clocked off the vertical sync
-        // counter, going high when that counter reaches 0x80 (line 96, mid-screen) for
-        // RST 1 and 0xDA (line 224, start of VBLANK) for RST 2. At this system's 317
-        // pixel-clocks-per-scanline rate (96 * 317 = 30432, 224 * 317 = 71008 below - a
-        // ~15.75kHz horizontal rate off the 4.992MHz pixel clock, typical for this era of
-        // arcade monitor), those are exactly the two constants below. The "+ 10161" offset
-        // aligns those scanline positions with this emulator's own _pixelClock=0 reference
-        // point (_pixelClock isn't reset at the hardware's true H=0/V=0, so this offset
-        // isn't independently sourced - only the 30432/71008/317 relationship is).
-        if (_pixelClock == 30432 + 10161) // Line 96 (mid-screen) - RST 1.
-        {
-            _nextInterrupt = 0xCF;
-            _cpu.Int = true;
-        }
-
-        if (_pixelClock == 71008 + 10161) // Line 224 (VBLANK start) - RST 2.
-        {
-            _nextInterrupt = 0xD7;
-            _cpu.Int = true;
-        }
-
-        // One full 262-line frame is 262 * 317 = 83054 pixel clocks at that same
-        // per-line count; 83200 is comfortably past that, used only to detect
-        // frame-end and trigger UpdateDisplay/_pixelClock wraparound, not itself a
-        // hardware-precise total.
-        if (_pixelClock > 83200)
-        {
-            _pixelClock = 0;
-
-            UpdateDisplay();
-        }
+        TickVideoTiming();
     }
 
     // Real 8080 hardware never has a single "tick the CPU" call: Phi1 and Phi2 are two
