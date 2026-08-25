@@ -47,6 +47,11 @@ public sealed partial class SpaceInvadersSystem : EmulatedSystem
         _blankingFlipFlops = new Ttl7474Chip();
         _interruptFlipFlop = new Ttl7474Chip();
 
+        _ramAddressMuxBits0To3 = new Ttl74157Chip();
+        _ramAddressMuxBits4To7 = new Ttl74157Chip();
+        _ramAddressMuxBits8To11 = new Ttl74157Chip();
+        _ramAddressMuxBit12 = new Ttl74157Chip();
+
         Display = new DisplayBuffer(256, 256);
     }
 
@@ -71,6 +76,11 @@ public sealed partial class SpaceInvadersSystem : EmulatedSystem
     {
         _masterClock++;
 
+        // Settles this tick's video-scanner/CPU RAM contention - and drives
+        // the CPU's READY pin from it - before TickCpuClock, so READY is
+        // already valid if Phi2 happens to fall on this same tick (see
+        // TickRamArbitration).
+        TickRamArbitration();
         TickCpuClock();
         TickVideoTiming();
     }

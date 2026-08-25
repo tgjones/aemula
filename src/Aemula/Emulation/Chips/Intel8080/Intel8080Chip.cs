@@ -18,6 +18,7 @@ public sealed partial class Intel8080Chip
     private WZRegister _wz;
     private bool _condition; // Most-recently-evaluated condition
     private bool _interruptLatch;
+    private bool _readySampledLow; // Latched by Phi2's falling edge, consumed by Phi1's next rising edge - see Ready.
 
     // Staged by SetNextCycle, applied on the next Phi1 rising edge (see ApplyPendingCycleTransition).
     private MachineCycleType? _pendingMachineCycleType;
@@ -88,8 +89,13 @@ public sealed partial class Intel8080Chip
 
     /// <summary>
     /// Indicates to the CPU that valid memory or input data is available on the data bus.
+    /// Sampled on Phi2's falling edge during T2 (or an already-inserted Tw) - see Phi2's
+    /// setter and the Tw handling in Phi1's. Defaults true (the common case: nothing on the
+    /// bus contends with the CPU) so that a system which never touches this pin - and the
+    /// standalone CP/M conformance harness in Intel8080ChipTests - behaves exactly as before
+    /// this pin had any effect.
     /// </summary>
-    public bool Ready { internal get; set; }
+    public bool Ready { internal get; set; } = true;
 
     /// <summary>
     /// Hold acknowledge. Appears in response to the HOLD signal.
@@ -131,12 +137,18 @@ public sealed partial class Intel8080Chip
                 _state = _state switch
                 {
                     State.T1 => State.T2,
-                    State.T2 => State.T3,
+                    // READY was sampled low on the T2/Tw that's ending - stay in (or enter)
+                    // Tw instead of proceeding to T3, exactly as real 8080 hardware does.
+                    State.T2 => _readySampledLow ? State.Tw : State.T3,
+                    State.Tw => _readySampledLow ? State.Tw : State.T3,
                     State.T3 => State.T4,
                     State.T4 => State.T5,
                     _ => _state,
                 };
             }
+
+            // WAIT acknowledges, to the outside world, that the CPU is idling in a Tw state.
+            Wait = _state == State.Tw;
 
             var machineCycleTypeAndState = CombineMachineCycleTypeAndState(_machineCycleType, _state);
 
@@ -206,7 +218,14 @@ public sealed partial class Intel8080Chip
 
             if (!value)
             {
-                // TODO: Sample READY and HOLD pins (wait-state insertion / HOLD latching).
+                // READY is sampled here, on Phi2's falling edge (during T2, or a Tw already
+                // inserted because of an earlier low sample) - the result gates whether the
+                // next Phi1 rising edge advances to T3 or inserts/repeats a Tw (see the
+                // T2/Tw case in Phi1's setter). Harmless to sample unconditionally every
+                // T-state: the value's only consulted when it's actually meaningful.
+                _readySampledLow = !Ready;
+
+                // TODO: Sample HOLD here too (HLDA/bus-hold support).
                 return;
             }
 
@@ -2825,6 +2844,14 @@ public sealed partial class Intel8080Chip
     {
         T1,
         T2,
+
+        /// <summary>
+        /// Wait state, inserted (repeatedly, if needed) between T2 and T3 whenever READY
+        /// samples low at T2's (or a preceding Tw's) Phi2 falling edge - see Phi2's setter
+        /// and the T2/Tw case in Phi1's switch.
+        /// </summary>
+        Tw,
+
         T3,
         T4,
         T5,

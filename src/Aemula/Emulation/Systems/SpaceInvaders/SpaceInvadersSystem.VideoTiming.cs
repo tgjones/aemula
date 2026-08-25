@@ -59,7 +59,14 @@ public sealed partial class SpaceInvadersSystem
     /// <summary>
     /// The raw H/V counter state, for tests.
     /// </summary>
-    internal (byte H, byte V) GetVideoScannerStateForTests()
+    internal (byte H, byte V) GetVideoScannerStateForTests() => GetVideoScannerState();
+
+    /// <summary>
+    /// The raw H/V counter state - the same Q outputs the video-RAM address
+    /// mux (SpaceInvadersSystem.Video.cs, Phase 3) reads to form the
+    /// scanner's RAM address.
+    /// </summary>
+    private (byte H, byte V) GetVideoScannerState()
     {
         var h = (byte)(
             (_hCounterHigh.Qd ? 1 << 7 : 0) |
