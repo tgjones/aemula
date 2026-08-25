@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using Aemula.Emulation.Chips.Intel8080.UI;
 using Aemula.UI;
+using Aemula.UI.LogicAnalyzer;
 
 namespace Aemula.Emulation.Chips.Intel8080;
 
@@ -2873,5 +2874,30 @@ public sealed partial class Intel8080Chip
     internal void CreateDebuggerWindows(List<DebuggerWindow> result)
     {
         result.Add(new CpuStateWindow(this));
+    }
+
+    /// <summary>
+    /// Owned here (rather than by each system that embeds an 8080) so every
+    /// system gets the same channel list for free.
+    /// </summary>
+    internal ChannelGroup CreateChannelGroup()
+    {
+        return new ChannelGroup("Intel 8080",
+        [
+            Channel.Bus("Address", 16, () => Address),
+            Channel.Bus("Data", 8, () => Data),
+            Channel.Digital("SYNC", () => Sync),
+            Channel.Digital("DBIN", () => DBIn),
+            Channel.Digital("WR", () => Wr),
+            Channel.Digital("WAIT", () => Wait),
+            Channel.Digital("INTE", () => IntE),
+            Channel.Digital("HLDA", () => HldA),
+            Channel.Digital("RESET", () => Reset),
+            Channel.Digital("HOLD", () => Hold),
+            Channel.Digital("INT", () => Int),
+            Channel.Digital("READY", () => Ready),
+            Channel.Digital("PHI1", () => _phi1),
+            Channel.Digital("PHI2", () => _phi2),
+        ]);
     }
 }

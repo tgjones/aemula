@@ -3,6 +3,7 @@ using Aemula.Debugging;
 using Aemula.Emulation.Chips.Intel8080;
 using Aemula.Emulation.Chips.Intel8080.Debugging;
 using Aemula.UI;
+using Aemula.UI.LogicAnalyzer;
 
 namespace Aemula.Emulation.Systems.SpaceInvaders.Debugging;
 
@@ -44,5 +45,6 @@ public sealed class SpaceInvadersDebugger : Debugger
         _system.Cpu.CreateDebuggerWindows(result);
 
         result.Add(new ScreenDisplayWindow(_system.Display, 90));
+        result.Add(new LogicAnalyzerWindow(this, _system.CreateChannelNodes()));
     }
 }

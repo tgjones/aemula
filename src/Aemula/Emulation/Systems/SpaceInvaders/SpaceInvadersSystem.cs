@@ -1,9 +1,11 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using Aemula.Emulation.Chips.Intel8080;
 using Aemula.Debugging;
 using Aemula.Emulation.Chips.MB14241;
 using Aemula.Emulation.Systems.SpaceInvaders.Debugging;
+using Aemula.UI.LogicAnalyzer;
 using Hexa.NET.SDL3;
 
 namespace Aemula.Emulation.Systems.SpaceInvaders;
@@ -45,7 +47,8 @@ public sealed class SpaceInvadersSystem : EmulatedSystem
     {
         void LoadRom(string fileName, ushort startAddress)
         {
-            using var fileStream = File.OpenRead($"Roms/{fileName}");
+            var fullPath = Path.Combine("Emulation", "Systems", "SpaceInvaders", "Roms", fileName);
+            using var fileStream = File.OpenRead(fullPath);
             fileStream.ReadExactly(_rom, startAddress, (int)fileStream.Length);
         }
 
@@ -66,23 +69,35 @@ public sealed class SpaceInvadersSystem : EmulatedSystem
             _pixelClock++;
         }
 
-        if (_masterClock % 10 == 0)
-        {
-            TickCpu();
-        }
+        TickCpuClock();
 
-        if (_pixelClock == 30432 + 10161) // Based on EDL :)
+        // Video timing sourced from computerarcheology.com's Space Invaders hardware
+        // writeup (https://www.computerarcheology.com/Arcade/SpaceInvaders/Hardware.html):
+        // the CPU's INT line is latched via a D flip-flop clocked off the vertical sync
+        // counter, going high when that counter reaches 0x80 (line 96, mid-screen) for
+        // RST 1 and 0xDA (line 224, start of VBLANK) for RST 2. At this system's 317
+        // pixel-clocks-per-scanline rate (96 * 317 = 30432, 224 * 317 = 71008 below - a
+        // ~15.75kHz horizontal rate off the 4.992MHz pixel clock, typical for this era of
+        // arcade monitor), those are exactly the two constants below. The "+ 10161" offset
+        // aligns those scanline positions with this emulator's own _pixelClock=0 reference
+        // point (_pixelClock isn't reset at the hardware's true H=0/V=0, so this offset
+        // isn't independently sourced - only the 30432/71008/317 relationship is).
+        if (_pixelClock == 30432 + 10161) // Line 96 (mid-screen) - RST 1.
         {
             _nextInterrupt = 0xCF;
             _cpu.Int = true;
         }
 
-        if (_pixelClock == 71008 + 10161) // Based on EDL :)
+        if (_pixelClock == 71008 + 10161) // Line 224 (VBLANK start) - RST 2.
         {
             _nextInterrupt = 0xD7;
             _cpu.Int = true;
         }
 
+        // One full 262-line frame is 262 * 317 = 83054 pixel clocks at that same
+        // per-line count; 83200 is comfortably past that, used only to detect
+        // frame-end and trigger UpdateDisplay/_pixelClock wraparound, not itself a
+        // hardware-precise total.
         if (_pixelClock > 83200)
         {
             _pixelClock = 0;
@@ -91,96 +106,141 @@ public sealed class SpaceInvadersSystem : EmulatedSystem
         }
     }
 
-    private void TickCpu()
+    // Real 8080 hardware never has a single "tick the CPU" call: Phi1 and Phi2 are two
+    // independent, non-overlapping external clock inputs (see
+    // docs/intel8080-half-cycle-plan.md), with Phi2's pulse markedly wider than Phi1's
+    // (MCS-80/85 User's Manual AC characteristics: min 60ns Phi1 vs. min 220ns Phi2, at
+    // standard 2MHz speed grade). Space Invaders' own arcade clock-generator schematic
+    // wasn't located despite searching (see the plan doc's Phase 3 notes), so rather than
+    // inventing a duty cycle from nothing, the four edges below are spread across this
+    // system's existing 10-master-tick T-state window (~50ns/tick at this system's
+    // 19.968MHz master clock) in that same order and proportion - Phi1 high for 2 ticks
+    // (~100ns), a 1-tick gap, Phi2 high for 5 ticks (~250ns), a 2-tick gap - rather than
+    // firing all four back-to-back at one instant like Phase 1/2 did.
+    private const int Phi1RisingTick = 0;
+    private const int Phi1FallingTick = 2;
+    private const int Phi2RisingTick = 3;
+    private const int Phi2FallingTick = 8;
+
+    private void TickCpuClock()
     {
-        _cpu.Phi1 = true;
-        _cpu.Phi1 = false;
-        _cpu.Phi2 = true;
-        _cpu.Phi2 = false;
-
-        if (_cpu.Sync)
+        switch ((_masterClock - 1) % 10)
         {
-            _lastStatusWord = _cpu.Data;
+            case Phi1RisingTick:
+                _cpu.Phi1 = true;
+
+                // WR's falling edge (Phi1^ of T3, per the plan's edge protocol table) -
+                // commit the write now that Data has been valid since the preceding
+                // Phi2^ of T2.
+                if (!_cpu.Wr)
+                {
+                    WriteCpuBus();
+                }
+                break;
+
+            case Phi1FallingTick:
+                _cpu.Phi1 = false;
+                break;
+
+            case Phi2RisingTick:
+                _cpu.Phi2 = true;
+
+                // Status word/SYNC become valid on this same edge (Phi2^ of T1).
+                if (_cpu.Sync)
+                {
+                    _lastStatusWord = _cpu.Data;
+                }
+
+                // DBIN's rising edge (Phi2^ of T2) - supply read data right as the
+                // addressed device is asked for it, rather than after the whole
+                // T-state; it stays valid until DBIN's falling edge latches it.
+                if (_cpu.DBIn)
+                {
+                    ReadCpuBus();
+                }
+                break;
+
+            case Phi2FallingTick:
+                _cpu.Phi2 = false;
+                break;
         }
+    }
 
-        if (_cpu.DBIn)
+    private void ReadCpuBus()
+    {
+        switch (_lastStatusWord)
         {
-            // Read data.
-            switch (_lastStatusWord)
-            {
-                case Intel8080Chip.StatusWordFetch:
-                case Intel8080Chip.StatusWordMemoryRead:
-                case Intel8080Chip.StatusWordStackRead:
-                    if (_cpu.Address > 0x3FFF)
-                    {
-                        // TODO: Actually this should be a mirror of RAM?
+            case Intel8080Chip.StatusWordFetch:
+            case Intel8080Chip.StatusWordMemoryRead:
+            case Intel8080Chip.StatusWordStackRead:
+                if (_cpu.Address > 0x3FFF)
+                {
+                    // TODO: Actually this should be a mirror of RAM?
+                    throw new InvalidOperationException();
+                }
+                else if ((_cpu.Address & 0x2000) == 0x2000)
+                {
+                    _cpu.Data = _ram[_cpu.Address & 0x1FFF];
+                }
+                else
+                {
+                    _cpu.Data = _rom[_cpu.Address & 0x1FFF];
+                }
+                break;
+
+            case Intel8080Chip.StatusWordInputRead:
+                _cpu.Data = (_cpu.Address & 0xFF) switch
+                {
+                    1 => GetIOPort1Value(),
+                    2 => 0, // TODO: Player inputs
+                    3 => _shifter.GetResult(),
+                    _ => throw new InvalidOperationException(),
+                };
+                break;
+
+            case Intel8080Chip.StatusWordInterruptAcknowledge:
+                _cpu.Data = _nextInterrupt;
+                _cpu.Int = false;
+                break;
+        }
+    }
+
+    private void WriteCpuBus()
+    {
+        switch (_lastStatusWord)
+        {
+            case Intel8080Chip.StatusWordMemoryWrite:
+            case Intel8080Chip.StatusWordStackWrite:
+                if ((_cpu.Address & 0x2000) == 0x2000)
+                {
+                    _ram[_cpu.Address & 0x1FFF] = _cpu.Data;
+                }
+                break;
+
+            case Intel8080Chip.StatusWordOutputWrite:
+                switch (_cpu.Address & 0xFF)
+                {
+                    case 2:
+                        _shifter.SetShiftCount(_cpu.Data);
+                        break;
+
+                    case 3: // Sound related
+                        break;
+
+                    case 4:
+                        _shifter.SetShiftData(_cpu.Data);
+                        break;
+
+                    case 5: // Sound related
+                        break;
+
+                    case 6:
+                        break;
+
+                    default:
                         throw new InvalidOperationException();
-                    }
-                    else if ((_cpu.Address & 0x2000) == 0x2000)
-                    {
-                        _cpu.Data = _ram[_cpu.Address & 0x1FFF];
-                    }
-                    else
-                    {
-                        _cpu.Data = _rom[_cpu.Address & 0x1FFF];
-                    }
-                    break;
-
-                case Intel8080Chip.StatusWordInputRead:
-                    _cpu.Data = (_cpu.Address & 0xFF) switch
-                    {
-                        1 => GetIOPort1Value(),
-                        2 => 0, // TODO: Player inputs
-                        3 => _shifter.GetResult(),
-                        _ => throw new InvalidOperationException(),
-                    };
-                    break;
-
-                case Intel8080Chip.StatusWordInterruptAcknowledge:
-                    _cpu.Data = _nextInterrupt;
-                    _cpu.Int = false;
-                    break;
-            }
-        }
-
-        if (!_cpu.Wr)
-        {
-            // Write data.
-            switch (_lastStatusWord)
-            {
-                case Intel8080Chip.StatusWordMemoryWrite:
-                case Intel8080Chip.StatusWordStackWrite:
-                    if ((_cpu.Address & 0x2000) == 0x2000)
-                    {
-                        _ram[_cpu.Address & 0x1FFF] = _cpu.Data;
-                    }
-                    break;
-
-                case Intel8080Chip.StatusWordOutputWrite:
-                    switch (_cpu.Address & 0xFF)
-                    {
-                        case 2:
-                            _shifter.SetShiftCount(_cpu.Data);
-                            break;
-
-                        case 3: // Sound related
-                            break;
-
-                        case 4:
-                            _shifter.SetShiftData(_cpu.Data);
-                            break;
-
-                        case 5: // Sound related
-                            break;
-
-                        case 6:
-                            break;
-
-                        default:
-                            throw new InvalidOperationException();
-                    }
-                    break;
-            }
+                }
+                break;
         }
     }
 
@@ -307,5 +367,13 @@ public sealed class SpaceInvadersSystem : EmulatedSystem
         return new SpaceInvadersDebugger(
             this,
             new DebuggerMemoryCallbacks(ReadByteDebug, WriteByteDebug));
+    }
+
+    internal IReadOnlyList<ChannelNode> CreateChannelNodes()
+    {
+        return
+        [
+            _cpu.CreateChannelGroup(),
+        ];
     }
 }

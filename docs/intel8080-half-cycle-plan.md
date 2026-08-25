@@ -346,6 +346,24 @@ schematic rather than invented — and moving bus servicing from
 T-state) would be a further-fidelity pass, not required for Phase 1/2's
 goal of exposing pins as properties and making the chip edge-driven.
 
+**Phase 3 implementation notes.** Space Invaders' own clock-generator
+schematic (a custom counter chain off the 19.968MHz crystal, since this
+board doesn't use an 8224) wasn't locatable despite searching
+computerarcheology.com's hardware writeup, MAME's `mw8080bw`/`8080bw`
+driver source, arcade-museum.com repair/schematic threads, and the
+`clash-spaceinvaders` FPGA reimplementation — none document the generator's
+own Φ1/Φ2 duty cycle at the gate level. Rather than invent one, the four
+edges are spread across the existing 10-master-tick T-state window using
+the *MCS-80/85 User's Manual*'s own AC-characteristics ratio (min 60ns Φ1
+vs. min 220ns Φ2 at standard 2MHz speed grade — already cited above) scaled
+to this window's ~50ns/tick granularity: Φ1 high for 2 ticks (~100ns), a
+1-tick gap, Φ2 high for 5 ticks (~250ns), a 2-tick gap before the next Φ1
+rising edge (`SpaceInvadersSystem.TickCpuClock`). Bus servicing (`ReadCpuBus`/
+`WriteCpuBus`, split out of the old combined `TickCpu`) now runs at the
+specific edge each transition documents — read data supplied on `DBIn`'s
+rising edge, writes committed on `WR`'s falling edge — rather than once
+after all four edges of a T-state.
+
 ## Systems / files affected
 
 | File | Phase 1 | Phase 2 |
