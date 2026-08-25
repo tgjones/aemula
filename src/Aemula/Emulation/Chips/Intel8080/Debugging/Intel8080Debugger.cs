@@ -19,8 +19,8 @@ public sealed class Intel8080Debugger
         debugger.StepModes.Add(
             new DebuggerStepMode(
                 "Step Instruction",
-                () => _cpu.Pins.Sync && _cpu.Pins.Data == Intel8080Chip.StatusWordFetch && _cpu.Pins.Address != _startPC,
-                () => _startPC = _cpu.Pins.Address));
+                () => _cpu.Sync && _cpu.Data == Intel8080Chip.StatusWordFetch && _cpu.Address != _startPC,
+                () => _startPC = _cpu.Address));
 
         debugger.StepModes.Add(
             new DebuggerStepMode(

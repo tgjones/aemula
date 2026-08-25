@@ -30,7 +30,66 @@ public sealed partial class Intel8080Chip
     public Intel8080Flags Flags;
 
     // Pins
-    public Intel8080Pins Pins;
+
+    /// <summary>
+    /// Address bus.
+    /// </summary>
+    public ushort Address { get; set; }
+
+    /// <summary>
+    /// Data bus.
+    /// </summary>
+    public byte Data { get; set; }
+
+    /// <summary>
+    /// Clears the program counter, and INTE and HLDA flip/flops.
+    /// </summary>
+    public bool Reset { get; set; }
+
+    /// <summary>
+    /// Requests the CPU to enter the HOLD state.
+    /// </summary>
+    public bool Hold { get; set; }
+
+    /// <summary>
+    /// Interrupt request. Will be recognized at the end of the current instruction or while halted.
+    /// </summary>
+    public bool Int { get; set; }
+
+    /// <summary>
+    /// Interrupt enable. Indicates the content of the internal interrupt enable flip/flop.
+    /// </summary>
+    public bool IntE { get; set; }
+
+    /// <summary>
+    /// Data bus in. Indicates that the data bus is in the input mode.
+    /// </summary>
+    public bool DBIn { get; set; }
+
+    /// <summary>
+    /// Write. Used for memory write or I/O output control.
+    /// </summary>
+    public bool Wr { get; set; }
+
+    /// <summary>
+    /// Synchronizing signal. Indicates the beginning of each machine cycle.
+    /// </summary>
+    public bool Sync { get; set; }
+
+    /// <summary>
+    /// Acknowledges that the CPU is in a WAIT state.
+    /// </summary>
+    public bool Wait { get; set; }
+
+    /// <summary>
+    /// Indicates to the CPU that valid memory or input data is available on the data bus.
+    /// </summary>
+    public bool Ready { get; set; }
+
+    /// <summary>
+    /// Hold acknowledge. Appears in response to the HOLD signal.
+    /// </summary>
+    public bool HldA { get; set; }
 
     public MachineCycleType CurrentMachineCycle => _machineCycleType;
     public State CurrentState => _state;
@@ -49,19 +108,19 @@ public sealed partial class Intel8080Chip
         switch (machineCycleTypeAndState)
         {
             case FetchT1:
-                Pins.Data = _interruptLatch ? StatusWordInterruptAcknowledge : StatusWordFetch;
-                Pins.Sync = true;
-                Pins.Wr = true;
-                Pins.Address = PC.Value; // This will be overridden by some instructions like CALL and RET.
+                Data = _interruptLatch ? StatusWordInterruptAcknowledge : StatusWordFetch;
+                Sync = true;
+                Wr = true;
+                Address = PC.Value; // This will be overridden by some instructions like CALL and RET.
                 if (_interruptLatch)
                 {
-                    Pins.IntE = false;
+                    IntE = false;
                 }
                 break;
 
             case FetchT2:
-                Pins.DBIn = true;
-                Pins.Sync = false;
+                DBIn = true;
+                Sync = false;
                 // TODO: Sample READY and HOLD pins
                 // TODO: Check for HALT instruction.
                 if (!_interruptLatch)
@@ -72,103 +131,103 @@ public sealed partial class Intel8080Chip
 
             case FetchT3:
                 _interruptLatch = false;
-                Pins.DBIn = false;
-                _ir = Pins.Data;
+                DBIn = false;
+                _ir = Data;
                 break;
 
             case MemoryReadT1:
-                Pins.Data = StatusWordMemoryRead;
-                Pins.Sync = true;
-                Pins.Wr = true;
+                Data = StatusWordMemoryRead;
+                Sync = true;
+                Wr = true;
                 break;
 
             case MemoryReadT2:
-                Pins.Sync = false;
-                Pins.DBIn = true;
+                Sync = false;
+                DBIn = true;
                 break;
 
             case MemoryReadT3:
-                Pins.DBIn = false;
+                DBIn = false;
                 break;
 
             case MemoryWriteT1:
-                Pins.Data = StatusWordMemoryWrite;
-                Pins.Sync = true;
-                Pins.Wr = true;
+                Data = StatusWordMemoryWrite;
+                Sync = true;
+                Wr = true;
                 break;
 
             case MemoryWriteT2:
-                Pins.Sync = false;
+                Sync = false;
                 break;
 
             case MemoryWriteT3:
-                Pins.Wr = false;
+                Wr = false;
                 break;
 
             case StackReadT1:
-                Pins.Data = StatusWordStackRead;
-                Pins.Sync = true;
-                Pins.Wr = true;
-                Pins.Address = SP.Value;
+                Data = StatusWordStackRead;
+                Sync = true;
+                Wr = true;
+                Address = SP.Value;
                 break;
 
             case StackReadT2:
-                Pins.Sync = false;
-                Pins.DBIn = true;
+                Sync = false;
+                DBIn = true;
                 break;
 
             case StackReadT3:
-                Pins.DBIn = false;
+                DBIn = false;
                 break;
 
             case StackWriteT1:
-                Pins.Data = StatusWordStackWrite;
-                Pins.Sync = true;
-                Pins.Wr = true;
-                Pins.Address = SP.Value;
+                Data = StatusWordStackWrite;
+                Sync = true;
+                Wr = true;
+                Address = SP.Value;
                 break;
 
             case StackWriteT2:
-                Pins.Sync = false;
+                Sync = false;
                 break;
 
             case StackWriteT3:
-                Pins.Wr = false;
+                Wr = false;
                 break;
 
             case StackWriteT4:
-                Pins.Wr = true;
+                Wr = true;
                 break;
 
             case InputReadT1:
-                Pins.Data = StatusWordInputRead;
-                Pins.Sync = true;
-                Pins.Wr = true;
-                Pins.Address = _wz.Value;
+                Data = StatusWordInputRead;
+                Sync = true;
+                Wr = true;
+                Address = _wz.Value;
                 break;
 
             case InputReadT2:
-                Pins.Sync = false;
-                Pins.DBIn = true;
+                Sync = false;
+                DBIn = true;
                 break;
 
             case InputReadT3:
-                Pins.DBIn = false;
+                DBIn = false;
                 break;
 
             case OutputWriteT1:
-                Pins.Data = StatusWordOutputWrite;
-                Pins.Sync = true;
-                Pins.Wr = true;
-                Pins.Address = _wz.Value;
+                Data = StatusWordOutputWrite;
+                Sync = true;
+                Wr = true;
+                Address = _wz.Value;
                 break;
 
             case OutputWriteT2:
-                Pins.Sync = false;
+                Sync = false;
                 break;
 
             case OutputWriteT3:
-                Pins.Wr = false;
+                Wr = false;
                 break;
         }
 
@@ -202,7 +261,7 @@ public sealed partial class Intel8080Chip
         {
             // This means the current state is the last state of the last cycle of the current instruction.
             // Time to check the interrupt pin.
-            if (Pins.Int && Pins.IntE)
+            if (Int && IntE)
             {
                 _interruptLatch = true;
             }
@@ -299,11 +358,11 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT1:
-                        Pins.Address = HL.Value;
+                        Address = HL.Value;
                         break;
 
                     case MemoryReadT3:
-                        GetRegister((_ir & 0x38) >> 3) = Pins.Data;
+                        GetRegister((_ir & 0x38) >> 3) = Data;
                         SetNextCycle(MachineCycleType.Fetch);
                         break;
                 }
@@ -325,11 +384,11 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryWriteT1:
-                        Pins.Address = HL.Value;
+                        Address = HL.Value;
                         break;
 
                     case MemoryWriteT2:
-                        Pins.Data = _tmp;
+                        Data = _tmp;
                         break;
 
                     case MemoryWriteT3:
@@ -368,7 +427,7 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT1:
-                        Pins.Address = PC.Value;
+                        Address = PC.Value;
                         break;
 
                     case MemoryReadT2:
@@ -376,7 +435,7 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT3:
-                        GetRegister((_ir & 0x38) >> 3) = Pins.Data;
+                        GetRegister((_ir & 0x38) >> 3) = Data;
                         SetNextCycle(MachineCycleType.Fetch);
                         break;
                 }
@@ -391,7 +450,7 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT1:
-                        Pins.Address = PC.Value;
+                        Address = PC.Value;
                         break;
 
                     case MemoryReadT2:
@@ -399,16 +458,16 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT3:
-                        _tmp = Pins.Data;
+                        _tmp = Data;
                         SetNextCycle(MachineCycleType.MemoryWrite);
                         break;
 
                     case MemoryWriteT1:
-                        Pins.Address = HL.Value;
+                        Address = HL.Value;
                         break;
 
                     case MemoryWriteT2:
-                        Pins.Data = _tmp;
+                        Data = _tmp;
                         break;
 
                     case MemoryWriteT3:
@@ -429,7 +488,7 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT1:
-                        Pins.Address = PC.Value;
+                        Address = PC.Value;
                         break;
 
                     case MemoryReadT2:
@@ -439,12 +498,12 @@ public sealed partial class Intel8080Chip
                     case MemoryReadT3:
                         if (_machineCycle == 2)
                         {
-                            GetRegisterPairLo((_ir & 0x30) >> 4) = Pins.Data;
+                            GetRegisterPairLo((_ir & 0x30) >> 4) = Data;
                             SetNextCycle(MachineCycleType.MemoryRead);
                         }
                         else
                         {
-                            GetRegisterPairHi((_ir & 0x30) >> 4) = Pins.Data;
+                            GetRegisterPairHi((_ir & 0x30) >> 4) = Data;
                             SetNextCycle(MachineCycleType.Fetch);
                         }
                         break;
@@ -464,11 +523,11 @@ public sealed partial class Intel8080Chip
                         {
                             case 2:
                             case 3:
-                                Pins.Address = PC.Value;
+                                Address = PC.Value;
                                 break;
 
                             case 4:
-                                Pins.Address = _wz.Value;
+                                Address = _wz.Value;
                                 break;
                         }
                         break;
@@ -487,17 +546,17 @@ public sealed partial class Intel8080Chip
                         switch (_machineCycle)
                         {
                             case 2:
-                                _wz.Z = Pins.Data;
+                                _wz.Z = Data;
                                 SetNextCycle(MachineCycleType.MemoryRead);
                                 break;
 
                             case 3:
-                                _wz.W = Pins.Data;
+                                _wz.W = Data;
                                 SetNextCycle(MachineCycleType.MemoryRead);
                                 break;
 
                             case 4:
-                                A = Pins.Data;
+                                A = Data;
                                 SetNextCycle(MachineCycleType.Fetch);
                                 break;
                         }
@@ -514,7 +573,7 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT1:
-                        Pins.Address = PC.Value;
+                        Address = PC.Value;
                         break;
 
                     case MemoryReadT2:
@@ -525,23 +584,23 @@ public sealed partial class Intel8080Chip
                         switch (_machineCycle)
                         {
                             case 2:
-                                _wz.Z = Pins.Data;
+                                _wz.Z = Data;
                                 SetNextCycle(MachineCycleType.MemoryRead);
                                 break;
 
                             case 3:
-                                _wz.W = Pins.Data;
+                                _wz.W = Data;
                                 SetNextCycle(MachineCycleType.MemoryWrite);
                                 break;
                         }
                         break;
 
                     case MemoryWriteT1:
-                        Pins.Address = _wz.Value;
+                        Address = _wz.Value;
                         break;
 
                     case MemoryWriteT2:
-                        Pins.Data = A;
+                        Data = A;
                         break;
 
                     case MemoryWriteT3:
@@ -563,12 +622,12 @@ public sealed partial class Intel8080Chip
                         {
                             case 2:
                             case 3:
-                                Pins.Address = PC.Value;
+                                Address = PC.Value;
                                 break;
 
                             case 4:
                             case 5:
-                                Pins.Address = _wz.Value;
+                                Address = _wz.Value;
                                 break;
                         }
                         break;
@@ -591,22 +650,22 @@ public sealed partial class Intel8080Chip
                         switch (_machineCycle)
                         {
                             case 2:
-                                _wz.Z = Pins.Data;
+                                _wz.Z = Data;
                                 SetNextCycle(MachineCycleType.MemoryRead);
                                 break;
 
                             case 3:
-                                _wz.W = Pins.Data;
+                                _wz.W = Data;
                                 SetNextCycle(MachineCycleType.MemoryRead);
                                 break;
 
                             case 4:
-                                HL.L = Pins.Data;
+                                HL.L = Data;
                                 SetNextCycle(MachineCycleType.MemoryRead);
                                 break;
 
                             case 5:
-                                HL.H = Pins.Data;
+                                HL.H = Data;
                                 SetNextCycle(MachineCycleType.Fetch);
                                 break;
                         }
@@ -623,7 +682,7 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT1:
-                        Pins.Address = PC.Value;
+                        Address = PC.Value;
                         break;
 
                     case MemoryReadT2:
@@ -634,31 +693,31 @@ public sealed partial class Intel8080Chip
                         switch (_machineCycle)
                         {
                             case 2:
-                                _wz.Z = Pins.Data;
+                                _wz.Z = Data;
                                 SetNextCycle(MachineCycleType.MemoryRead);
                                 break;
 
                             case 3:
-                                _wz.W = Pins.Data;
+                                _wz.W = Data;
                                 SetNextCycle(MachineCycleType.MemoryWrite);
                                 break;
                         }
                         break;
 
                     case MemoryWriteT1:
-                        Pins.Address = _wz.Value;
+                        Address = _wz.Value;
                         break;
 
                     case MemoryWriteT2:
                         switch (_machineCycle)
                         {
                             case 4:
-                                Pins.Data = HL.L;
+                                Data = HL.L;
                                 _wz.Value++;
                                 break;
 
                             case 5:
-                                Pins.Data = HL.H;
+                                Data = HL.H;
                                 break;
                         }
                         break;
@@ -688,11 +747,11 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT1:
-                        Pins.Address = GetRegisterPair((_ir & 0x30) >> 4);
+                        Address = GetRegisterPair((_ir & 0x30) >> 4);
                         break;
 
                     case MemoryReadT3:
-                        A = Pins.Data;
+                        A = Data;
                         SetNextCycle(MachineCycleType.Fetch);
                         break;
                 }
@@ -708,11 +767,11 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryWriteT1:
-                        Pins.Address = GetRegisterPair((_ir & 0x30) >> 4);
+                        Address = GetRegisterPair((_ir & 0x30) >> 4);
                         break;
 
                     case MemoryWriteT2:
-                        Pins.Data = A;
+                        Data = A;
                         break;
 
                     case MemoryWriteT3:
@@ -772,11 +831,11 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT1:
-                        Pins.Address = HL.Value;
+                        Address = HL.Value;
                         break;
 
                     case MemoryReadT3:
-                        _tmp = Pins.Data;
+                        _tmp = Data;
                         SetNextCycle(MachineCycleType.Fetch);
                         break;
                 }
@@ -797,7 +856,7 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT1:
-                        Pins.Address = PC.Value;
+                        Address = PC.Value;
                         break;
 
                     case MemoryReadT2:
@@ -805,7 +864,7 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT3:
-                        _tmp = Pins.Data;
+                        _tmp = Data;
                         SetNextCycle(MachineCycleType.Fetch);
                         break;
                 }
@@ -849,11 +908,11 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT1:
-                        Pins.Address = HL.Value;
+                        Address = HL.Value;
                         break;
 
                     case MemoryReadT3:
-                        _tmp = Pins.Data;
+                        _tmp = Data;
                         SetNextCycle(MachineCycleType.Fetch);
                         break;
                 }
@@ -874,7 +933,7 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT1:
-                        Pins.Address = PC.Value;
+                        Address = PC.Value;
                         break;
 
                     case MemoryReadT2:
@@ -882,7 +941,7 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT3:
-                        _tmp = Pins.Data;
+                        _tmp = Data;
                         SetNextCycle(MachineCycleType.Fetch);
                         break;
                 }
@@ -926,11 +985,11 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT1:
-                        Pins.Address = HL.Value;
+                        Address = HL.Value;
                         break;
 
                     case MemoryReadT3:
-                        _tmp = Pins.Data;
+                        _tmp = Data;
                         SetNextCycle(MachineCycleType.Fetch);
                         break;
                 }
@@ -951,7 +1010,7 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT1:
-                        Pins.Address = PC.Value;
+                        Address = PC.Value;
                         break;
 
                     case MemoryReadT2:
@@ -959,7 +1018,7 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT3:
-                        _tmp = Pins.Data;
+                        _tmp = Data;
                         SetNextCycle(MachineCycleType.Fetch);
                         break;
                 }
@@ -1003,11 +1062,11 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT1:
-                        Pins.Address = HL.Value;
+                        Address = HL.Value;
                         break;
 
                     case MemoryReadT3:
-                        _tmp = Pins.Data;
+                        _tmp = Data;
                         SetNextCycle(MachineCycleType.Fetch);
                         break;
                 }
@@ -1028,7 +1087,7 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT1:
-                        Pins.Address = PC.Value;
+                        Address = PC.Value;
                         break;
 
                     case MemoryReadT2:
@@ -1036,7 +1095,7 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT3:
-                        _tmp = Pins.Data;
+                        _tmp = Data;
                         SetNextCycle(MachineCycleType.Fetch);
                         break;
                 }
@@ -1074,22 +1133,22 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT1:
-                        Pins.Address = HL.Value;
+                        Address = HL.Value;
                         break;
 
                     case MemoryReadT3:
-                        _tmp = (byte)(Pins.Data + 1);
+                        _tmp = (byte)(Data + 1);
                         Flags.AuxiliaryCarry = (_tmp & 0xF) == 0;
                         SetParityZeroSignBits(_tmp);
                         SetNextCycle(MachineCycleType.MemoryWrite);
                         break;
 
                     case MemoryWriteT1:
-                        Pins.Address = HL.Value;
+                        Address = HL.Value;
                         break;
 
                     case MemoryWriteT2:
-                        Pins.Data = _tmp;
+                        Data = _tmp;
                         break;
 
                     case MemoryWriteT3:
@@ -1130,22 +1189,22 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT1:
-                        Pins.Address = HL.Value;
+                        Address = HL.Value;
                         break;
 
                     case MemoryReadT3:
-                        _tmp = (byte)(Pins.Data - 1);
+                        _tmp = (byte)(Data - 1);
                         Flags.AuxiliaryCarry = (_tmp & 0xF) != 0xF;
                         SetParityZeroSignBits(_tmp);
                         SetNextCycle(MachineCycleType.MemoryWrite);
                         break;
 
                     case MemoryWriteT1:
-                        Pins.Address = HL.Value;
+                        Address = HL.Value;
                         break;
 
                     case MemoryWriteT2:
-                        Pins.Data = _tmp;
+                        Data = _tmp;
                         break;
 
                     case MemoryWriteT3:
@@ -1287,11 +1346,11 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT1:
-                        Pins.Address = HL.Value;
+                        Address = HL.Value;
                         break;
 
                     case MemoryReadT3:
-                        _tmp = Pins.Data;
+                        _tmp = Data;
                         SetNextCycle(MachineCycleType.Fetch);
                         break;
                 }
@@ -1312,7 +1371,7 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT1:
-                        Pins.Address = PC.Value;
+                        Address = PC.Value;
                         break;
 
                     case MemoryReadT2:
@@ -1320,7 +1379,7 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT3:
-                        _tmp = Pins.Data;
+                        _tmp = Data;
                         SetNextCycle(MachineCycleType.Fetch);
                         break;
                 }
@@ -1364,11 +1423,11 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT1:
-                        Pins.Address = HL.Value;
+                        Address = HL.Value;
                         break;
 
                     case MemoryReadT3:
-                        _tmp = Pins.Data;
+                        _tmp = Data;
                         SetNextCycle(MachineCycleType.Fetch);
                         break;
                 }
@@ -1389,7 +1448,7 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT1:
-                        Pins.Address = PC.Value;
+                        Address = PC.Value;
                         break;
 
                     case MemoryReadT2:
@@ -1397,7 +1456,7 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT3:
-                        _tmp = Pins.Data;
+                        _tmp = Data;
                         SetNextCycle(MachineCycleType.Fetch);
                         break;
                 }
@@ -1441,11 +1500,11 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT1:
-                        Pins.Address = HL.Value;
+                        Address = HL.Value;
                         break;
 
                     case MemoryReadT3:
-                        _tmp = Pins.Data;
+                        _tmp = Data;
                         SetNextCycle(MachineCycleType.Fetch);
                         break;
                 }
@@ -1466,7 +1525,7 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT1:
-                        Pins.Address = PC.Value;
+                        Address = PC.Value;
                         break;
 
                     case MemoryReadT2:
@@ -1474,7 +1533,7 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT3:
-                        _tmp = Pins.Data;
+                        _tmp = Data;
                         SetNextCycle(MachineCycleType.Fetch);
                         break;
                 }
@@ -1518,11 +1577,11 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT1:
-                        Pins.Address = HL.Value;
+                        Address = HL.Value;
                         break;
 
                     case MemoryReadT3:
-                        _tmp = Pins.Data;
+                        _tmp = Data;
                         SetNextCycle(MachineCycleType.Fetch);
                         break;
                 }
@@ -1543,7 +1602,7 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT1:
-                        Pins.Address = PC.Value;
+                        Address = PC.Value;
                         break;
 
                     case MemoryReadT2:
@@ -1551,7 +1610,7 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT3:
-                        _tmp = Pins.Data;
+                        _tmp = Data;
                         SetNextCycle(MachineCycleType.Fetch);
                         break;
                 }
@@ -1660,7 +1719,7 @@ public sealed partial class Intel8080Chip
                 {
                     // This executes during the fetch of the next instruction.
                     case FetchT1:
-                        Pins.Address = _wz.Value;
+                        Address = _wz.Value;
                         break;
 
                     // This executes during the fetch of the next instruction.
@@ -1673,7 +1732,7 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT1:
-                        Pins.Address = PC.Value;
+                        Address = PC.Value;
                         break;
 
                     case MemoryReadT2:
@@ -1684,12 +1743,12 @@ public sealed partial class Intel8080Chip
                         switch (_machineCycle)
                         {
                             case 2:
-                                _wz.Z = Pins.Data;
+                                _wz.Z = Data;
                                 SetNextCycle(MachineCycleType.MemoryRead);
                                 break;
 
                             case 3:
-                                _wz.W = Pins.Data;
+                                _wz.W = Data;
                                 SetNextCycle(MachineCycleType.Fetch);
                                 break;
                         }
@@ -1712,7 +1771,7 @@ public sealed partial class Intel8080Chip
                     case FetchT1:
                         if (_condition)
                         {
-                            Pins.Address = _wz.Value;
+                            Address = _wz.Value;
                         }
                         break;
 
@@ -1731,7 +1790,7 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT1:
-                        Pins.Address = PC.Value;
+                        Address = PC.Value;
                         break;
 
                     case MemoryReadT2:
@@ -1742,12 +1801,12 @@ public sealed partial class Intel8080Chip
                         switch (_machineCycle)
                         {
                             case 2:
-                                _wz.Z = Pins.Data;
+                                _wz.Z = Data;
                                 SetNextCycle(MachineCycleType.MemoryRead);
                                 break;
 
                             case 3:
-                                _wz.W = Pins.Data;
+                                _wz.W = Data;
                                 SetNextCycle(MachineCycleType.Fetch);
                                 break;
                         }
@@ -1761,7 +1820,7 @@ public sealed partial class Intel8080Chip
                 {
                     // This executes during the fetch of the next instruction.
                     case FetchT1:
-                        Pins.Address = _wz.Value;
+                        Address = _wz.Value;
                         break;
 
                     // This executes during the fetch of the next instruction.
@@ -1775,7 +1834,7 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT1:
-                        Pins.Address = PC.Value;
+                        Address = PC.Value;
                         break;
 
                     case MemoryReadT2:
@@ -1786,12 +1845,12 @@ public sealed partial class Intel8080Chip
                         switch (_machineCycle)
                         {
                             case 2:
-                                _wz.Z = Pins.Data;
+                                _wz.Z = Data;
                                 SetNextCycle(MachineCycleType.MemoryRead);
                                 break;
 
                             case 3:
-                                _wz.W = Pins.Data;
+                                _wz.W = Data;
                                 SetNextCycle(MachineCycleType.StackWrite);
                                 break;
                         }
@@ -1802,11 +1861,11 @@ public sealed partial class Intel8080Chip
                         {
                             case 4:
                                 SP.Value--;
-                                Pins.Data = PC.Hi;
+                                Data = PC.Hi;
                                 break;
 
                             case 5:
-                                Pins.Data = PC.Lo;
+                                Data = PC.Lo;
                                 break;
                         }
 
@@ -1842,7 +1901,7 @@ public sealed partial class Intel8080Chip
                     case FetchT1:
                         if (_condition)
                         {
-                            Pins.Address = _wz.Value;
+                            Address = _wz.Value;
                         }
                         break;
 
@@ -1863,7 +1922,7 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT1:
-                        Pins.Address = PC.Value;
+                        Address = PC.Value;
                         break;
 
                     case MemoryReadT2:
@@ -1874,12 +1933,12 @@ public sealed partial class Intel8080Chip
                         switch (_machineCycle)
                         {
                             case 2:
-                                _wz.Z = Pins.Data;
+                                _wz.Z = Data;
                                 SetNextCycle(MachineCycleType.MemoryRead);
                                 break;
 
                             case 3:
-                                _wz.W = Pins.Data;
+                                _wz.W = Data;
                                 if (_condition)
                                 {
                                     SetNextCycle(MachineCycleType.StackWrite);
@@ -1897,11 +1956,11 @@ public sealed partial class Intel8080Chip
                         {
                             case 4:
                                 SP.Value--;
-                                Pins.Data = PC.Hi;
+                                Data = PC.Hi;
                                 break;
 
                             case 5:
-                                Pins.Data = PC.Lo;
+                                Data = PC.Lo;
                                 break;
                         }
 
@@ -1928,7 +1987,7 @@ public sealed partial class Intel8080Chip
                 {
                     // This executes during the fetch of the next instruction.
                     case FetchT1:
-                        Pins.Address = _wz.Value;
+                        Address = _wz.Value;
                         break;
 
                     // This executes during the fetch of the next instruction.
@@ -1948,12 +2007,12 @@ public sealed partial class Intel8080Chip
                         switch (_machineCycle)
                         {
                             case 2:
-                                _wz.Z = Pins.Data;
+                                _wz.Z = Data;
                                 SetNextCycle(MachineCycleType.StackRead);
                                 break;
 
                             case 3:
-                                _wz.W = Pins.Data;
+                                _wz.W = Data;
                                 SetNextCycle(MachineCycleType.Fetch);
                                 break;
                         }
@@ -1976,7 +2035,7 @@ public sealed partial class Intel8080Chip
                     case FetchT1:
                         if (_condition)
                         {
-                            Pins.Address = _wz.Value;
+                            Address = _wz.Value;
                         }
                         break;
 
@@ -2007,12 +2066,12 @@ public sealed partial class Intel8080Chip
                         switch (_machineCycle)
                         {
                             case 2:
-                                _wz.Z = Pins.Data;
+                                _wz.Z = Data;
                                 SetNextCycle(MachineCycleType.StackRead);
                                 break;
 
                             case 3:
-                                _wz.W = Pins.Data;
+                                _wz.W = Data;
                                 SetNextCycle(MachineCycleType.Fetch);
                                 break;
                         }
@@ -2033,7 +2092,7 @@ public sealed partial class Intel8080Chip
                 {
                     // This executes during the fetch of the next instruction.
                     case FetchT1:
-                        Pins.Address = _wz.Value;
+                        Address = _wz.Value;
                         break;
 
                     // This executes during the fetch of the next instruction.
@@ -2055,12 +2114,12 @@ public sealed partial class Intel8080Chip
                         {
                             case 2:
                                 SP.Value--;
-                                Pins.Data = PC.Hi;
+                                Data = PC.Hi;
                                 break;
 
                             case 3:
                                 _wz.Z = (byte)(_ir & 0b111000);
-                                Pins.Data = PC.Lo;
+                                Data = PC.Lo;
                                 break;
                         }
                         break;
@@ -2111,11 +2170,11 @@ public sealed partial class Intel8080Chip
                         {
                             case 2:
                                 SP.Value--;
-                                Pins.Data = GetRegisterPairHi((_ir & 0x30) >> 4);
+                                Data = GetRegisterPairHi((_ir & 0x30) >> 4);
                                 break;
 
                             case 3:
-                                Pins.Data = GetRegisterPairLo((_ir & 0x30) >> 4);
+                                Data = GetRegisterPairLo((_ir & 0x30) >> 4);
                                 break;
                         }
 
@@ -2150,11 +2209,11 @@ public sealed partial class Intel8080Chip
                         {
                             case 2:
                                 SP.Value--;
-                                Pins.Data = A;
+                                Data = A;
                                 break;
 
                             case 3:
-                                Pins.Data = Flags.AsByte();
+                                Data = Flags.AsByte();
                                 break;
                         }
 
@@ -2193,12 +2252,12 @@ public sealed partial class Intel8080Chip
                         switch (_machineCycle)
                         {
                             case 2:
-                                GetRegisterPairLo((_ir & 0x30) >> 4) = Pins.Data;
+                                GetRegisterPairLo((_ir & 0x30) >> 4) = Data;
                                 SetNextCycle(MachineCycleType.StackRead);
                                 break;
 
                             case 3:
-                                GetRegisterPairHi((_ir & 0x30) >> 4) = Pins.Data;
+                                GetRegisterPairHi((_ir & 0x30) >> 4) = Data;
                                 SetNextCycle(MachineCycleType.Fetch);
                                 break;
                         }
@@ -2222,12 +2281,12 @@ public sealed partial class Intel8080Chip
                         switch (_machineCycle)
                         {
                             case 2:
-                                Flags.SetFromByte(Pins.Data);
+                                Flags.SetFromByte(Data);
                                 SetNextCycle(MachineCycleType.StackRead);
                                 break;
 
                             case 3:
-                                A = Pins.Data;
+                                A = Data;
                                 SetNextCycle(MachineCycleType.Fetch);
                                 break;
                         }
@@ -2256,12 +2315,12 @@ public sealed partial class Intel8080Chip
                         switch (_machineCycle)
                         {
                             case 2:
-                                _wz.Z = Pins.Data;
+                                _wz.Z = Data;
                                 SetNextCycle(MachineCycleType.StackRead);
                                 break;
 
                             case 3:
-                                _wz.W = Pins.Data;
+                                _wz.W = Data;
                                 SetNextCycle(MachineCycleType.StackWrite);
                                 break;
                         }
@@ -2272,11 +2331,11 @@ public sealed partial class Intel8080Chip
                         {
                             case 4:
                                 SP.Value--;
-                                Pins.Data = HL.H;
+                                Data = HL.H;
                                 break;
 
                             case 5:
-                                Pins.Data = HL.L;
+                                Data = HL.L;
                                 break;
                         }
                         break;
@@ -2310,7 +2369,7 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT1:
-                        Pins.Address = PC.Value;
+                        Address = PC.Value;
                         break;
 
                     case MemoryReadT2:
@@ -2318,13 +2377,13 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT3:
-                        _wz.W = Pins.Data;
-                        _wz.Z = Pins.Data;
+                        _wz.W = Data;
+                        _wz.Z = Data;
                         SetNextCycle(MachineCycleType.OutputWrite);
                         break;
 
                     case OutputWriteT2:
-                        Pins.Data = A;
+                        Data = A;
                         break;
 
                     case OutputWriteT3:
@@ -2342,7 +2401,7 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT1:
-                        Pins.Address = PC.Value;
+                        Address = PC.Value;
                         break;
 
                     case MemoryReadT2:
@@ -2350,13 +2409,13 @@ public sealed partial class Intel8080Chip
                         break;
 
                     case MemoryReadT3:
-                        _wz.W = Pins.Data;
-                        _wz.Z = Pins.Data;
+                        _wz.W = Data;
+                        _wz.Z = Data;
                         SetNextCycle(MachineCycleType.InputRead);
                         break;
 
                     case InputReadT3:
-                        A = Pins.Data;
+                        A = Data;
                         SetNextCycle(MachineCycleType.Fetch);
                         break;
                 }
@@ -2367,7 +2426,7 @@ public sealed partial class Intel8080Chip
                 switch (machineCycleTypeAndState)
                 {
                     case FetchT4:
-                        Pins.IntE = true;
+                        IntE = true;
                         SetNextCycle(MachineCycleType.Fetch);
                         break;
                 }
@@ -2378,7 +2437,7 @@ public sealed partial class Intel8080Chip
                 switch (machineCycleTypeAndState)
                 {
                     case FetchT4:
-                        Pins.IntE = false;
+                        IntE = false;
                         SetNextCycle(MachineCycleType.Fetch);
                         break;
                 }

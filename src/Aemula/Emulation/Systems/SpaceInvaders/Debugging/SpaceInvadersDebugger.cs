@@ -31,9 +31,9 @@ public sealed class SpaceInvadersDebugger : Debugger
     {
         base.TickSystem();
 
-        if (_system.Cpu.Pins.Sync && _system.Cpu.Pins.Data == Intel8080Chip.StatusWordFetch)
+        if (_system.Cpu.Sync && _system.Cpu.Data == Intel8080Chip.StatusWordFetch)
         {
-            OnAddressExecuting(_system.Cpu.Pins.Address);
+            OnAddressExecuting(_system.Cpu.Address);
         }
     }
 

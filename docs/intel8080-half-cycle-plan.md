@@ -230,7 +230,37 @@ decode logic wired to the actual pins) would see it.
 - All other pins (`Address`, `Data`, `Sync`, `Wr`, `DBIn`, `Reset`, `Hold`,
   `Int`, `IntE`, `Wait`, `Ready`, `HldA`) become properties directly on
   `Intel8080Chip`, replacing every `Pins.X` read/write in
-  `Intel8080Chip.cs` with plain `X`.
+  `Intel8080Chip.cs` with plain `X`. Phase 1 leaves every one of these as a
+  plain public-get/public-set auto-property (see Phase 1 below); Phase 2 is
+  where each one's *true* accessibility gets assigned, mirroring the
+  three shapes `Mos6502Chip.cs` already establishes for exactly this kind
+  of pin:
+  - **CPU-driven outputs** — pins only ever assigned inside
+    `Intel8080Chip.cs` itself, never by a consuming system — become
+    get-only properties backed by a private field, the chip setting the
+    field internally (`Mos6502Chip.Address => _address` /
+    `.Sync => _sync`, `Mos6502Chip.cs:15-27`). Applies to `Address`,
+    `Sync`, `DBIn`, `Wr`, `IntE`, `HldA`, `Wait` — all seven are
+    exclusively chip-driven in the current `Cycle()` body and in
+    `SpaceInvadersSystem`/`Intel8080ChipTests`, which only ever *read*
+    them.
+  - **Genuinely bidirectional bus** — `Data` keeps a public getter *and*
+    setter, the same as `Mos6502Chip.Data` (`Mos6502Chip.cs:19-24`, with
+    its own `// TODO: Make this tri-state` note carried over here too),
+    since both the chip (write cycles, status word) and the consuming
+    system (supplying read data) legitimately assign it depending on the
+    current machine cycle.
+  - **External inputs** — pins only ever assigned by a consuming system,
+    never by `Intel8080Chip.cs` itself — get an `internal get`/public
+    `set`, the same write-mostly shape as `Mos6502Chip.Nmi`/`.Irq`/`.Rdy`
+    (`Mos6502Chip.cs:232-256`: "exposed for testing, even though this is
+    a write-only pin"). Applies to `Reset`, `Hold`, `Int`, `Ready` — none
+    of these are ever assigned by the chip itself, only sampled (or, for
+    `Reset`/`Hold`/`Ready`, not yet sampled at all — see Open Questions).
+    Keeping the getter `internal` (rather than dropping it) matches the
+    precedent of leaving it available to `Intel8080ChipTests.cs` and
+    similar internal callers even though it's a write-only pin from a
+    real consuming system's perspective.
 - `_machineCycleType`/`_state`/`_machineCycle` and the whole
   `HandleInstruction` opcode `switch` stay conceptually the same in shape
   and content — same `(machineCycleType, state)` dispatch keys, same
@@ -258,6 +288,16 @@ existing `Intel8080ChipTests` cycle-count assertions should pass unmodified
 
 **Phase 2 — split `Cycle()` into `Phi1`/`Phi2` edge dispatch.**
 Using the derived edge-protocol table above:
+- Assign every pin its true accessibility per the three shapes in Target
+  shape above: `Address`/`Sync`/`DBIn`/`Wr`/`IntE`/`HldA`/`Wait` become
+  get-only (private backing field, set only from inside
+  `Intel8080Chip.cs`); `Data` keeps public get/set; `Reset`/`Hold`/`Int`/
+  `Ready` become `internal get`/public `set`. `Phi1`/`Phi2` get their own
+  private-backing-field/edge-gated-setter treatment as described below,
+  rather than either of the other three shapes. This is a mechanical
+  accessibility change with no behavioral effect on its own — do it first,
+  before the edge-dispatch rewrite, so a build break here can't be
+  confused with an edge-dispatch bug.
 - Replace `Cycle()` with two setters, `Phi1` and `Phi2`.
 - `Phi1`'s rising-edge handler: advances `_state`/`_machineCycle`/machine
   cycle type (today's `SetNextCycle` logic, now edge-triggered instead of
@@ -303,7 +343,7 @@ goal of exposing pins as properties and making the chip edge-driven.
 
 | File | Phase 1 | Phase 2 |
 |---|---|---|
-| `Intel8080Chip.cs` | `Pins` fields → properties on the chip. | `Cycle()` split into `Phi1`/`Phi2` setters per the edge protocol table; `SetNextCycle` becomes edge-triggered. |
+| `Intel8080Chip.cs` | `Pins` fields → properties on the chip (all plain public-get/public-set auto-properties). | Each property's accessibility narrowed to its true shape (get-only outputs, public-get/set `Data`, `internal get`/public-set inputs, edge-gated `Phi1`/`Phi2`) per Target shape above; `Cycle()` split into `Phi1`/`Phi2` setters per the edge protocol table; `SetNextCycle` becomes edge-triggered. |
 | `Intel8080Pins.cs` | Deleted. | — |
 | `Intel8080Debugger.cs` | `_cpu.Pins.Sync`/`.Data`/`.Address` → `_cpu.Sync`/`.Data`/`.Address`. | No further change expected. |
 | `SpaceInvadersSystem.cs` | Every `pins.X` in `TickCpu()` → direct `_cpu.X`; still calls the old `Cycle()`-shaped entry point. | `TickCpu()` drives `Phi1`/`Phi2` (four setter calls) instead of one `Cycle()` call; bus servicing moves to run once per T-state (after all four edges) as a low-risk first cut — see Phase 3 for spreading it across the real edges. |

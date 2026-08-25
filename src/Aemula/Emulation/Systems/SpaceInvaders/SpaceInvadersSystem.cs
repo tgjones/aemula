@@ -74,13 +74,13 @@ public sealed class SpaceInvadersSystem : EmulatedSystem
         if (_pixelClock == 30432 + 10161) // Based on EDL :)
         {
             _nextInterrupt = 0xCF;
-            _cpu.Pins.Int = true;
+            _cpu.Int = true;
         }
 
         if (_pixelClock == 71008 + 10161) // Based on EDL :)
         {
             _nextInterrupt = 0xD7;
-            _cpu.Pins.Int = true;
+            _cpu.Int = true;
         }
 
         if (_pixelClock > 83200)
@@ -95,14 +95,12 @@ public sealed class SpaceInvadersSystem : EmulatedSystem
     {
         _cpu.Cycle();
 
-        ref var pins = ref _cpu.Pins;
-
-        if (pins.Sync)
+        if (_cpu.Sync)
         {
-            _lastStatusWord = pins.Data;
+            _lastStatusWord = _cpu.Data;
         }
 
-        if (pins.DBIn)
+        if (_cpu.DBIn)
         {
             // Read data.
             switch (_lastStatusWord)
@@ -110,23 +108,23 @@ public sealed class SpaceInvadersSystem : EmulatedSystem
                 case Intel8080Chip.StatusWordFetch:
                 case Intel8080Chip.StatusWordMemoryRead:
                 case Intel8080Chip.StatusWordStackRead:
-                    if (pins.Address > 0x3FFF)
+                    if (_cpu.Address > 0x3FFF)
                     {
                         // TODO: Actually this should be a mirror of RAM?
                         throw new InvalidOperationException();
                     }
-                    else if ((pins.Address & 0x2000) == 0x2000)
+                    else if ((_cpu.Address & 0x2000) == 0x2000)
                     {
-                        pins.Data = _ram[pins.Address & 0x1FFF];
+                        _cpu.Data = _ram[_cpu.Address & 0x1FFF];
                     }
                     else
                     {
-                        pins.Data = _rom[pins.Address & 0x1FFF];
+                        _cpu.Data = _rom[_cpu.Address & 0x1FFF];
                     }
                     break;
 
                 case Intel8080Chip.StatusWordInputRead:
-                    pins.Data = (pins.Address & 0xFF) switch
+                    _cpu.Data = (_cpu.Address & 0xFF) switch
                     {
                         1 => GetIOPort1Value(),
                         2 => 0, // TODO: Player inputs
@@ -136,37 +134,37 @@ public sealed class SpaceInvadersSystem : EmulatedSystem
                     break;
 
                 case Intel8080Chip.StatusWordInterruptAcknowledge:
-                    pins.Data = _nextInterrupt;
-                    pins.Int = false;
+                    _cpu.Data = _nextInterrupt;
+                    _cpu.Int = false;
                     break;
             }
         }
 
-        if (!pins.Wr)
+        if (!_cpu.Wr)
         {
             // Write data.
             switch (_lastStatusWord)
             {
                 case Intel8080Chip.StatusWordMemoryWrite:
                 case Intel8080Chip.StatusWordStackWrite:
-                    if ((pins.Address & 0x2000) == 0x2000)
+                    if ((_cpu.Address & 0x2000) == 0x2000)
                     {
-                        _ram[pins.Address & 0x1FFF] = pins.Data;
+                        _ram[_cpu.Address & 0x1FFF] = _cpu.Data;
                     }
                     break;
 
                 case Intel8080Chip.StatusWordOutputWrite:
-                    switch (pins.Address & 0xFF)
+                    switch (_cpu.Address & 0xFF)
                     {
                         case 2:
-                            _shifter.SetShiftCount(pins.Data);
+                            _shifter.SetShiftCount(_cpu.Data);
                             break;
 
                         case 3: // Sound related
                             break;
 
                         case 4:
-                            _shifter.SetShiftData(pins.Data);
+                            _shifter.SetShiftData(_cpu.Data);
                             break;
 
                         case 5: // Sound related

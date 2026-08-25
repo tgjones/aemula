@@ -45,9 +45,9 @@ public class Intel8080ChipTests
         {
             cpu.Cycle();
 
-            if (cpu.Pins.Sync)
+            if (cpu.Sync)
             {
-                lastStatusWord = cpu.Pins.Data;
+                lastStatusWord = cpu.Data;
             }
 
             cycleCount++;
@@ -57,29 +57,29 @@ public class Intel8080ChipTests
                 Assert.Fail("Exceeded expected cycle count");
             }
 
-            if (cpu.Pins.DBIn)
+            if (cpu.DBIn)
             {
                 switch (lastStatusWord)
                 {
                     case Intel8080Chip.StatusWordFetch:
                     case Intel8080Chip.StatusWordMemoryRead:
                     case Intel8080Chip.StatusWordStackRead:
-                        cpu.Pins.Data = ram[cpu.Pins.Address];
+                        cpu.Data = ram[cpu.Address];
                         break;
                 }
             }
 
-            if (!cpu.Pins.Wr)
+            if (!cpu.Wr)
             {
                 switch (lastStatusWord)
                 {
                     case Intel8080Chip.StatusWordMemoryWrite:
                     case Intel8080Chip.StatusWordStackWrite:
-                        ram[cpu.Pins.Address] = cpu.Pins.Data;
+                        ram[cpu.Address] = cpu.Data;
                         break;
 
                     case Intel8080Chip.StatusWordOutputWrite:
-                        switch (cpu.Pins.Address & 0xFF)
+                        switch (cpu.Address & 0xFF)
                         {
                             case 0:
                                 var outputText = output.ToString();
