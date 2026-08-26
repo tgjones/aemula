@@ -45,6 +45,7 @@ public sealed class SpaceInvadersDebugger : Debugger
         _system.Cpu.CreateDebuggerWindows(result);
 
         result.Add(new ScreenDisplayWindow(_system.Display, 90));
+        result.Add(new TelevisionWindow(_system.Television));
         result.Add(new LogicAnalyzerWindow(this, _system.CreateChannelNodes()));
     }
 }

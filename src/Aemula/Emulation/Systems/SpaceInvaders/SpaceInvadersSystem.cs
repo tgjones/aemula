@@ -355,6 +355,10 @@ public sealed partial class SpaceInvadersSystem : EmulatedSystem
         return
         [
             _cpu.CreateChannelGroup(),
+            new ChannelGroup("Composite Video",
+            [
+                Channel.Analog("Composite Video", () => CurrentCompositeVideoSample, SyncLevel, WhiteLevel, ""),
+            ]),
         ];
     }
 }
