@@ -2,12 +2,11 @@ using Aemula.Emulation.Chips;
 
 namespace Aemula.Emulation.Systems.SpaceInvaders;
 
-// Phase 2 of docs/space-invaders-television-plan.md: the horizontal/vertical
-// sync chain and the CPU interrupt trigger it drives. Modelled from the
-// documented behavior in MAME's mw8080bw.cpp/.h driver header and
-// cross-checked against the MiSTer Arcade-SpaceInvaders_MiSTer core's
-// rtl/mw8080.vhd (see the plan doc's "Hardware reference" section) - the
-// board schematic obtained this session confirmed a four-74161-plus-7474
+// The horizontal/vertical sync chain and the CPU interrupt trigger it
+// drives. Modelled from the documented behavior in MAME's mw8080bw.cpp/.h
+// driver header and cross-checked against the MiSTer
+// Arcade-SpaceInvaders_MiSTer core's rtl/mw8080.vhd - the board schematic
+// obtained this session confirmed a four-74161-plus-7474
 // topology for this chain (functionally the same "D5/E5/E6/E7/A5/E3" roles
 // MAME's Midway-board comments describe) but its exact chip designators on
 // this session's Taito-board scan weren't legible with confidence, so the
@@ -63,8 +62,8 @@ public sealed partial class SpaceInvadersSystem
 
     /// <summary>
     /// The raw H/V counter state - the same Q outputs the video-RAM address
-    /// mux (SpaceInvadersSystem.Video.cs, Phase 3) reads to form the
-    /// scanner's RAM address.
+    /// mux (SpaceInvadersSystem.Video.cs) reads to form the scanner's RAM
+    /// address.
     /// </summary>
     private (byte H, byte V) GetVideoScannerState()
     {

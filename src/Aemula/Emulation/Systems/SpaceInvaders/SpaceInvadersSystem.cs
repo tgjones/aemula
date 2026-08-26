@@ -111,16 +111,15 @@ public sealed partial class SpaceInvadersSystem : EmulatedSystem
     }
 
     // Real 8080 hardware never has a single "tick the CPU" call: Phi1 and Phi2 are two
-    // independent, non-overlapping external clock inputs (see
-    // docs/intel8080-half-cycle-plan.md), with Phi2's pulse markedly wider than Phi1's
-    // (MCS-80/85 User's Manual AC characteristics: min 60ns Phi1 vs. min 220ns Phi2, at
-    // standard 2MHz speed grade). Space Invaders' own arcade clock-generator schematic
-    // wasn't located despite searching (see the plan doc's Phase 3 notes), so rather than
+    // independent, non-overlapping external clock inputs, with Phi2's pulse markedly
+    // wider than Phi1's (MCS-80/85 User's Manual AC characteristics: min 60ns Phi1 vs.
+    // min 220ns Phi2, at standard 2MHz speed grade). Space Invaders' own arcade
+    // clock-generator schematic wasn't located despite searching, so rather than
     // inventing a duty cycle from nothing, the four edges below are spread across this
     // system's existing 10-master-tick T-state window (~50ns/tick at this system's
     // 19.968MHz master clock) in that same order and proportion - Phi1 high for 2 ticks
     // (~100ns), a 1-tick gap, Phi2 high for 5 ticks (~250ns), a 2-tick gap - rather than
-    // firing all four back-to-back at one instant like Phase 1/2 did.
+    // firing all four back-to-back at one instant, as an earlier version of this code did.
     private const int Phi1RisingTick = 0;
     private const int Phi1FallingTick = 2;
     private const int Phi2RisingTick = 3;
@@ -133,7 +132,7 @@ public sealed partial class SpaceInvadersSystem : EmulatedSystem
             case Phi1RisingTick:
                 _cpu.Phi1 = true;
 
-                // WR's falling edge (Phi1^ of T3, per the plan's edge protocol table) -
+                // WR's falling edge (Phi1^ of T3 in the 8080's write-cycle timing) -
                 // commit the write now that Data has been valid since the preceding
                 // Phi2^ of T2.
                 if (!_cpu.Wr)

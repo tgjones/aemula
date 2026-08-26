@@ -3,10 +3,9 @@ using Aemula.Emulation.Chips.Intel8080;
 
 namespace Aemula.Tests.Emulation.Chips.Intel8080;
 
-// Phase 3 of docs/space-invaders-television-plan.md: the READY-driven
-// wait-state (Tw) mechanism a real bus-arbitration circuit (Space
-// Invaders' video scanner, here) relies on to stall the CPU mid-machine-
-// cycle. Exercises Intel8080Chip directly, independent of
+// The READY-driven wait-state (Tw) mechanism a real bus-arbitration circuit
+// (Space Invaders' video scanner, here) relies on to stall the CPU
+// mid-machine-cycle. Exercises Intel8080Chip directly, independent of
 // SpaceInvadersSystem, the same way Intel8080ChipTests' CP/M conformance
 // test does.
 public class Intel8080ChipWaitStateTests

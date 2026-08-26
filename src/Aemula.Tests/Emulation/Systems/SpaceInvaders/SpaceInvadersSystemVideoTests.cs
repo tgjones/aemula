@@ -3,8 +3,8 @@ using Aemula.Emulation.Systems.SpaceInvaders;
 
 namespace Aemula.Tests.Emulation.Systems.SpaceInvaders;
 
-// Phase 4 of docs/space-invaders-television-plan.md: the 74166 video shift
-// register, driven per-pixel-clock rather than blitted in bulk at VBLANK.
+// The 74166 video shift register, driven per-pixel-clock rather than
+// blitted in bulk at VBLANK.
 public class SpaceInvadersSystemVideoTests
 {
     private static void TickPixelClock(SpaceInvadersSystem system)
@@ -88,8 +88,7 @@ public class SpaceInvadersSystemVideoTests
         }
 
         // Rows below V=0x20 are $2000-$23FF work RAM, not VRAM - never
-        // scanned (see the plan's "Correcting the existing code" section)
-        // and so must stay untouched (DisplayBuffer's own opaque-black
+        // scanned, and so must stay untouched (DisplayBuffer's own opaque-black
         // construction default - see DisplayBuffer.Resize) even after the
         // cold-start's one-time transient pass through V<0x20.
         for (var address = 0; address < 32 * 256; address++)

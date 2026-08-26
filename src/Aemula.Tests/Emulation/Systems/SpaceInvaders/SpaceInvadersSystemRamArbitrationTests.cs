@@ -3,11 +3,10 @@ using Aemula.Emulation.Systems.SpaceInvaders;
 
 namespace Aemula.Tests.Emulation.Systems.SpaceInvaders;
 
-// Phase 3 of docs/space-invaders-television-plan.md: CPU/video RAM bus
-// arbitration - the scan-address formula the 74157 muxes feed from, the
-// cadence at which the scanner claims the bus, and the real wait states
-// (via Intel8080Chip's READY pin - see Intel8080ChipWaitStateTests for the
-// chip-level mechanism) that fall out of the two contending.
+// CPU/video RAM bus arbitration - the scan-address formula the 74157 muxes
+// feed from, the cadence at which the scanner claims the bus, and the real
+// wait states (via Intel8080Chip's READY pin - see Intel8080ChipWaitStateTests
+// for the chip-level mechanism) that fall out of the two contending.
 public class SpaceInvadersSystemRamArbitrationTests
 {
     private static void TickPixelClock(SpaceInvadersSystem system)
@@ -49,9 +48,9 @@ public class SpaceInvadersSystemRamArbitrationTests
         var system = new SpaceInvadersSystem();
         system.LoadProgram("");
 
-        // First visible pixel of the first scanned line - see the plan's
-        // "Correcting the existing code" section for why V < 0x20 is never
-        // scanned.
+        // First visible pixel of the first scanned line - V < 0x20 is never
+        // scanned (it's free work RAM, not VRAM - see
+        // SpaceInvadersSystem.Video.cs's ComputeScanAddress remarks).
         TickToStartOfLine(system, 2);
 
         await Assert.That(system.GetScanAddressForTests()).IsEqualTo((ushort)0x2400);
@@ -97,7 +96,7 @@ public class SpaceInvadersSystemRamArbitrationTests
         }
 
         // 256 visible pixels / 8 pixels-per-byte = 32 byte-fetches; see
-        // ComputeScanAddress and the plan's RAB formula.
+        // ComputeScanAddress's RAB formula.
         await Assert.That(claimsDuringActiveVideo).IsEqualTo(32);
         await Assert.That(claimsDuringHblank).IsEqualTo(0);
     }
@@ -109,8 +108,7 @@ public class SpaceInvadersSystemRamArbitrationTests
         // this is deliberately an end-to-end check that TickRamArbitration
         // (Video.cs) and Intel8080Chip's READY-sampled Tw mechanism
         // (Intel8080Chip.cs) are actually wired together, not just each
-        // correct in isolation - the "done when" criterion the plan states
-        // for this phase.
+        // correct in isolation.
         var system = new SpaceInvadersSystem();
         system.LoadProgram("");
 

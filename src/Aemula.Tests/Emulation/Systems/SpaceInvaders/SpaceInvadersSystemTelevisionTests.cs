@@ -4,12 +4,16 @@ using Aemula.Emulation.Systems.SpaceInvaders;
 
 namespace Aemula.Tests.Emulation.Systems.SpaceInvaders;
 
-// Phase 5 of docs/space-invaders-television-plan.md: the composite blanking
-// gate, the analog summing stage, and the fractional resampler feeding
-// Television - the "Done when" criterion straight from the plan: no color
-// burst (this board has none), but Television locks onto a genuine
-// ~15.6kHz/60Hz raster and frames the picture correctly.
-public class SpaceInvadersSystemCompositeVideoTests
+// The full composite-video pipeline (the blanking gate, the analog summing
+// stage, and the fractional resampler feeding Television), verified
+// end-to-end through Television itself - the same "SystemTelevisionTests"
+// shape Atari2600SystemTelevisionTests and AppleIISystemTelevisionTests use:
+// no color burst (this board has none), but Television locks onto a genuine
+// ~15.6kHz/60Hz raster and frames the picture correctly. RAM-arbitration
+// wait-state behavior and interrupt-trigger correctness have their own
+// targeted tests in SpaceInvadersSystemRamArbitrationTests and
+// SpaceInvadersSystemVideoTimingTests respectively.
+public class SpaceInvadersSystemTelevisionTests
 {
     // Master ticks in one full frame: 320 pixel-clock states/line * 262
     // lines/frame * 4 master ticks/pixel-clock (see
@@ -27,8 +31,7 @@ public class SpaceInvadersSystemCompositeVideoTests
         var system = new SpaceInvadersSystem();
 
         // Top half of the visible picture (V=0x20-0x8F): every VRAM byte
-        // 0xFF -> eight consecutive white columns per byte (see the plan's
-        // "Video shift register pin mapping" section - Qh serializes
+        // 0xFF -> eight consecutive white columns per byte (Qh serializes
         // LSB-first, so an all-1s byte is simply eight white pixels
         // regardless of bit order).
         for (var v = 0x20; v < 0x90; v++)
@@ -72,9 +75,11 @@ public class SpaceInvadersSystemCompositeVideoTests
 
         RunFrames(system, 10);
 
-        // No color burst on this board at all (see the plan's Fidelity
-        // approach section) - ColorBurstLocked correctly reads false, same
-        // as it would for a real monochrome monitor never seeing a burst.
+        // No color burst on this board at all (it's a monochrome composite
+        // signal - the cabinet's color is a physical cellophane overlay,
+        // no video circuitry involved) - ColorBurstLocked correctly reads
+        // false, same as it would for a real monochrome monitor never
+        // seeing a burst.
         await Assert.That(system.Television.ColorBurstLocked).IsFalse();
 
         // The real raster shape here isn't 320x262 in Television's own

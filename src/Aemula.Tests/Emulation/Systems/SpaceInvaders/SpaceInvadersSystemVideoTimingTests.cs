@@ -4,8 +4,8 @@ using Aemula.Emulation.Systems.SpaceInvaders;
 
 namespace Aemula.Tests.Emulation.Systems.SpaceInvaders;
 
-// Phase 2 of docs/space-invaders-television-plan.md: the H/V sync chain and
-// the interrupt trigger it drives, cross-checked against the documented
+// The H/V sync chain and the interrupt trigger it drives, cross-checked
+// against the documented
 // timing constants (320 pixel-clocks/line, 262 lines/frame, RST 1 at V=0x80,
 // RST 2 at V=0xDA) rather than the deleted 317/10161/83200 approximation.
 public class SpaceInvadersSystemVideoTimingTests
