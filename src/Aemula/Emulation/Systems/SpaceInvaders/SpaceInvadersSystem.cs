@@ -69,6 +69,7 @@ public sealed partial class SpaceInvadersSystem : EmulatedSystem
 
         TickVideoTiming();
         TickVideoShiftRegister();
+        TickCompositeVideo();
     }
 
     public override void LoadProgram(string filePath)
@@ -103,6 +104,10 @@ public sealed partial class SpaceInvadersSystem : EmulatedSystem
         // Runs after TickVideoTiming so it sees this tick's post-edge H/V/
         // HBLANK/VBLANK state - see TickVideoShiftRegister.
         TickVideoShiftRegister();
+
+        // Runs last so it sees this tick's post-edge Qh (from
+        // TickVideoShiftRegister) as well - see TickCompositeVideo.
+        TickCompositeVideo();
     }
 
     // Real 8080 hardware never has a single "tick the CPU" call: Phi1 and Phi2 are two
