@@ -246,29 +246,6 @@ public sealed class TelevisionWindow : DebuggerWindow
         SDL.EndGPUCopyPass(copyPass);
     }
 
-    // A real broadcast picture's active area is conventionally 4:3, but
-    // this texture is one raw sample per column and one scanline per row -
-    // absolutely not the same physical size as each other, since Television's
-    // horizontal sampling rate packs a scanline's active-video samples
-    // (Television.ActiveVideoLengthSamples) into the same physical width a
-    // real set devotes to a whole 4:3-shaped picture only activeLineCount
-    // lines tall (the detected vertical active-line count - see
-    // ComputeVerticalActiveRange). Rendered at native 1 sample:1 line
-    // square-pixel scaling, this comes out badly squashed into a thin
-    // horizontal band instead of anything resembling a picture (both
-    // quantities are standard-specific - NTSC-only for now, same seam as
-    // Television.Standard - which is exactly why the width figure is read
-    // from Television rather than known here directly; this stays correct
-    // with no changes here once a second standard exists). This is purely
-    // a display-time correction (the same "non-square pixel" adjustment
-    // real video tooling applies when showing a broadcast-format capture
-    // on a square-pixel screen) - it stretches only how large ImGui.Image
-    // draws the texture, not SampleBuffer's actual data, which stays at
-    // native sample/line resolution for the region overlays (and any other
-    // consumer that needs raw positions).
-    private float VerticalStretchFactor(float activeLineCount) =>
-        (_television.ActiveVideoLengthSamples / activeLineCount) / (4f / 3f);
-
     // Fixed sidebar width (controls + status readout + legend), scaled by
     // font size rather than a raw pixel count so it stays proportional
     // across different UI scales - the same reasoning LogicAnalyzerWindow's
@@ -296,11 +273,11 @@ public sealed class TelevisionWindow : DebuggerWindow
     private void DrawImageAndOverlays()
     {
         // The vertical active-line range needed both for "Active video
-        // only"'s crop below and for VerticalStretchFactor's aspect-ratio
-        // math (needed unconditionally, crop or not) - computed once per
-        // frame and reused for both, rather than scanning SampleBuffer
-        // twice. See ComputeVerticalActiveRange's own remarks.
-        var (verticalActiveStart, verticalActiveCount) = ComputeVerticalActiveRange();
+        // only"'s crop below and for ComputeVerticalStretchFactor's aspect-
+        // ratio math (needed unconditionally, crop or not) - computed once
+        // per frame and reused for both, rather than scanning SampleBuffer
+        // twice. See Television.ComputeActiveVideoRowRange's own remarks.
+        var (verticalActiveStart, verticalActiveCount) = _television.ComputeActiveVideoRowRange();
 
         // "Active video only" shows exactly what this window always showed
         // before the region overlays were added: just the picture, cropped
@@ -331,7 +308,7 @@ public sealed class TelevisionWindow : DebuggerWindow
 
         var availableSize = ImGui.GetContentRegionAvail();
         var finalSize = CalculateSizeFittingAspectRatio(
-            new Vector2(displayedWidthSamples, displayedHeightSamples * VerticalStretchFactor(verticalActiveCount)),
+            new Vector2(displayedWidthSamples, displayedHeightSamples * _television.ComputeVerticalStretchFactor(verticalActiveCount)),
             availableSize);
 
         ImGui.Image(_textureBinding, finalSize, uv0, uv1);
@@ -358,93 +335,6 @@ public sealed class TelevisionWindow : DebuggerWindow
         }
 
         DrawHoveredSampleTooltip(imageMin, imageMax, uv0, uv1);
-    }
-
-    // The vertical counterpart to Television.ActiveVideoStartSamples/
-    // ActiveVideoLengthSamples - unlike those, this doesn't need its own
-    // self-calibrated formula, because Television.ClassifyCurrentSample's
-    // live vertical-blanking check (see that method's remarks) already
-    // makes Sample.Region trustworthy vertically as well as horizontally,
-    // the same "read Region straight out of SampleBuffer" approach
-    // DrawRegionOverlays already uses rather than reconstructing timing
-    // separately. Finds the longest contiguous block of rows whose
-    // ActiveVideo sample count clears half of ActiveVideoLengthSamples -
-    // comfortably separates full picture rows (the whole
-    // ActiveVideoLengthSamples-worth) from blanking rows (0, or a partial,
-    // self-correcting count right at a vertical-blanking region's edge -
-    // see Television's own remarks on why that edge case exists and is
-    // acceptable). Called unconditionally every frame (not just while
-    // "Active video only" is checked) - VerticalStretchFactor's aspect-
-    // ratio math needs the active line count regardless of crop state.
-    private (int StartRow, int RowCount) ComputeVerticalActiveRange()
-    {
-        var width = (int)_textureWidth;
-        var height = (int)_textureHeight;
-        if (width <= 0 || height <= 0)
-        {
-            return (0, height);
-        }
-
-        var samples = SampleBuffer.Data;
-
-        // SampleBuffer can be resized again (by the emulation thread, live,
-        // mid-Decode) any time after PrepareOverride last captured
-        // _textureWidth/_textureHeight from it - if that's happened since,
-        // Data is no longer width*height samples long, and indexing into it
-        // with those now-stale dimensions would run past its end. A purely
-        // transient, one-frame mismatch (PrepareOverride re-syncs
-        // _textureWidth/_textureHeight from SampleBuffer's current size
-        // every frame - see its own remarks) - simplest correct response is
-        // just to skip this frame's scan and let the next one pick it back
-        // up once they're back in sync, rather than reading past the end.
-        if (samples.Length != width * height)
-        {
-            return (0, height);
-        }
-
-        var activeThreshold = _television.ActiveVideoLengthSamples * 0.5f;
-
-        var bestStart = 0;
-        var bestCount = 0;
-        var runStart = -1;
-
-        for (var row = 0; row <= height; row++)
-        {
-            var isActiveRow = false;
-            if (row < height)
-            {
-                var activeCount = 0;
-                var rowOffset = row * width;
-                for (var column = 0; column < width; column++)
-                {
-                    if (samples[rowOffset + column].Region == RasterRegion.ActiveVideo)
-                    {
-                        activeCount++;
-                    }
-                }
-                isActiveRow = activeCount > activeThreshold;
-            }
-
-            if (isActiveRow)
-            {
-                if (runStart < 0)
-                {
-                    runStart = row;
-                }
-            }
-            else if (runStart >= 0)
-            {
-                var runCount = row - runStart;
-                if (runCount > bestCount)
-                {
-                    bestStart = runStart;
-                    bestCount = runCount;
-                }
-                runStart = -1;
-            }
-        }
-
-        return bestCount > 0 ? (bestStart, bestCount) : (0, height);
     }
 
     // Saleae-style hover readout: whatever SampleBuffer position the mouse
@@ -476,9 +366,16 @@ public sealed class TelevisionWindow : DebuggerWindow
 
         var samples = SampleBuffer.Data;
 
-        // Same transient staleness guard as ComputeVerticalActiveRange's
-        // own remarks - SampleBuffer may have been resized again since
-        // PrepareOverride last synced _textureWidth/_textureHeight from it.
+        // SampleBuffer can be resized again (by the emulation thread, live,
+        // mid-Decode) any time after PrepareOverride last captured
+        // _textureWidth/_textureHeight from it - if that's happened since,
+        // Data is no longer width*height samples long, and indexing into it
+        // with those now-stale dimensions would run past its end. A purely
+        // transient, one-frame mismatch (PrepareOverride re-syncs
+        // _textureWidth/_textureHeight from SampleBuffer's current size
+        // every frame - see its own remarks) - simplest correct response is
+        // just to skip this frame's read and let the next one pick it back
+        // up once they're back in sync, rather than reading past the end.
         if (samples.Length != (int)_textureWidth * (int)_textureHeight)
         {
             return;
@@ -859,8 +756,8 @@ public sealed class TelevisionWindow : DebuggerWindow
 
         var samples = SampleBuffer.Data;
 
-        // Same transient staleness guard as ComputeVerticalActiveRange's
-        // own remarks - SampleBuffer may have been resized again since
+        // Same transient staleness guard as DrawHoveredSampleTooltip's own
+        // remarks - SampleBuffer may have been resized again since
         // PrepareOverride last synced _textureWidth/_textureHeight from it.
         if (samples.Length != width * height)
         {

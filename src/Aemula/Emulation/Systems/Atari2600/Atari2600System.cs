@@ -3,6 +3,7 @@ using System.IO;
 using Aemula.Debugging;
 using Aemula.Emulation.Chips.Mos6532;
 using Aemula.Emulation.Chips.Tia;
+using Aemula.Emulation.Output;
 using Aemula.Emulation.Systems.Atari2600.Debugging;
 using Aemula.UI;
 using Aemula.UI.LogicAnalyzer;
@@ -10,7 +11,7 @@ using static Aemula.BitUtility;
 
 namespace Aemula.Emulation.Systems.Atari2600;
 
-public sealed partial class Atari2600System : EmulatedSystem
+public sealed partial class Atari2600System : EmulatedSystem, IHasTelevision
 {
     // 3.58 MHZ
     public override ulong CyclesPerSecond => 3580000;

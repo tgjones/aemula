@@ -5,13 +5,14 @@ using Aemula.Emulation.Chips;
 using Aemula.Emulation.Chips.Intel8080;
 using Aemula.Debugging;
 using Aemula.Emulation.Chips.MB14241;
+using Aemula.Emulation.Output;
 using Aemula.Emulation.Systems.SpaceInvaders.Debugging;
 using Aemula.UI.LogicAnalyzer;
 using Hexa.NET.SDL3;
 
 namespace Aemula.Emulation.Systems.SpaceInvaders;
 
-public sealed partial class SpaceInvadersSystem : EmulatedSystem
+public sealed partial class SpaceInvadersSystem : EmulatedSystem, IHasTelevision
 {
     private readonly Intel8080Chip _cpu;
 

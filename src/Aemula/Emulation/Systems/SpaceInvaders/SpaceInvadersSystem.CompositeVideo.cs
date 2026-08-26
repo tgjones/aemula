@@ -33,7 +33,7 @@ public sealed partial class SpaceInvadersSystem
     // Fed one sample at a time from TickCompositeVideo below, live, the same
     // tick the summing stage produces it - see AppleIISystem.CompositeVideo.cs's
     // Television field for the same "no ring-buffer pull" reasoning.
-    public readonly Television Television = new();
+    public Television Television { get; } = new();
 
     // The real board's blanking window (Hblank/Vblank, 64 H-states/38
     // V-lines - see SpaceInvadersSystem.VideoTiming.cs) is far wider than a

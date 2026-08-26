@@ -28,7 +28,7 @@ public sealed partial class Atari2600System
     // Same "fed one sample at a time, live, from the same tick that
     // produced it" reasoning as AppleIISystem.Television - see that field's
     // remarks.
-    public readonly Television Television = new();
+    public Television Television { get; } = new();
 
     // Landmark levels on the composite-video byte scale (0-255) that
     // Television.Decode expects. Not measured voltages (there's nothing

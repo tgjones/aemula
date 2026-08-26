@@ -15,7 +15,7 @@ public sealed partial class AppleIISystem
     // other signal in this emulator propagates through the chips/systems
     // that consume it, rather than a UI window pulling a backlog from a
     // ring buffer once per frame.
-    public readonly Television Television = new();
+    public Television Television { get; } = new();
 
     // Real resistor values (kΩ) from the video-summing circuit.
     private const double R7Video = 1.5;

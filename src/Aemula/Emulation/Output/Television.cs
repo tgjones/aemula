@@ -142,6 +142,103 @@ public sealed class Television
     /// Feeds one composite-video sample into the decoder. Every caller is
     /// assumed to sample at exactly 4x the NTSC color subcarrier.
     /// </summary>
+    // The vertical counterpart to ActiveVideoStartSamples/ActiveVideoLengthSamples -
+    // unlike those, this doesn't need its own self-calibrated formula, because
+    // ClassifyCurrentSample's live vertical-blanking check (see that method's
+    // remarks) already makes Sample.Region trustworthy vertically as well as
+    // horizontally, so this can just read Region straight out of SampleBuffer
+    // rather than reconstructing timing separately. Finds the longest
+    // contiguous block of rows whose ActiveVideo sample count clears half of
+    // ActiveVideoLengthSamples - comfortably separates full picture rows (the
+    // whole ActiveVideoLengthSamples-worth) from blanking rows (0, or a
+    // partial, self-correcting count right at a vertical-blanking region's
+    // edge - see this class's own remarks on why that edge case exists and is
+    // acceptable).
+    //
+    // Shared by TelevisionWindow (which needs it every UI frame, for both its
+    // "active video only" crop and its vertical-stretch aspect-ratio math) and
+    // any other consumer that wants the same "which rows are really picture"
+    // answer - one implementation instead of each caller re-deriving it and
+    // risking drift.
+    public (int StartRow, int RowCount) ComputeActiveVideoRowRange()
+    {
+        var width = (int)SampleBuffer.Width;
+        var height = (int)SampleBuffer.Height;
+        if (width <= 0 || height <= 0)
+        {
+            return (0, height);
+        }
+
+        var samples = SampleBuffer.Data;
+        var activeThreshold = ActiveVideoLengthSamples * 0.5f;
+
+        var bestStart = 0;
+        var bestCount = 0;
+        var runStart = -1;
+
+        for (var row = 0; row <= height; row++)
+        {
+            var isActiveRow = false;
+            if (row < height)
+            {
+                var activeCount = 0;
+                var rowOffset = row * width;
+                for (var column = 0; column < width; column++)
+                {
+                    if (samples[rowOffset + column].Region == RasterRegion.ActiveVideo)
+                    {
+                        activeCount++;
+                    }
+                }
+                isActiveRow = activeCount > activeThreshold;
+            }
+
+            if (isActiveRow)
+            {
+                if (runStart < 0)
+                {
+                    runStart = row;
+                }
+            }
+            else if (runStart >= 0)
+            {
+                var runCount = row - runStart;
+                if (runCount > bestCount)
+                {
+                    bestStart = runStart;
+                    bestCount = runCount;
+                }
+                runStart = -1;
+            }
+        }
+
+        return bestCount > 0 ? (bestStart, bestCount) : (0, height);
+    }
+
+    // A real broadcast picture's active area is conventionally 4:3, but
+    // SampleBuffer is one raw sample per column and one scanline per row -
+    // absolutely not the same physical size as each other, since this
+    // decoder's horizontal sampling rate packs a scanline's active-video
+    // samples (ActiveVideoLengthSamples) into the same physical width a real
+    // set devotes to a whole 4:3-shaped picture only activeLineCount lines
+    // tall (the detected vertical active-line count - see
+    // ComputeActiveVideoRowRange). Rendered at native 1 sample:1 line
+    // square-pixel scaling, this comes out badly squashed into a thin
+    // horizontal band instead of anything resembling a picture. This factor
+    // is purely a display-time correction (the same "non-square pixel"
+    // adjustment real video tooling applies when showing a broadcast-format
+    // capture on a square-pixel screen) - it's for a consumer to scale how
+    // large it draws the picture, not something that touches SampleBuffer's
+    // actual data, which stays at native sample/line resolution for region
+    // overlays (and any other consumer that needs raw positions).
+    //
+    // Takes activeLineCount as a parameter rather than calling
+    // ComputeActiveVideoRowRange itself - a caller that also needs the row
+    // range this frame (e.g. TelevisionWindow, for its crop) gets both from
+    // one scan of SampleBuffer instead of two.
+    public float ComputeVerticalStretchFactor(float activeLineCount) =>
+        (ActiveVideoLengthSamples / activeLineCount) / (4f / 3f);
+
     public void Decode(byte sample)
     {
         _syncSeparator.Process(sample);
