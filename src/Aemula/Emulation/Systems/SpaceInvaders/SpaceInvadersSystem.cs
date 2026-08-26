@@ -52,7 +52,23 @@ public sealed partial class SpaceInvadersSystem : EmulatedSystem
         _ramAddressMuxBits8To11 = new Ttl74157Chip();
         _ramAddressMuxBit12 = new Ttl74157Chip();
 
+        _videoShiftRegister = new Ttl74166Chip();
+
         Display = new DisplayBuffer(256, 256);
+    }
+
+    /// <summary>
+    /// Advances only the video-timing/scanner chain by one master tick,
+    /// skipping the CPU entirely - lets tests exercise the scan/display
+    /// path in isolation, without a real (or fake) program running that
+    /// could touch RAM mid-test.
+    /// </summary>
+    internal void TickVideoForTests()
+    {
+        _masterClock++;
+
+        TickVideoTiming();
+        TickVideoShiftRegister();
     }
 
     public override void LoadProgram(string filePath)
@@ -83,6 +99,10 @@ public sealed partial class SpaceInvadersSystem : EmulatedSystem
         TickRamArbitration();
         TickCpuClock();
         TickVideoTiming();
+
+        // Runs after TickVideoTiming so it sees this tick's post-edge H/V/
+        // HBLANK/VBLANK state - see TickVideoShiftRegister.
+        TickVideoShiftRegister();
     }
 
     // Real 8080 hardware never has a single "tick the CPU" call: Phi1 and Phi2 are two
@@ -264,34 +284,11 @@ public sealed partial class SpaceInvadersSystem : EmulatedSystem
     private bool _keyLeft;
     private bool _keyRight;
 
-    private void UpdateDisplay()
-    {
-        for (var y = 32; y < 256; y++)
-        {
-            for (var x = 0; x < 32; x++)
-            {
-                var videoRamValue = _ram[y * 32 + x];
-
-                byte mask = 1;
-                for (var b = 0; b < 8; b++)
-                {
-                    var outputValue = (videoRamValue & mask) != 0
-                        ? (byte)0xFF
-                        : (byte)0;
-
-                    var outputAddress = y * 256 + x * 8 + b;
-
-                    Display.Data[outputAddress] = new RgbaByte(
-                        outputValue,
-                        outputValue,
-                        outputValue,
-                        0xFF);
-
-                    mask <<= 1;
-                }
-            }
-        }
-    }
+    /// <summary>
+    /// Direct RAM write, bypassing the CPU entirely - lets tests stage a
+    /// known VRAM pattern without the real ROM's own execution racing it.
+    /// </summary>
+    internal void PokeRamForTests(ushort address, byte value) => _ram[address & 0x1FFF] = value;
 
     private byte ReadByteDebug(ushort address)
     {

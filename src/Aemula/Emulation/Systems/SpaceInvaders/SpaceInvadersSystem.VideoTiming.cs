@@ -184,16 +184,6 @@ public sealed partial class SpaceInvadersSystem
             {
                 _blankingFlipFlops.D2 = vblankNext;
                 PulseFlipFlop2(_blankingFlipFlops);
-
-                if (vblankNext)
-                {
-                    // Entering VBLANK - one whole frame's worth of active
-                    // video has just been scanned. Until Phase 4 replaces
-                    // this with a real per-pixel shift-register draw, blit
-                    // the frame here instead of on a magic pixel-clock
-                    // count.
-                    UpdateDisplay();
-                }
             }
         }
 

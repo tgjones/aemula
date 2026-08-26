@@ -2,18 +2,21 @@ using Aemula.Emulation.Chips;
 
 namespace Aemula.Emulation.Systems.SpaceInvaders;
 
-// Phase 3 of docs/space-invaders-television-plan.md: CPU/video RAM bus
-// arbitration. The video scanner and the CPU share one RAM chip; the
-// schematic's "RAM A0"-"RAM A11"+ address mux row (74157 quad 2:1, see the
-// plan's hardware reference table) selects, per address bit, between the
-// CPU's own address bus and the scanner's own scan address, and a
-// wait-state generator holds the CPU's READY pin low - inserting real Tw
-// states via Intel8080Chip's Phi2-sampled Ready pin - whenever the CPU
-// tries to touch RAM on a master tick the scanner has already claimed.
+// Phases 3 and 4 of docs/space-invaders-television-plan.md.
 //
-// Phase 4 will extend this file with the 74166 shift register that actually
-// consumes the scanner's fetched byte for per-pixel display; this phase
-// only needs the scan address and the arbitration signal it gates.
+// Phase 3: CPU/video RAM bus arbitration. The video scanner and the CPU
+// share one RAM chip; the schematic's "RAM A0"-"RAM A11"+ address mux row
+// (74157 quad 2:1, see the plan's hardware reference table) selects, per
+// address bit, between the CPU's own address bus and the scanner's own scan
+// address, and a wait-state generator holds the CPU's READY pin low -
+// inserting real Tw states via Intel8080Chip's Phi2-sampled Ready pin -
+// whenever the CPU tries to touch RAM on a master tick the scanner has
+// already claimed.
+//
+// Phase 4: the 74166 video shift register that actually consumes the
+// scanner's fetched byte, serialized per pixel clock straight into
+// Display - see TickVideoShiftRegister - replacing the old frame-end bulk
+// blit.
 public sealed partial class SpaceInvadersSystem
 {
     // Four 74157s selecting each RAM address bit between the CPU's address
@@ -27,18 +30,34 @@ public sealed partial class SpaceInvadersSystem
     private readonly Ttl74157Chip _ramAddressMuxBits8To11;
     private readonly Ttl74157Chip _ramAddressMuxBit12;
 
+    // The video shift register (`4F` on the schematic) - see the plan's
+    // "Video shift register pin mapping" section. Ser is grounded and Clr
+    // held high for the chip's whole lifetime, so neither is ever touched
+    // again after construction.
+    private readonly Ttl74166Chip _videoShiftRegister;
+
     // True for the one pixel-clock cell in each 8-pixel-clock byte-time,
     // during active video, where the scanner claims the bus to fetch the
     // next VRAM byte. The exact H[2:0] tap wasn't legible on this session's
     // schematic scan - same open risk the plan flags for Phase 4's SH/LD
-    // tap on the 74166 - so H[2:0]==3 (MiSTer RTL's value) is reused here
-    // too, letting Phase 4 share this exact signal for the shift register's
-    // own load timing rather than re-deriving it.
+    // tap on the 74166 - so H[2:0]==3 (MiSTer RTL's value) is used here as
+    // a starting assumption.
+    //
+    // Correction found while implementing Phase 4: this signal turned out
+    // not to be reusable, as originally planned, for the shift register's
+    // own SH/LD timing below - getting Qh's output bit to land on the
+    // exact display column its data byte belongs to requires the load to
+    // happen exactly on the edge that starts each byte-time's column
+    // window (post-edge H%8==0, see TickVideoShiftRegister), a different
+    // phase than this claim window. The two stay independent signals; nothing
+    // about this phase's own CPU-stall behavior (already covered by this
+    // phase's own tests) changes.
     private bool _videoWantsRam;
 
     internal bool VideoWantsRamForTests => _videoWantsRam;
     internal ushort GetScanAddressForTests() => ComputeScanAddress();
     internal ushort GetRamAddressBusForTests() => ComputeMuxedRamAddress();
+    internal bool GetShiftRegisterQhForTests() => _videoShiftRegister.Qh;
 
     /// <summary>
     /// Recomputes <see cref="_videoWantsRam"/> and drives the CPU's READY
@@ -140,5 +159,74 @@ public sealed partial class SpaceInvadersSystem
             (_ramAddressMuxBits8To11.Y3 ? 1 << 10 : 0) |
             (_ramAddressMuxBits8To11.Y4 ? 1 << 11 : 0) |
             (_ramAddressMuxBit12.Y1 ? 1 << 12 : 0));
+    }
+
+    /// <summary>
+    /// Phase 4: drives the shift register (<c>4F</c>) and, from its Qh
+    /// output, writes one pixel into <see cref="Display"/> per pixel clock.
+    /// Runs after <c>TickVideoTiming</c> (see <c>Tick</c>) specifically so
+    /// H/V/HBLANK/VBLANK have already been advanced to this tick's real,
+    /// post-edge state before anything below reads them - the load
+    /// condition below needs "the column we just entered", not "the column
+    /// about to end", to land each byte's D0 on the exact pixel-clock tick
+    /// its own column window starts (see the correction note on
+    /// <see cref="_videoWantsRam"/> above for why this couldn't just reuse
+    /// that signal's own, differently-phased, tap).
+    /// </summary>
+    private void TickVideoShiftRegister()
+    {
+        if (_masterClock % 4 != 0)
+        {
+            return;
+        }
+
+        var (h, v) = GetVideoScannerState();
+
+        if (Hblank || Vblank || v < 0x20)
+        {
+            // Not real hardware behavior for the Hblank/Vblank part (the
+            // 74166 has no enable pin and would keep clocking through
+            // blanking on real silicon too) - but since blanking is never
+            // read into Display either way, there's nothing to gain from
+            // modelling it. v < 0x20 only ever happens during this system's
+            // own cold-start settling (see SpaceInvadersSystemVideoTimingTests'
+            // own note on the same quirk) - real V never revisits below
+            // 0x20 once steady state is reached, and $2000-$23FF is free
+            // work RAM, not VRAM (see the plan's "Correcting the existing
+            // code" section) - so this guards against a one-time,
+            // non-representative pass permanently leaking scan-address
+            // garbage into Display rows that should stay untouched.
+            return;
+        }
+
+        // Every 8th pixel clock - the first column of a fresh byte-time -
+        // loads the next VRAM byte instead of shifting. See the plan's
+        // "Video shift register pin mapping" section for D0..D7 -> H..A.
+        if ((h & 0b111) == 0)
+        {
+            var videoByte = _ram[ComputeScanAddress() & 0x1FFF];
+
+            _videoShiftRegister.H = (videoByte & 0x01) != 0;
+            _videoShiftRegister.G = (videoByte & 0x02) != 0;
+            _videoShiftRegister.F = (videoByte & 0x04) != 0;
+            _videoShiftRegister.E = (videoByte & 0x08) != 0;
+            _videoShiftRegister.D = (videoByte & 0x10) != 0;
+            _videoShiftRegister.C = (videoByte & 0x20) != 0;
+            _videoShiftRegister.B = (videoByte & 0x40) != 0;
+            _videoShiftRegister.A = (videoByte & 0x80) != 0;
+
+            _videoShiftRegister.ShLd = false; // Parallel load.
+        }
+        else
+        {
+            _videoShiftRegister.ShLd = true; // Shift.
+        }
+
+        _videoShiftRegister.Clk = false;
+        _videoShiftRegister.Clk = true;
+
+        var outputValue = _videoShiftRegister.Qh ? (byte)0xFF : (byte)0;
+
+        Display.Data[v * 256 + h] = new RgbaByte(outputValue, outputValue, outputValue, 0xFF);
     }
 }
