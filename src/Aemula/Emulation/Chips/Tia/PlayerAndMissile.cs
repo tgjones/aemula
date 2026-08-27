@@ -13,6 +13,26 @@ internal sealed class PlayerAndMissile
     public byte NumberSizeMissile;
     public bool Reflect;
     public byte HorizontalMotionPlayer = 0b1000; // Stored with bit 3 inverted
+    public byte HorizontalMotionMissile = 0b1000; // Stored with bit 3 inverted, like HorizontalMotionPlayer
+
+    /// <summary>ENAM D1 - whether the missile graphic is enabled.</summary>
+    public bool MissileEnabled;
+
+    /// <summary>
+    /// RESMP D1 - lock the missile onto its player. While set, the missile
+    /// counter is slaved to the player counter and the missile pixel is
+    /// forced dark. Releasing the lock leaves the missile aligned to the
+    /// player copy start - an approximation of the real chip's "centred on
+    /// the player", which offsets by a NUSIZ-size-dependent amount.
+    /// </summary>
+    public bool MissileLockedToPlayer;
+
+    /// <summary>
+    /// Missile graphic width in colour clocks (1 / 2 / 4 / 8), from NUSIZ
+    /// D4-D5. <see cref="NumberSizeMissile"/> holds NUSIZ D3-D5, so the width
+    /// selector is its bits 1-2.
+    /// </summary>
+    public byte MissileWidth => (byte)(1 << ((NumberSizeMissile >> 1) & 0b11));
 
     // State
     public byte PlayerClockDiv4;
@@ -21,6 +41,23 @@ internal sealed class PlayerAndMissile
     private bool _draw;
     private byte _graphicsDelay;
     private byte _scanCounter;
+
+    // Missile state - a missile is a degenerate player: its own copy of the
+    // player's LFSR counter and div-4 prescaler, but no 8-bit graphic. It is
+    // simply "on" for MissileWidth colour clocks from each copy's start.
+    public byte MissileClockDiv4;
+    private PolynomialCounter _missileCounter;
+    public bool MissileReset;
+    private bool _missileStart;
+    private byte _missilePixelsRemaining;
+    private bool _missileDrawNext;
+
+    /// <summary>
+    /// Whether the missile's pixel is lit at the current colour clock. Fed to
+    /// the priority resolver in <see cref="TiaChip"/> at the same slot and
+    /// colour as this object's player - see <see cref="PixelOn"/>.
+    /// </summary>
+    public bool MissilePixelOn;
 
     /// <summary>
     /// Whether this player's graphic has a lit pixel at the current colour
@@ -113,6 +150,90 @@ internal sealed class PlayerAndMissile
             {
                 _scanCounter--;
             }
+        }
+    }
+
+    /// <summary>
+    /// Advances the missile's div-4 prescaler and LFSR counter, the same path
+    /// <see cref="UpdatePlayerDiv4"/> runs for the player. While
+    /// <see cref="MissileLockedToPlayer"/> (RESMP) the counter is instead held
+    /// equal to the player counter, so releasing the lock leaves the missile
+    /// aligned to the player copy start (see <see cref="MissileLockedToPlayer"/>).
+    /// </summary>
+    public void UpdateMissileDiv4()
+    {
+        if (MissileLockedToPlayer)
+        {
+            _missileCounter = _counter;
+            MissileClockDiv4 = PlayerClockDiv4;
+            return;
+        }
+
+        MissileClockDiv4++;
+
+        if (MissileClockDiv4 > 3)
+        {
+            MissileClockDiv4 = 0;
+
+            _missileCounter.Increment();
+            if (_missileCounter.Value == 0b111111 || MissileReset)
+            {
+                MissileReset = false;
+                _missileCounter.Reset();
+            }
+
+            ExecuteMissileLogic();
+        }
+    }
+
+    /// <summary>
+    /// Decides, at each missile counter step, whether a missile copy starts
+    /// here. Reuses the player's NUSIZ D0-D2 copy decode so missile copies
+    /// line up under the player copies; there is no 8-step scan, the missile
+    /// is just switched on for <see cref="MissileWidth"/> colour clocks.
+    /// </summary>
+    private void ExecuteMissileLogic()
+    {
+        switch (_missileCounter.Value)
+        {
+            case 0b111000 when NumberSizePlayer == 0b001 || NumberSizePlayer == 0b011:
+            case 0b101111 when NumberSizePlayer == 0b011 || NumberSizePlayer == 0b010 || NumberSizePlayer == 0b110:
+            case 0b111001 when NumberSizePlayer == 0b100 || NumberSizePlayer == 0b110:
+                _missileStart = true;
+                break;
+
+            case 0b101101: // Main copy - also self-resets the counter, exactly
+                           // like the player, so copies repeat at a fixed period.
+                MissileReset = true;
+                _missileStart = true;
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Latches <see cref="MissilePixelOn"/> for this colour clock. Carries the
+    /// same one-colour-clock render delay the player's serial graphics shift
+    /// has (<see cref="_missileDrawNext"/> holds the bit decided last call),
+    /// so a missile copy sits directly under its player copy.
+    /// </summary>
+    public void DoMissile()
+    {
+        MissilePixelOn = _missileDrawNext;
+        _missileDrawNext = false;
+
+        if (_missileStart)
+        {
+            _missileStart = false;
+            _missilePixelsRemaining = MissileWidth;
+        }
+
+        if (_missilePixelsRemaining > 0)
+        {
+            _missilePixelsRemaining--;
+
+            // RESMP forces the missile dark for as long as it is locked to
+            // the player.
+            _missileDrawNext = MissileEnabled && !MissileLockedToPlayer;
         }
     }
 }

@@ -218,6 +218,19 @@ public sealed class TiaChip
                         _hmp1Latch = false;
                     }
 
+                    // Missiles ride the same comparator as the players - one
+                    // latch each, cleared when the count matches that
+                    // object's HM register.
+                    if (NoneEqual(_hmoveComparator, PlayerAndMissile0.HorizontalMotionMissile))
+                    {
+                        _hmm0Latch = false;
+                    }
+
+                    if (NoneEqual(_hmoveComparator, PlayerAndMissile1.HorizontalMotionMissile))
+                    {
+                        _hmm1Latch = false;
+                    }
+
                     _hmoveComparator = (byte)(_hmoveComparator - 1 & 0b1111);
                     if (_hmoveComparator == 0b1111)
                     {
@@ -234,12 +247,24 @@ public sealed class TiaChip
                 {
                     PlayerAndMissile1.UpdatePlayerDiv4();
                 }
+
+                if (_hmm0Latch)
+                {
+                    PlayerAndMissile0.UpdateMissileDiv4();
+                }
+
+                if (_hmm1Latch)
+                {
+                    PlayerAndMissile1.UpdateMissileDiv4();
+                }
             }
 
             if (_playerCounterEnable)
             {
                 PlayerAndMissile0.UpdatePlayerDiv4();
                 PlayerAndMissile1.UpdatePlayerDiv4();
+                PlayerAndMissile0.UpdateMissileDiv4();
+                PlayerAndMissile1.UpdateMissileDiv4();
             }
 
             DoVideo();
@@ -461,10 +486,14 @@ public sealed class TiaChip
 
                     // RESM0 - Reset missile 0
                     case 0x12:
+                        PlayerAndMissile0.MissileReset = true;
+                        PlayerAndMissile0.MissileClockDiv4 = 0;
                         break;
 
                     // RESM1 - Reset missile 1
                     case 0x13:
+                        PlayerAndMissile1.MissileReset = true;
+                        PlayerAndMissile1.MissileClockDiv4 = 0;
                         break;
 
                     // RESBL - Reset ball
@@ -507,10 +536,12 @@ public sealed class TiaChip
 
                     // ENAM0 - Graphics (enable) missile 0
                     case 0x1D:
+                        PlayerAndMissile0.MissileEnabled = GetBitAsBoolean(Data05, 1);
                         break;
 
                     // ENAM1 - Graphics (enable) missile 1
                     case 0x1E:
+                        PlayerAndMissile1.MissileEnabled = GetBitAsBoolean(Data05, 1);
                         break;
 
                     // ENABL - Graphics (enable) ball
@@ -535,11 +566,21 @@ public sealed class TiaChip
                         break;
 
                     // HMM0 - Horizontal motion missile 0
+                    // Same signed encoding as HMP0/1; invert HM bit 3 to
+                    // simplify the HMOVE comparator counting.
                     case 0x22:
+                        PlayerAndMissile0.HorizontalMotionMissile = (byte)
+                            (Data05 >> 4 |
+                            (Data67 & 1) << 2 |
+                            (Data67 >> 1 == 1 ? 0b0000 : 0b1000));
                         break;
 
                     // HMM1 - Horizontal motion missile 1
                     case 0x23:
+                        PlayerAndMissile1.HorizontalMotionMissile = (byte)
+                            (Data05 >> 4 |
+                            (Data67 & 1) << 2 |
+                            (Data67 >> 1 == 1 ? 0b0000 : 0b1000));
                         break;
 
                     // HMBL - Horizontal motion ball
@@ -559,11 +600,16 @@ public sealed class TiaChip
                         break;
 
                     // RESMP0 - Reset missile 0 to player 0
+                    // D1 locks the missile onto the player: the missile
+                    // counter tracks the player counter and the missile pixel
+                    // is suppressed until the lock is cleared.
                     case 0x28:
+                        PlayerAndMissile0.MissileLockedToPlayer = GetBitAsBoolean(Data05, 1);
                         break;
 
                     // RESMP1 - Reset missile 1 to player 1
                     case 0x29:
+                        PlayerAndMissile1.MissileLockedToPlayer = GetBitAsBoolean(Data05, 1);
                         break;
 
                     // HMOVE - Apply horizontal motion
@@ -571,6 +617,8 @@ public sealed class TiaChip
                         _hmove = true;
                         _hmp0Latch = true;
                         _hmp1Latch = true;
+                        _hmm0Latch = true;
+                        _hmm1Latch = true;
                         _hmoveComparator = 0b1111;
                         _hmoveCounterEnabled = true;
                         break;
@@ -579,6 +627,8 @@ public sealed class TiaChip
                     case 0x2B:
                         PlayerAndMissile0.HorizontalMotionPlayer = 0b1000;
                         PlayerAndMissile1.HorizontalMotionPlayer = 0b1000;
+                        PlayerAndMissile0.HorizontalMotionMissile = 0b1000;
+                        PlayerAndMissile1.HorizontalMotionMissile = 0b1000;
                         break;
 
                     // CXCLR - Clear collision latches
@@ -677,6 +727,8 @@ public sealed class TiaChip
     private bool _hmove;
     private bool _hmp0Latch;
     private bool _hmp1Latch;
+    private bool _hmm0Latch;
+    private bool _hmm1Latch;
     private byte _hmoveComparator;
     private bool _hmoveCounterEnabled;
 
@@ -765,22 +817,21 @@ public sealed class TiaChip
         // Step 1: every object reports "is my pixel lit here?" for this
         // colour clock. Step 2 (ResolveVideoOutput) picks a single winner.
         //
-        // Missiles and the ball aren't modelled yet; they enter as
-        // permanently-off so the priority ladder in the resolver is already
-        // wired for them. A missile shares its player's colour and priority
-        // slot, so it is OR'd into that player's bit here; the ball shares
-        // the playfield's priority slot but keeps its own COLUPF colour, so
-        // it is passed separately.
+        // A missile shares its player's colour and priority slot, so it is
+        // OR'd into that player's bit here. The ball isn't modelled yet; it
+        // enters as permanently-off so the resolver's priority ladder is
+        // already wired for it. It shares the playfield's priority slot but
+        // keeps its own COLUPF colour, so it is passed separately.
         PlayerAndMissile0.DoPlayer();
         PlayerAndMissile1.DoPlayer();
+        PlayerAndMissile0.DoMissile();
+        PlayerAndMissile1.DoMissile();
 
-        const bool missile0Bit = false;
-        const bool missile1Bit = false;
         const bool ballBit = false;
 
         ResolveVideoOutput(
-            player0: PlayerAndMissile0.PixelOn || missile0Bit,
-            player1: PlayerAndMissile1.PixelOn || missile1Bit,
+            player0: PlayerAndMissile0.PixelOn || PlayerAndMissile0.MissilePixelOn,
+            player1: PlayerAndMissile1.PixelOn || PlayerAndMissile1.MissilePixelOn,
             playfield: playfieldBit,
             ball: ballBit,
             // _playfieldCanReflect is set at the "Center" horizontal-counter
