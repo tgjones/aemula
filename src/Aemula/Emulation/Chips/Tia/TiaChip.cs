@@ -118,12 +118,25 @@ public sealed class TiaChip
     public bool Aud1 { get; private set; }
 
     // TODO: May need to split these into separate pins.
+    private byte _i;
+
     /// <summary>
     /// Dumped and latched inputs.
     /// Dumped inputs (I0..I3) are used for paddles.
     /// Latched inputs (I4..I5) are used for joystick / paddle triggers.
+    /// The setter samples the I4/I5 trigger latches on every change so a
+    /// momentary low pulse is caught even if the pin is high again before the
+    /// program reads INPT4/INPT5 (see <see cref="UpdateTriggerLatches"/>).
     /// </summary>
-    public byte I { get; set; }
+    public byte I
+    {
+        get => _i;
+        set
+        {
+            _i = value;
+            UpdateTriggerLatches();
+        }
+    }
 
     private bool _cs0;
     /// <summary>
@@ -337,11 +350,13 @@ public sealed class TiaChip
                 // bit 1 -> D7). The system merges Data67 << 6 back onto the
                 // CPU bus and supplies D0-D5 from the bus itself.
                 //
-                // Only these eight addresses are driven here. Other reads
-                // (the 0x38-0x3D input ports, and true open-bus behaviour on
-                // everything else) are not modelled yet, so Data67 - a
-                // persistent property - is deliberately left untouched for
-                // them rather than being forced to a value.
+                // The eight CX registers plus the six 0x38-0x3D input ports
+                // are driven here. Everything else is true open bus, so
+                // Data67 - a persistent property - is deliberately left
+                // untouched for those rather than being forced to a value.
+                //
+                // The input ports drive D7 only; D6 is undefined on them and
+                // reads back 0, the same way CXBLPF's unused D6 does.
                 switch (Address)
                 {
                     // CXM0P
@@ -400,6 +415,39 @@ public sealed class TiaChip
                             d6: Collisions.IsSet(CollisionLatches.M0M1));
                         break;
 
+                    // INPT0-INPT3 - dumped paddle inputs. There is no analog
+                    // paddle RC model, so a set I bit stands in for "cap
+                    // charged" (D7 = 1). VBLANK D7 dumps the caps to ground,
+                    // forcing D7 = 0 regardless of the pin.
+                    case 0x38:
+                        Data67 = PackData67(d7: !_i03DumpToGround && GetBitAsBoolean(_i, 0), d6: false);
+                        break;
+
+                    case 0x39:
+                        Data67 = PackData67(d7: !_i03DumpToGround && GetBitAsBoolean(_i, 1), d6: false);
+                        break;
+
+                    case 0x3A:
+                        Data67 = PackData67(d7: !_i03DumpToGround && GetBitAsBoolean(_i, 2), d6: false);
+                        break;
+
+                    case 0x3B:
+                        Data67 = PackData67(d7: !_i03DumpToGround && GetBitAsBoolean(_i, 3), d6: false);
+                        break;
+
+                    // INPT4 / INPT5 - latched joystick trigger inputs. With
+                    // latching disabled the pin passes straight through; with
+                    // it enabled an SR latch (updated on every pin change and
+                    // on the VBLANK write) holds D7 low once the pin has been
+                    // seen low.
+                    case 0x3C:
+                        Data67 = PackData67(d7: GetBitAsBoolean(_i, 4) && !_inpt4LatchedLow, d6: false);
+                        break;
+
+                    case 0x3D:
+                        Data67 = PackData67(d7: GetBitAsBoolean(_i, 5) && !_inpt5LatchedLow, d6: false);
+                        break;
+
                     // Not a register this stage drives - leave Data67 as-is.
                     default:
                         break;
@@ -422,6 +470,21 @@ public sealed class TiaChip
                         VerticalBlank = GetBitAsBoolean(Data05, 1);
                         _i45Enable = GetBitAsBoolean(Data67, 0);
                         _i03DumpToGround = GetBitAsBoolean(Data67, 1);
+                        if (!_i45Enable)
+                        {
+                            // Latching disabled holds both trigger latches
+                            // reset, so the I4/I5 pin level passes straight
+                            // through on the next INPT4/INPT5 read.
+                            _inpt4LatchedLow = false;
+                            _inpt5LatchedLow = false;
+                        }
+                        else
+                        {
+                            // Enabling latching mid-frame with a pin already
+                            // held low latches immediately, matching the real
+                            // SR latch (and Stella's LatchedInput).
+                            UpdateTriggerLatches();
+                        }
                         break;
 
                     // WSYNC - Wait for sync. Halts microprocessor by clearing RDY latch to zero.
@@ -795,6 +858,38 @@ public sealed class TiaChip
     /// Controls whether latches I0..I3 are dumped to ground.
     /// </summary>
     private bool _i03DumpToGround;
+
+    // INPT4/INPT5 SR-latch outputs. Set once the matching I pin has been seen
+    // low while _i45Enable is set; held until _i45Enable is cleared, which
+    // resets both. Only meaningful while _i45Enable is set - kept false
+    // otherwise so a read can treat "not latched" as "pass the pin through".
+    private bool _inpt4LatchedLow;
+    private bool _inpt5LatchedLow;
+
+    /// <summary>
+    /// Captures a low level on I4/I5 into the trigger latches while latching
+    /// is enabled. A no-op when <see cref="_i45Enable"/> is clear (the latches
+    /// are held reset then). Called from the <see cref="I"/> setter and after
+    /// a VBLANK write so a brief press is latched regardless of when - or
+    /// whether - the program reads the port.
+    /// </summary>
+    private void UpdateTriggerLatches()
+    {
+        if (!_i45Enable)
+        {
+            return;
+        }
+
+        if (!GetBitAsBoolean(_i, 4))
+        {
+            _inpt4LatchedLow = true;
+        }
+
+        if (!GetBitAsBoolean(_i, 5))
+        {
+            _inpt5LatchedLow = true;
+        }
+    }
 
     /// <summary>
     /// Stores combined values of PF0, PF1, PF2 registers.
