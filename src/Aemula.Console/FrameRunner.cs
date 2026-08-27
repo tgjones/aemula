@@ -10,7 +10,14 @@ public static class FrameRunner
     // Straight system.Tick() loop - no Debugger involved, so no breakpoint checks/
     // step-mode/disassembler overhead. Same "raw Tick()" style as
     // Aemula.Benchmarks's own tick benchmark.
-    public static FrameRunResult Run(EmulatedSystem system, int requestedFrames)
+    //
+    // onFrameCompleted, if given, is called with the just-completed frame count
+    // right after each frame boundary is detected. FrameRunner itself has no idea
+    // what a caller might want to do with that (Program.cs uses it to drive
+    // periodic screenshots) - keeping it a plain callback means this loop stays
+    // ignorant of screenshots/file paths entirely, the same separation Television
+    // itself keeps from any particular consumer of its output.
+    public static FrameRunResult Run(EmulatedSystem system, int requestedFrames, Action<int>? onFrameCompleted = null)
     {
         var television = ((IHasTelevision)system).Television;
 
@@ -37,6 +44,7 @@ public static class FrameRunner
             if (currentRow < previousRow)
             {
                 framesCompleted++;
+                onFrameCompleted?.Invoke(framesCompleted);
             }
             previousRow = currentRow;
 

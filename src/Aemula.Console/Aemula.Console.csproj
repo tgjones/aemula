@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Aemula\Aemula.csproj" />
+    <PackageReference Include="SixLabors.ImageSharp" />
   </ItemGroup>
 
 </Project>

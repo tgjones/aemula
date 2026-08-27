@@ -1,7 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Aemula.Emulation.Output;
 
 namespace Aemula.Console;
 
@@ -26,7 +30,7 @@ public static class Program
 
     private static void Run(string[] args)
     {
-        var (systemName, framesRequested, romPath) = ParseArgs(args);
+        var (systemName, framesRequested, romPath, screenshotPath, screenshotEvery) = ParseArgs(args);
 
         if (!SystemRegistry.Systems.TryGetValue(systemName, out var createSystem))
         {
@@ -34,13 +38,40 @@ public static class Program
         }
 
         var system = createSystem();
+        var television = ((IHasTelevision)system).Television;
+
+        var screenshotsWritten = new List<string>();
+
+        // Zero-padded to a fixed 6 digits regardless of framesRequested - simpler
+        // than sizing the width to the run (and lets one run's files sort
+        // correctly alongside another's without repadding), at the cost of
+        // looking odd only past a million frames, well beyond anything this tool
+        // is used for today.
+        void WritePeriodicScreenshot(int framesCompleted)
+        {
+            if (screenshotPath != null && screenshotEvery != null && framesCompleted % screenshotEvery.Value == 0)
+            {
+                var numberedPath = InsertFrameNumber(screenshotPath, framesCompleted);
+                ScreenshotWriter.Write(television, numberedPath);
+                screenshotsWritten.Add(numberedPath);
+            }
+        }
 
         var stopwatch = Stopwatch.StartNew();
 
         system.LoadProgram(romPath);
-        var result = FrameRunner.Run(system, framesRequested);
+        var result = FrameRunner.Run(system, framesRequested, WritePeriodicScreenshot);
 
         stopwatch.Stop();
+
+        // The final screenshot is written to the exact --screenshot path (no
+        // frame number inserted) after all periodic ones, whether or not
+        // --screenshot-every ever fired.
+        if (screenshotPath != null)
+        {
+            ScreenshotWriter.Write(television, screenshotPath);
+            screenshotsWritten.Add(screenshotPath);
+        }
 
         // Only this one line goes to stdout, so a caller can pipe straight into jq
         // without filtering out progress/status noise first.
@@ -51,17 +82,34 @@ public static class Program
             ["framesRun"] = result.FramesRun,
             ["cyclesExecuted"] = result.CyclesExecuted,
             ["elapsedMs"] = stopwatch.Elapsed.TotalMilliseconds,
-            ["screenshots"] = new JsonArray(),
+            ["screenshots"] = new JsonArray([.. screenshotsWritten.Select(path => (JsonNode?)JsonValue.Create(path))]),
         };
 
         SystemConsole.WriteLine(summary.ToJsonString());
     }
 
-    private static (string SystemName, int FramesRequested, string RomPath) ParseArgs(string[] args)
+    // Inserts a zero-padded frame count before path's extension, e.g.
+    // "out.png" -> "out.000060.png" - keeps periodic screenshots sorting and
+    // scripting cleanly against the same base name the final --screenshot path
+    // uses, without needing a separate output directory convention.
+    private static string InsertFrameNumber(string path, int frameCount)
+    {
+        var directory = Path.GetDirectoryName(path);
+        var fileNameWithoutExtension = Path.GetFileNameWithoutExtension(path);
+        var extension = Path.GetExtension(path);
+
+        var numberedFileName = $"{fileNameWithoutExtension}.{frameCount:D6}{extension}";
+
+        return string.IsNullOrEmpty(directory) ? numberedFileName : Path.Combine(directory, numberedFileName);
+    }
+
+    private static (string SystemName, int FramesRequested, string RomPath, string? ScreenshotPath, int? ScreenshotEvery) ParseArgs(string[] args)
     {
         string? systemName = null;
         int? framesRequested = null;
         var romPath = "";
+        string? screenshotPath = null;
+        int? screenshotEvery = null;
 
         var i = 0;
         while (i < args.Length)
@@ -91,6 +139,28 @@ public static class Program
                     i += 2;
                     break;
 
+                case "--screenshot":
+                    if (i + 1 >= args.Length)
+                    {
+                        throw new ArgumentException("--screenshot requires a value.");
+                    }
+                    screenshotPath = args[i + 1];
+                    i += 2;
+                    break;
+
+                case "--screenshot-every":
+                    if (i + 1 >= args.Length)
+                    {
+                        throw new ArgumentException("--screenshot-every requires a value.");
+                    }
+                    if (!int.TryParse(args[i + 1], out var every) || every <= 0)
+                    {
+                        throw new ArgumentException($"--screenshot-every must be a positive integer, got '{args[i + 1]}'.");
+                    }
+                    screenshotEvery = every;
+                    i += 2;
+                    break;
+
                 default:
                     if (systemName != null)
                     {
@@ -112,6 +182,11 @@ public static class Program
             throw new ArgumentException("--frames <n> is required.");
         }
 
-        return (systemName, framesRequested.Value, romPath);
+        if (screenshotEvery != null && screenshotPath == null)
+        {
+            throw new ArgumentException("--screenshot-every requires --screenshot.");
+        }
+
+        return (systemName, framesRequested.Value, romPath, screenshotPath, screenshotEvery);
     }
 }
