@@ -56,6 +56,26 @@ internal sealed class PlayerAndMissile
     private byte _graphicsDelay;
     private byte _scanCounter;
 
+    // Counts colour clocks since the graphic scan last advanced. NUSIZ
+    // double/quad width stretches the single player copy by walking the scan
+    // slower (see StretchFactor); it does not add copies and does not touch
+    // the position counter or copy decode.
+    private byte _scanCounterDivider;
+
+    /// <summary>
+    /// Colour clocks each of the 8 graphic bits occupies while the player
+    /// draws. NUSIZ 5 (double width) holds each bit for 2 colour clocks and
+    /// NUSIZ 7 (quad width) for 4, stretching the one copy to 16 / 32 pixels;
+    /// every other NUSIZ value scans one bit per colour clock. Matches Stella's
+    /// Player myDivider (1 / 2 / 4), which likewise gates only the graphic scan.
+    /// </summary>
+    private int StretchFactor => NumberSizePlayer switch
+    {
+        0b101 => 2,
+        0b111 => 4,
+        _ => 1,
+    };
+
     // Missile state - a missile is a degenerate player: its own copy of the
     // player's LFSR counter and div-4 prescaler, but no 8-bit graphic. It is
     // simply "on" for MissileWidth colour clocks from each copy's start.
@@ -130,12 +150,14 @@ internal sealed class PlayerAndMissile
             case 0b111001 when NumberSizePlayer == 0b100 || NumberSizePlayer == 0b110:
                 _draw = true;
                 _scanCounter = 0b111;
+                _scanCounterDivider = 0;
                 break;
 
             case 0b101101: // RESET
                 Reset = true;
                 _draw = true;
                 _scanCounter = 0b111;
+                _scanCounterDivider = 0;
                 break;
         }
     }
@@ -160,7 +182,19 @@ internal sealed class PlayerAndMissile
 
         if (_draw)
         {
-            if (_scanCounter == 0b000)
+            // NUSIZ double/quad width advances the graphic scan only every
+            // 2nd / 4th colour clock so each bit stretches to 2 / 4 pixels.
+            // The bit is still re-sampled every colour clock, through the same
+            // one-clock _graphicsDelay latch, so a held bit keeps lighting its
+            // pixel between advances instead of gapping every other clock.
+            _scanCounterDivider++;
+            var advanceScan = _scanCounterDivider >= StretchFactor;
+            if (advanceScan)
+            {
+                _scanCounterDivider = 0;
+            }
+
+            if (_scanCounter == 0b000 && advanceScan)
             {
                 _draw = false;
             }
@@ -172,13 +206,16 @@ internal sealed class PlayerAndMissile
 
             _graphicsDelay = GetBit(ActiveGraphics, graphicsIndex);
 
-            if (_scanCounter == 0b000)
+            if (advanceScan)
             {
-                _scanCounter = 0b111;
-            }
-            else
-            {
-                _scanCounter--;
+                if (_scanCounter == 0b000)
+                {
+                    _scanCounter = 0b111;
+                }
+                else
+                {
+                    _scanCounter--;
+                }
             }
         }
     }
