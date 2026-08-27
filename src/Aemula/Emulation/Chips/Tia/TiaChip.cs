@@ -648,28 +648,34 @@ public sealed class TiaChip
                         Ball.ClockDiv4 = 0;
                         break;
 
-                    // AUDC0 - Audio control 0
+                    // AUDC0 - Audio control 0 (D0-D3 waveform / poly select)
                     case 0x15:
+                        _audio0.Audc = (byte)(Data05 & 0b1111);
                         break;
 
                     // AUDC1 - Audio control 1
                     case 0x16:
+                        _audio1.Audc = (byte)(Data05 & 0b1111);
                         break;
 
-                    // AUDF0 - Audio frequency 0
+                    // AUDF0 - Audio frequency 0 (D0-D4 divisor)
                     case 0x17:
+                        _audio0.Audf = (byte)(Data05 & 0b11111);
                         break;
 
                     // AUDF1 - Audio frequency 1
                     case 0x18:
+                        _audio1.Audf = (byte)(Data05 & 0b11111);
                         break;
 
-                    // AUDV0 - Audio volume 0
+                    // AUDV0 - Audio volume 0 (D0-D3)
                     case 0x19:
+                        _audio0.Audv = (byte)(Data05 & 0b1111);
                         break;
 
-                    // AUDv1 - Audio volume 1
+                    // AUDV1 - Audio volume 1
                     case 0x1A:
+                        _audio1.Audv = (byte)(Data05 & 0b1111);
                         break;
 
                     // GRP0 - Graphics player 0. Writes P0's "new" graphics
@@ -921,6 +927,15 @@ public sealed class TiaChip
     internal readonly PlayerAndMissile PlayerAndMissile1;
     internal readonly Ball Ball;
 
+    /// <summary>
+    /// The two audio channels (AUDC0/AUDF0/AUDV0 -> AUD0, and channel 1 ->
+    /// AUD1). Ticked twice per scanline from <see cref="ExecuteClockLogic"/>,
+    /// which then drives the <see cref="Aud0"/>/<see cref="Aud1"/> pins from
+    /// each channel's 1-bit waveform output.
+    /// </summary>
+    internal TiaAudioChannel _audio0;
+    internal TiaAudioChannel _audio1;
+
     private bool _playerCounterEnable;
 
     /// <summary>
@@ -1054,6 +1069,12 @@ public sealed class TiaChip
             case 0b101100: // Center
                 _playfieldCanReflect = true;
                 _playfieldIndex = 0;
+                // Second of the two audio clocks per line. The real TIA clocks
+                // its audio twice a scanline - once near HBLANK start, once
+                // near centre (Andrew Towers' TIA_HW_Notes) - which is
+                // 2 x 15.7 kHz ~= 31.4 kHz on NTSC.
+                _audio0.Tick();
+                _audio1.Tick();
                 break;
 
             // End of the 160-pixel visible region. Re-assert horizontal blank
@@ -1066,13 +1087,21 @@ public sealed class TiaChip
                 _horizontalReset = true;
                 _hmove = false;
                 HorizontalBlank = true;
-                // TODO: Tick audio
+                // First of the two audio clocks per line, as the visible
+                // region ends and horizontal blank re-asserts; the second is
+                // at the "Center" state above. Two ticks per scanline is the
+                // real TIA's audio rate (~31.4 kHz on NTSC).
+                _audio0.Tick();
+                _audio1.Tick();
                 break;
 
             default:
                 _playfieldIndex++;
                 break;
         }
+
+        Aud0 = _audio0.Output;
+        Aud1 = _audio1.Output;
     }
 
     private void DoVideo()
