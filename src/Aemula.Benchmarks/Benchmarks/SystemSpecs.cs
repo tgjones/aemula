@@ -1,0 +1,138 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using Aemula.Emulation.Output;
+using Aemula.Emulation.Systems.AppleII;
+using Aemula.Emulation.Systems.Atari2600;
+using Aemula.Emulation.Systems.Chip8;
+using Aemula.Emulation.Systems.Nes;
+using Aemula.Emulation.Systems.SpaceInvaders;
+
+namespace Aemula.Benchmarks;
+
+// Single source of truth for what each system's benchmark workload is: how to
+// build the system, where its ROM comes from, how far to warm it before
+// measuring, and how many Tick()s make up one measured invocation. Both the
+// per-system SystemBenchmark classes and DebuggerOverheadBenchmark read from
+// here so the two never drift apart.
+internal sealed record SystemSpec(
+    string Name,
+    Func<EmulatedSystem> Create,
+    Func<string> WorkloadPath,
+    ulong CyclesPerSecond,
+    int WarmupTicks,
+    int TicksPerInvocation,
+    bool ResetEachInvocation,
+    Func<EmulatedSystem, long> Probe);
+
+internal static class SystemSpecs
+{
+    // Tick budgets are expressed as "≈ N frames" using each system's own
+    // CyclesPerSecond / 60. One frame is enough to hit every periodic path
+    // (sub-frame video/audio dividers, per-frame VSYNC/VBLANK/overscan regions,
+    // interrupts, the 60 Hz timer tick); ≈2 frames also crosses a field
+    // boundary so odd/even-frame handling is covered.
+    private const ulong AppleIIHz = 14_318_180;
+    private const ulong Atari2600Hz = 3_580_000;
+    private const ulong Chip8Hz = 600;
+    private const ulong NesHz = 21_477_272;
+    private const ulong SpaceInvadersHz = 19_968_000;
+
+    private static long TelevisionRow(EmulatedSystem system) => ((IHasTelevision)system).Television.CurrentRow;
+
+    public static readonly IReadOnlyList<SystemSpec> All =
+    [
+        new SystemSpec(
+            "appleii",
+            static () => new AppleIISystem(),
+            static () => "", // LoadProgram ignores the path; boots the bundled Apple2_Plus.rom
+            AppleIIHz,
+            WarmupTicks: 240_000,          // ≈1 frame: past reset, into the steady text screen
+            TicksPerInvocation: 480_000,   // ≈2 frames
+            ResetEachInvocation: false,
+            TelevisionRow),
+
+        new SystemSpec(
+            "atari2600",
+            static () => new Atari2600System(),
+            Workloads.Atari2600Kernel,
+            Atari2600Hz,
+            WarmupTicks: 120_000,          // ≈2 frames: past the RAM-clear loop, into steady raster
+            TicksPerInvocation: 120_000,   // ≈2 frames
+            ResetEachInvocation: false,
+            TelevisionRow),
+
+        new SystemSpec(
+            "chip8",
+            static () => new Chip8System(),
+            Workloads.Chip8Program,
+            Chip8Hz,
+            WarmupTicks: 4_000,            // past CLS + register setup, into the steady loop
+            TicksPerInvocation: 200_000,   // no natural "frame"; ≈2 ms of wall time
+            ResetEachInvocation: false,    // Chip8System.Reset() wipes loaded program memory
+            static system => ((Chip8System)system).PC),
+
+        new SystemSpec(
+            "nes",
+            static () => new NesSystem(),
+            Workloads.PatchedNestest,
+            NesHz,
+            WarmupTicks: 0,                // Reset() below restarts nestest cleanly each invocation
+            TicksPerInvocation: 400_000,   // ≈1 full automated nestest pass (~30k CPU cycles @ 13 master ticks each)
+            ResetEachInvocation: true,
+            static system => ((NesSystem)system).Cpu.PC),
+
+        new SystemSpec(
+            "spaceinvaders",
+            static () => new SpaceInvadersSystem(),
+            static () => "", // LoadProgram ignores the path; loads the bundled invaders.[efgh]
+            SpaceInvadersHz,
+            WarmupTicks: 340_000,          // ≈1 frame: into attract mode
+            TicksPerInvocation: 680_000,   // ≈2 frames (covers both the mid-screen and VBLANK IRQs)
+            ResetEachInvocation: false,
+            TelevisionRow),
+    ];
+
+    public static SystemSpec Get(string name) =>
+        All.FirstOrDefault(s => s.Name == name)
+        ?? throw new ArgumentException($"No benchmark spec for system '{name}'. Known: {string.Join(", ", All.Select(s => s.Name))}.");
+}
+
+// ROM images that aren't shipped by the Aemula project itself are materialised
+// to stable temp-file paths here, because every system's LoadProgram takes a
+// file path. The names are fixed (not random) so a run can be inspected or
+// re-fed to Aemula.Console by hand.
+internal static class Workloads
+{
+    public static string Atari2600Kernel()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "aemula-bench-atari2600.bin");
+        File.WriteAllBytes(path, Atari2600TestKernel.Image);
+        return path;
+    }
+
+    public static string Chip8Program()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "aemula-bench-chip8.ch8");
+        File.WriteAllBytes(path, Chip8TestProgram.Bytes);
+        return path;
+    }
+
+    // nestest.nes is copied next to the executable (see the .csproj). Its RESET
+    // vector points at the interactive entry point; patch it to $C000, the
+    // automated-run entry, the same way Ricoh2A03ChipTests does.
+    public static string PatchedNestest()
+    {
+        var source = Path.Combine(AppContext.BaseDirectory, "Workloads", "nestest.nes");
+        var bytes = File.ReadAllBytes(source);
+
+        // 16-byte iNES header + PRG offset $3FFC/$3FFD.
+        bytes[0x400C] = 0x00;
+        bytes[0x400D] = 0xC0;
+
+        var path = Path.Combine(Path.GetTempPath(), "aemula-bench-nestest.nes");
+        File.WriteAllBytes(path, bytes);
+        return path;
+    }
+}

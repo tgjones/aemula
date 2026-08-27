@@ -6,6 +6,14 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Aemula\Aemula.csproj" />
+    <PackageReference Include="BenchmarkDotNet" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\Aemula.Tests\Emulation\Chips\Ricoh2A03\Assets\nestest.nes"
+             Link="Workloads\nestest.nes">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
 </Project>
