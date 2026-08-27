@@ -25,6 +25,7 @@ public sealed partial class Atari2600System : EmulatedSystem, IHasTelevision
     private Cartridge? _cartridge;
 
     internal Mos6507 Cpu => _cpu;
+    internal TiaChip Tia => _tia;
     //internal VideoOutput VideoOutput => _videoOutput;
 
     public Atari2600System()
