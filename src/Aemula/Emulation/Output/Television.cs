@@ -388,14 +388,31 @@ public sealed class Television
         return new RgbaByte(level, level, level, 255);
     }
 
+    // A detected dimension only re-sizes the buffer once it has moved a full
+    // sample/line clear of the current buffer's dimension - not the instant
+    // MathF.Round of it changes. Without this deadband, a signal whose
+    // detected geometry sits right on a rounding boundary re-allocates the
+    // whole (LOH-sized) Sample[] every few frames just from the estimate
+    // dithering across .5: Space Invaders' DetectedLinesPerFrame is ~260.5,
+    // and its deliberately-unserrated VSYNC (see
+    // SpaceInvadersSystem.CompositeVideo.cs) keeps the vertical oscillator
+    // hunting, so the height flipped 260<->261 continuously - ~6 MB of LOH
+    // churn per two frames. The buffer being up to a line/sample off the
+    // latest estimate is already a handled case (Decode drops out-of-bounds
+    // samples; Resize leaves uncovered rows opaque black).
+    private const float ResizeDeadband = 1.0f;
+
     private void ResizeSampleBufferIfDetectedTimingChanged()
     {
-        var width = (uint)MathF.Round(_rasterOscillators.DetectedSamplesPerLine);
-        var height = (uint)MathF.Round(_rasterOscillators.DetectedLinesPerFrame);
+        var detectedWidth = _rasterOscillators.DetectedSamplesPerLine;
+        var detectedHeight = _rasterOscillators.DetectedLinesPerFrame;
 
-        if (width != SampleBuffer.Width || height != SampleBuffer.Height)
+        if (MathF.Abs(detectedWidth - SampleBuffer.Width) > ResizeDeadband ||
+            MathF.Abs(detectedHeight - SampleBuffer.Height) > ResizeDeadband)
         {
-            SampleBuffer.Resize(width, height);
+            SampleBuffer.Resize(
+                (uint)MathF.Round(detectedWidth),
+                (uint)MathF.Round(detectedHeight));
         }
     }
 }
