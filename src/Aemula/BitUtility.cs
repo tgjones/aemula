@@ -22,6 +22,16 @@ public static class BitUtility
         return GetBit(value, position) != 0;
     }
 
+    public static byte GetBit(uint value, int position)
+    {
+        return (byte)(value >> position & 1);
+    }
+
+    public static bool GetBitAsBoolean(uint value, int position)
+    {
+        return GetBit(value, position) != 0;
+    }
+
     public static void ClearBit(ref byte value, int position)
     {
         value = (byte)(value & ~(1 << position));

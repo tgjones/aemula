@@ -568,7 +568,9 @@ public sealed class TiaChip
                                 GetBit(Data05, 5) << 2 |
                                 GetBit(Data67, 0) << 1 |
                                 GetBit(Data67, 1) << 0;
-                            _playfield = (ushort)(temp << 16 | _playfield & 0xFFFF);
+                            // PF0 lands in display-order bits 19..16; PF1/PF2
+                            // in bits 15..0 are untouched.
+                            _playfield = (uint)temp << 16 | _playfield & 0xFFFF;
                             break;
                         }
 
@@ -584,7 +586,9 @@ public sealed class TiaChip
                     case 0x0E:
                         {
                             var temp = (byte)(Data05 | Data67 << 6);
-                            _playfield = (ushort)(_playfield & 0xF00FF | temp << 8);
+                            // PF1 lands in display-order bits 15..8; the mask
+                            // keeps PF0 (19..16) and PF2 (7..0).
+                            _playfield = _playfield & 0xF00FF | (uint)temp << 8;
                             break;
                         }
 
@@ -608,7 +612,9 @@ public sealed class TiaChip
                                 GetBit(Data05, 5) << 2 |
                                 GetBit(Data67, 0) << 1 |
                                 GetBit(Data67, 1) << 0;
-                            _playfield = (ushort)(_playfield & 0xFFF00 | temp);
+                            // PF2 lands in display-order bits 7..0; the mask
+                            // keeps PF0 (19..16) and PF1 (15..8).
+                            _playfield = _playfield & 0xFFF00 | (uint)temp;
                             break;
                         }
 
@@ -777,7 +783,14 @@ public sealed class TiaChip
                         PlayerAndMissile1.MissileLockedToPlayer = GetBitAsBoolean(Data05, 1);
                         break;
 
-                    // HMOVE - Apply horizontal motion
+                    // HMOVE - Apply horizontal motion. _hmove drives both the
+                    // comparator that gives each object its extra clocks and
+                    // the extended-HBLANK comb (see ExecuteClockLogic). Only
+                    // the normal "strobe just after WSYNC, inside HBLANK" case
+                    // is modelled: strobing HMOVE late in the visible line
+                    // (near colour clock 74) produces partial motion and a
+                    // ragged comb on real hardware, which this does not
+                    // reproduce.
                     case 0x2A:
                         _hmove = true;
                         _hmp0Latch = true;
@@ -892,9 +905,15 @@ public sealed class TiaChip
     }
 
     /// <summary>
-    /// Stores combined values of PF0, PF1, PF2 registers.
+    /// The 20-bit playfield graphic, PF0/PF1/PF2 merged into one word in
+    /// display order: bit 19 is the first pixel drawn in each half, bit 0 the
+    /// last. PF0 occupies bits 19..16, PF1 bits 15..8, PF2 bits 7..0, with
+    /// each register's own bit order already normalised by the write cases.
+    /// Held in a <see cref="uint"/> rather than a <see cref="ushort"/> so
+    /// PF0's four bits survive - a narrower store silently dropped them, which
+    /// left a 16-pixel dead band at the start of every playfield half.
     /// </summary>
-    private ushort _playfield;
+    private uint _playfield;
 
     internal byte ClockDiv4;
 
@@ -1002,6 +1021,12 @@ public sealed class TiaChip
                 _colorBurst = false;
                 break;
 
+            // Normal end of horizontal blank. Skipped when HMOVE was strobed
+            // this line: the blank then runs on to the "Late Reset HBLANK"
+            // state two counter states (8 colour clocks) further on, which is
+            // the HMOVE comb - real hardware holds the beam blanked over the
+            // leftmost 8 visible pixels on every line an HMOVE fires, so they
+            // come out border-black.
             case 0b011100: // Reset HBLANK
                 _playfieldIndex = 0;
                 if (!_hmove)
@@ -1011,6 +1036,12 @@ public sealed class TiaChip
                 }
                 break;
 
+            // The delayed end of horizontal blank on an HMOVE line - the
+            // other half of the comb above. The playfield counter is not
+            // stalled by HMOVE, so it has already advanced two cells while the
+            // comb hid them; starting it at cell 2 here keeps the playfield
+            // aligned to its absolute screen position rather than shifting it
+            // right by 8 pixels.
             case 0b010111: // Late Reset HBLANK, if HMOVE activated
                 _playfieldIndex = 2;
                 if (_hmove)
@@ -1025,11 +1056,16 @@ public sealed class TiaChip
                 _playfieldIndex = 0;
                 break;
 
+            // End of the 160-pixel visible region. Re-assert horizontal blank
+            // here rather than waiting for the counter wrap one state later:
+            // that one extra state was leaving 4 colour clocks of background
+            // showing past pixel 160, making the active line measure 164.
             case 0b010100: // RESET
                 _playerCounterEnable = false;
                 _playfieldIndex = 0x14;
                 _horizontalReset = true;
                 _hmove = false;
+                HorizontalBlank = true;
                 // TODO: Tick audio
                 break;
 
@@ -1041,8 +1077,11 @@ public sealed class TiaChip
 
     private void DoVideo()
     {
-        // TODO: Reflect playfield
-
+        // PF cell 0..19 across a half maps to _playfield bit 19..0 in the
+        // normal case (bit 19 first). The right half is drawn mirrored only
+        // when CTRLPF D0 (reflect) is set, and _playfieldCanReflect is exactly
+        // "beam is in the right half" (set at the Center state, cleared at
+        // line start), so reflected-right reads bit 0..19 instead.
         var playfieldBit = _playfieldCanReflect && _playfieldReflect
             ? GetBitAsBoolean(_playfield, _playfieldIndex)
             : GetBitAsBoolean(_playfield, 19 - _playfieldIndex);
