@@ -231,6 +231,14 @@ public sealed class TiaChip
                         _hmm1Latch = false;
                     }
 
+                    // The ball rides the same comparator as the players and
+                    // missiles - one latch, cleared when the count matches
+                    // HMBL.
+                    if (NoneEqual(_hmoveComparator, Ball.HorizontalMotion))
+                    {
+                        _hmblLatch = false;
+                    }
+
                     _hmoveComparator = (byte)(_hmoveComparator - 1 & 0b1111);
                     if (_hmoveComparator == 0b1111)
                     {
@@ -257,6 +265,11 @@ public sealed class TiaChip
                 {
                     PlayerAndMissile1.UpdateMissileDiv4();
                 }
+
+                if (_hmblLatch)
+                {
+                    Ball.UpdateDiv4();
+                }
             }
 
             if (_playerCounterEnable)
@@ -265,6 +278,7 @@ public sealed class TiaChip
                 PlayerAndMissile1.UpdatePlayerDiv4();
                 PlayerAndMissile0.UpdateMissileDiv4();
                 PlayerAndMissile1.UpdateMissileDiv4();
+                Ball.UpdateDiv4();
             }
 
             DoVideo();
@@ -396,7 +410,6 @@ public sealed class TiaChip
                         break;
 
                     // CTRLPF - Control playfield ball size and collisions
-                    // TODO: D4-D5 select the ball width (1/2/4/8 clocks).
                     case 0x0A:
                         _playfieldReflect = GetBitAsBoolean(Data05, 0);
                         _playfieldScore = GetBitAsBoolean(Data05, 1);
@@ -404,6 +417,8 @@ public sealed class TiaChip
                         // above both players. The resolver needs this, and
                         // it also disables score mode while set.
                         _playfieldPriority = GetBitAsBoolean(Data05, 2);
+                        // D4-D5: ball width, 1 / 2 / 4 / 8 colour clocks.
+                        Ball.Width = (byte)(1 << ((Data05 >> 4) & 0b11));
                         break;
 
                     // REFP0 - Reflect player 0
@@ -498,6 +513,8 @@ public sealed class TiaChip
 
                     // RESBL - Reset ball
                     case 0x14:
+                        Ball.Reset = true;
+                        Ball.ClockDiv4 = 0;
                         break;
 
                     // AUDC0 - Audio control 0
@@ -544,8 +561,11 @@ public sealed class TiaChip
                         PlayerAndMissile1.MissileEnabled = GetBitAsBoolean(Data05, 1);
                         break;
 
-                    // ENABL - Graphics (enable) ball
+                    // ENABL - Graphics (enable) ball. D1 enables; the VDELBL
+                    // delayed-enable latch is not modelled yet, so D1 feeds
+                    // the displayed enable directly.
                     case 0x1F:
+                        Ball.Enabled = GetBitAsBoolean(Data05, 1);
                         break;
 
                     // HMP0 - Horizontal motion player 0
@@ -583,8 +603,14 @@ public sealed class TiaChip
                             (Data67 >> 1 == 1 ? 0b0000 : 0b1000));
                         break;
 
-                    // HMBL - Horizontal motion ball
+                    // HMBL - Horizontal motion ball. Same signed encoding as
+                    // HMP0/1 and HMM0/1; invert HM bit 3 to simplify the
+                    // HMOVE comparator counting.
                     case 0x24:
+                        Ball.HorizontalMotion = (byte)
+                            (Data05 >> 4 |
+                            (Data67 & 1) << 2 |
+                            (Data67 >> 1 == 1 ? 0b0000 : 0b1000));
                         break;
 
                     // VDELP0 - Vertical delay player 0
@@ -619,6 +645,7 @@ public sealed class TiaChip
                         _hmp1Latch = true;
                         _hmm0Latch = true;
                         _hmm1Latch = true;
+                        _hmblLatch = true;
                         _hmoveComparator = 0b1111;
                         _hmoveCounterEnabled = true;
                         break;
@@ -629,6 +656,7 @@ public sealed class TiaChip
                         PlayerAndMissile1.HorizontalMotionPlayer = 0b1000;
                         PlayerAndMissile0.HorizontalMotionMissile = 0b1000;
                         PlayerAndMissile1.HorizontalMotionMissile = 0b1000;
+                        Ball.HorizontalMotion = 0b1000;
                         break;
 
                     // CXCLR - Clear collision latches
@@ -700,6 +728,7 @@ public sealed class TiaChip
 
     internal readonly PlayerAndMissile PlayerAndMissile0;
     internal readonly PlayerAndMissile PlayerAndMissile1;
+    internal readonly Ball Ball;
 
     private bool _playerCounterEnable;
 
@@ -729,6 +758,7 @@ public sealed class TiaChip
     private bool _hmp1Latch;
     private bool _hmm0Latch;
     private bool _hmm1Latch;
+    private bool _hmblLatch;
     private byte _hmoveComparator;
     private bool _hmoveCounterEnabled;
 
@@ -736,6 +766,7 @@ public sealed class TiaChip
     {
         PlayerAndMissile0 = new PlayerAndMissile();
         PlayerAndMissile1 = new PlayerAndMissile();
+        Ball = new Ball();
     }
 
     private void ExecuteClockLogic()
@@ -818,22 +849,20 @@ public sealed class TiaChip
         // colour clock. Step 2 (ResolveVideoOutput) picks a single winner.
         //
         // A missile shares its player's colour and priority slot, so it is
-        // OR'd into that player's bit here. The ball isn't modelled yet; it
-        // enters as permanently-off so the resolver's priority ladder is
-        // already wired for it. It shares the playfield's priority slot but
-        // keeps its own COLUPF colour, so it is passed separately.
+        // OR'd into that player's bit here. The ball shares the playfield's
+        // priority slot but keeps its own COLUPF colour, so it is passed
+        // separately.
         PlayerAndMissile0.DoPlayer();
         PlayerAndMissile1.DoPlayer();
         PlayerAndMissile0.DoMissile();
         PlayerAndMissile1.DoMissile();
-
-        const bool ballBit = false;
+        Ball.DoBall();
 
         ResolveVideoOutput(
             player0: PlayerAndMissile0.PixelOn || PlayerAndMissile0.MissilePixelOn,
             player1: PlayerAndMissile1.PixelOn || PlayerAndMissile1.MissilePixelOn,
             playfield: playfieldBit,
-            ball: ballBit,
+            ball: Ball.PixelOn,
             // _playfieldCanReflect is set at the "Center" horizontal-counter
             // state and cleared at the start of each line, so it doubles as
             // "are we past screen centre?" - exactly the left/right selector
