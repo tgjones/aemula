@@ -22,6 +22,19 @@ internal sealed class PlayerAndMissile
     private byte _graphicsDelay;
     private byte _scanCounter;
 
+    /// <summary>
+    /// Whether this player's graphic has a lit pixel at the current colour
+    /// clock. Updated by <see cref="DoPlayer"/> each colour clock.
+    ///
+    /// The player reports this bit rather than writing the video output
+    /// itself: TIA's real priority encoder has to decide P0 vs P1 vs
+    /// playfield vs background (P0 must win over P1) in a single stage, so a
+    /// lone resolver in <see cref="TiaChip"/> reads every object's presence
+    /// bit and picks one winner, instead of each object overwriting
+    /// <see cref="TiaChip.Lum"/>/<see cref="TiaChip.Col"/> in turn.
+    /// </summary>
+    public bool PixelOn;
+
     public void UpdatePlayerDiv4()
     {
         PlayerClockDiv4++;
@@ -60,13 +73,18 @@ internal sealed class PlayerAndMissile
         }
     }
 
-    public void DoPlayer(TiaChip tia)
+    /// <summary>
+    /// Advances the player's one-colour-clock graphics pipeline and latches
+    /// <see cref="PixelOn"/> for this colour clock. Real TIA clocks the
+    /// serial graphics shift one colour clock ahead of the pixel it lights,
+    /// so <see cref="_graphicsDelay"/> holds the bit sampled last call and
+    /// that bit is what lights (or doesn't light) a pixel now.
+    /// </summary>
+    public void DoPlayer()
     {
-        if (_graphicsDelay == 1)
-        {
-            tia.Lum = Luminance;
-            tia.Col = Color;
-        }
+        // The bit sampled on the previous colour clock is the one displayed
+        // now - the deliberate one-clock delay (see the method summary).
+        PixelOn = _graphicsDelay == 1;
 
         if (_graphicsDelay == 1)
         {

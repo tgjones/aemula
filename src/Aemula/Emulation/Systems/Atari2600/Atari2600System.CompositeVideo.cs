@@ -9,7 +9,7 @@ namespace Aemula.Emulation.Systems.Atari2600;
 // on how real composite mods and AppleIISystem.CompositeVideo.cs both do
 // it ("weighted sum, landmark-calibrated"), not something read off a
 // schematic. Color burst itself, though, *is* real TIA behavior (TiaChip's
-// own DoPlayfield/ExecuteClockLogic generate it on the Col pin, the same
+// own DoVideo/ExecuteClockLogic generate it on the Col pin, the same
 // way real hardware does - see TiaChip._colorBurst's remarks) - this file
 // just samples it, the same as it samples picture chroma.
 //

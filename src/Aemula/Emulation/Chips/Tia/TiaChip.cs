@@ -42,10 +42,11 @@ public sealed class TiaChip
     public bool RW { get; set; }
 
     /// <summary>
-    /// Video luminance output (3 pins, LUM0..LUM2). Also written by
-    /// <see cref="PlayerAndMissile.DoPlayer"/>, hence the internal setter.
+    /// Video luminance output (3 pins, LUM0..LUM2). Written exactly once per
+    /// colour clock by the priority resolver (<see cref="ResolveVideoOutput"/>),
+    /// then forced to 0 during blanking.
     /// </summary>
-    public byte Lum { get; internal set; }
+    public byte Lum { get; private set; }
 
     // TODO: This should be a single pin. From the spec:
     // "A digital phase shifter is included on this chip to provide a
@@ -90,10 +91,11 @@ public sealed class TiaChip
     // actual waveform rather than this simplified index), just not before
     // something other than composite video actually needs it.
     /// <summary>
-    /// Video color output. Also written by
-    /// <see cref="PlayerAndMissile.DoPlayer"/>, hence the internal setter.
+    /// Video color output. Written exactly once per colour clock by the
+    /// priority resolver (<see cref="ResolveVideoOutput"/>), then overridden
+    /// to the color-burst / black reference during blanking.
     /// </summary>
-    public byte Col { get; internal set; }
+    public byte Col { get; private set; }
 
     /// <summary>
     /// Combined vertical and horizontal blank output.
@@ -240,7 +242,7 @@ public sealed class TiaChip
                 PlayerAndMissile1.UpdatePlayerDiv4();
             }
 
-            DoPlayfield();
+            DoVideo();
 
             Blk = VerticalBlank || HorizontalBlank;
             Sync = VerticalSync || HorizontalSync;
@@ -369,10 +371,14 @@ public sealed class TiaChip
                         break;
 
                     // CTRLPF - Control playfield ball size and collisions
+                    // TODO: D4-D5 select the ball width (1/2/4/8 clocks).
                     case 0x0A:
-                        // TODO
                         _playfieldReflect = GetBitAsBoolean(Data05, 0);
                         _playfieldScore = GetBitAsBoolean(Data05, 1);
+                        // D2 (PFP): move the playfield/ball priority group
+                        // above both players. The resolver needs this, and
+                        // it also disables score mode while set.
+                        _playfieldPriority = GetBitAsBoolean(Data05, 2);
                         break;
 
                     // REFP0 - Reflect player 0
@@ -654,6 +660,14 @@ public sealed class TiaChip
     private bool _playfieldReflect;
     private bool _playfieldScore;
 
+    /// <summary>
+    /// CTRLPF D2 (PFP). When set, the playfield and ball are composited
+    /// above both players instead of below them, and score mode is
+    /// suppressed. Parsed from CTRLPF alongside reflect/score; consumed only
+    /// by <see cref="ResolveVideoOutput"/>.
+    /// </summary>
+    private bool _playfieldPriority;
+
     private byte _playfieldColor;
     private byte _playfieldLuminance;
 
@@ -740,45 +754,40 @@ public sealed class TiaChip
         }
     }
 
-    private void DoPlayfield()
+    private void DoVideo()
     {
         // TODO: Reflect playfield
 
-        var shouldOutputPlayfield = _playfieldCanReflect && _playfieldReflect
+        var playfieldBit = _playfieldCanReflect && _playfieldReflect
             ? GetBitAsBoolean(_playfield, _playfieldIndex)
             : GetBitAsBoolean(_playfield, 19 - _playfieldIndex);
 
-        if (shouldOutputPlayfield)
-        {
-            if (_playfieldScore)
-            {
-                // Display the left side of the playfield using the color of sprite 0,
-                // and the right side of the playfield using the color of sprite 1.
-                if (_playfieldCanReflect)
-                {
-                    Lum = PlayerAndMissile1.Luminance;
-                    Col = PlayerAndMissile1.Color;
-                }
-                else
-                {
-                    Lum = PlayerAndMissile0.Luminance;
-                    Col = PlayerAndMissile0.Color;
-                }
-            }
-            else
-            {
-                Lum = _playfieldLuminance;
-                Col = _playfieldColor;
-            }
-        }
-        else
-        {
-            Lum = _backgroundLuminance;
-            Col = _backgroundColor;
-        }
+        // Step 1: every object reports "is my pixel lit here?" for this
+        // colour clock. Step 2 (ResolveVideoOutput) picks a single winner.
+        //
+        // Missiles and the ball aren't modelled yet; they enter as
+        // permanently-off so the priority ladder in the resolver is already
+        // wired for them. A missile shares its player's colour and priority
+        // slot, so it is OR'd into that player's bit here; the ball shares
+        // the playfield's priority slot but keeps its own COLUPF colour, so
+        // it is passed separately.
+        PlayerAndMissile0.DoPlayer();
+        PlayerAndMissile1.DoPlayer();
 
-        PlayerAndMissile0.DoPlayer(this);
-        PlayerAndMissile1.DoPlayer(this);
+        const bool missile0Bit = false;
+        const bool missile1Bit = false;
+        const bool ballBit = false;
+
+        ResolveVideoOutput(
+            player0: PlayerAndMissile0.PixelOn || missile0Bit,
+            player1: PlayerAndMissile1.PixelOn || missile1Bit,
+            playfield: playfieldBit,
+            ball: ballBit,
+            // _playfieldCanReflect is set at the "Center" horizontal-counter
+            // state and cleared at the start of each line, so it doubles as
+            // "are we past screen centre?" - exactly the left/right selector
+            // score mode needs.
+            pastScreenCentre: _playfieldCanReflect);
 
         if (HorizontalBlank || VerticalBlank)
         {
@@ -789,6 +798,101 @@ public sealed class TiaChip
             // forcing Col to 1 here, rather than 0, is what actually
             // transmits color burst - see _colorBurst's remarks.
             Col = _colorBurst ? (byte)1 : (byte)0;
+        }
+    }
+
+    /// <summary>
+    /// Picks the single winning object for the current colour clock and
+    /// writes <see cref="Lum"/>/<see cref="Col"/> once from its colour
+    /// registers. Replaces the former "playfield, then player 0, then
+    /// player 1 each overwrite the pixel in turn" scheme, which gave
+    /// player 1 priority over player 0 (backwards - player 0 must win) and
+    /// left nowhere to slot missiles, the ball, the priority bit or the
+    /// collision taps.
+    ///
+    /// <paramref name="player0"/>/<paramref name="player1"/> already fold in
+    /// the matching missile (a missile shares its player's colour and
+    /// priority slot). <paramref name="ball"/> stays separate from
+    /// <paramref name="playfield"/> because the two share a priority slot but
+    /// not a colour: the ball is always COLUPF, whereas a score-mode
+    /// playfield takes a player's colour.
+    ///
+    /// Priority order, per the Stella Programmer's Guide:
+    ///   normal            P0 -> P1 -> PF/BL -> BK
+    ///   CTRLPF D2 (PFP)   PF/BL -> P0 -> P1 -> BK
+    /// Score mode (CTRLPF D1) is suppressed while PFP is set. Otherwise a set
+    /// playfield bit is drawn in COLUP0 on the left half of the screen and
+    /// COLUP1 on the right - <paramref name="pastScreenCentre"/> is that
+    /// left/right selector.
+    /// </summary>
+    internal void ResolveVideoOutput(
+        bool player0, bool player1, bool playfield, bool ball, bool pastScreenCentre)
+    {
+        if (_playfieldPriority)
+        {
+            // PFP: the playfield/ball group is composited above the players,
+            // and score mode is disabled - so the playfield always uses its
+            // own colour here.
+            if (playfield || ball)
+            {
+                Lum = _playfieldLuminance;
+                Col = _playfieldColor;
+            }
+            else if (player0)
+            {
+                Lum = PlayerAndMissile0.Luminance;
+                Col = PlayerAndMissile0.Color;
+            }
+            else if (player1)
+            {
+                Lum = PlayerAndMissile1.Luminance;
+                Col = PlayerAndMissile1.Color;
+            }
+            else
+            {
+                Lum = _backgroundLuminance;
+                Col = _backgroundColor;
+            }
+
+            return;
+        }
+
+        if (player0)
+        {
+            Lum = PlayerAndMissile0.Luminance;
+            Col = PlayerAndMissile0.Color;
+        }
+        else if (player1)
+        {
+            Lum = PlayerAndMissile1.Luminance;
+            Col = PlayerAndMissile1.Color;
+        }
+        else if (playfield)
+        {
+            if (_playfieldScore)
+            {
+                // Score mode: tint the playfield bit with a player's colour -
+                // COLUP0 left of screen centre, COLUP1 right of it.
+                var player = pastScreenCentre ? PlayerAndMissile1 : PlayerAndMissile0;
+                Lum = player.Luminance;
+                Col = player.Color;
+            }
+            else
+            {
+                Lum = _playfieldLuminance;
+                Col = _playfieldColor;
+            }
+        }
+        else if (ball)
+        {
+            // The ball keeps COLUPF even in score mode.
+            Lum = _playfieldLuminance;
+            Col = _playfieldColor;
+        }
+        else
+        {
+            Lum = _backgroundLuminance;
+            Col = _backgroundColor;
         }
     }
 
