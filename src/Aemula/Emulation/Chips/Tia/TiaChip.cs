@@ -330,15 +330,77 @@ public sealed class TiaChip
                 // Read registers.
                 //console.log(`TIA read register. Address = ${toHexString(pins.address, 2)}`);
 
+                // Collision reads. Address is already masked to 6 bits by the
+                // system, and the canonical CX registers sit at 0x30-0x37;
+                // each returns one pair latch on D7 and (all but CXBLPF) a
+                // second on D6, driven out through Data67 (bit 0 -> D6,
+                // bit 1 -> D7). The system merges Data67 << 6 back onto the
+                // CPU bus and supplies D0-D5 from the bus itself.
+                //
+                // Only these eight addresses are driven here. Other reads
+                // (the 0x38-0x3D input ports, and true open-bus behaviour on
+                // everything else) are not modelled yet, so Data67 - a
+                // persistent property - is deliberately left untouched for
+                // them rather than being forced to a value.
                 switch (Address)
                 {
-                    // CXM0P - Read collision
-                    case 0x00:
+                    // CXM0P
+                    case 0x30:
+                        Data67 = PackData67(
+                            d7: Collisions.IsSet(CollisionLatches.M0P1),
+                            d6: Collisions.IsSet(CollisionLatches.M0P0));
                         break;
 
-                    // TODO
+                    // CXM1P
+                    case 0x31:
+                        Data67 = PackData67(
+                            d7: Collisions.IsSet(CollisionLatches.M1P0),
+                            d6: Collisions.IsSet(CollisionLatches.M1P1));
+                        break;
 
-                    // Ignore invalid addresses
+                    // CXP0FB
+                    case 0x32:
+                        Data67 = PackData67(
+                            d7: Collisions.IsSet(CollisionLatches.P0PF),
+                            d6: Collisions.IsSet(CollisionLatches.P0BL));
+                        break;
+
+                    // CXP1FB
+                    case 0x33:
+                        Data67 = PackData67(
+                            d7: Collisions.IsSet(CollisionLatches.P1PF),
+                            d6: Collisions.IsSet(CollisionLatches.P1BL));
+                        break;
+
+                    // CXM0FB
+                    case 0x34:
+                        Data67 = PackData67(
+                            d7: Collisions.IsSet(CollisionLatches.M0PF),
+                            d6: Collisions.IsSet(CollisionLatches.M0BL));
+                        break;
+
+                    // CXM1FB
+                    case 0x35:
+                        Data67 = PackData67(
+                            d7: Collisions.IsSet(CollisionLatches.M1PF),
+                            d6: Collisions.IsSet(CollisionLatches.M1BL));
+                        break;
+
+                    // CXBLPF - D6 is unused and always reads 0.
+                    case 0x36:
+                        Data67 = PackData67(
+                            d7: Collisions.IsSet(CollisionLatches.BLPF),
+                            d6: false);
+                        break;
+
+                    // CXPPMM
+                    case 0x37:
+                        Data67 = PackData67(
+                            d7: Collisions.IsSet(CollisionLatches.P0P1),
+                            d6: Collisions.IsSet(CollisionLatches.M0M1));
+                        break;
+
+                    // Not a register this stage drives - leave Data67 as-is.
                     default:
                         break;
                 }
@@ -675,6 +737,7 @@ public sealed class TiaChip
 
                     // CXCLR - Clear collision latches
                     case 0x2C:
+                        Collisions.Clear();
                         break;
 
                     // Ignore invalid addresses
@@ -754,6 +817,14 @@ public sealed class TiaChip
     /// nothing in the video path consumes them.
     /// </summary>
     internal ObjectPixels CurrentObjectPixels;
+
+    /// <summary>
+    /// The 15 sticky object-pair collision latches (CXM0P..CXPPMM). Fed one
+    /// colour clock at a time from <see cref="CurrentObjectPixels"/> while the
+    /// beam is in active display, read back through the 0x30-0x37 register
+    /// decode, and cleared by a CXCLR (0x2C) write.
+    /// </summary>
+    internal CollisionLatches Collisions;
 
     private byte _playfieldIndex;
 
@@ -904,6 +975,18 @@ public sealed class TiaChip
         CurrentObjectPixels.Playfield = playfieldBit;
         CurrentObjectPixels.Ball = Ball.PixelOn;
 
+        // Latch every object-pair overlap for this colour clock. Gated to the
+        // active display: the object serial graphics run through blanking, but
+        // TIA's BLANK signal suppresses their picture output there and the
+        // collision latches follow the same visible-region gating. (Stella
+        // gates collision updates on vertical blank only; also excluding
+        // horizontal blank costs nothing visible here, since anything an
+        // object draws inside HBLANK is off-screen regardless.)
+        if (!(HorizontalBlank || VerticalBlank))
+        {
+            Collisions.Accumulate(CurrentObjectPixels);
+        }
+
         ResolveVideoOutput(
             // A missile shares its player's colour and priority slot, so it
             // is OR'd into that player's bit for the resolver.
@@ -1035,6 +1118,15 @@ public sealed class TiaChip
             Col = _backgroundColor;
         }
     }
+
+    /// <summary>
+    /// Packs a collision register's two latch bits into a <see cref="Data67"/>
+    /// value: <paramref name="d6"/> drives data pin D6 (bit 0),
+    /// <paramref name="d7"/> drives D7 (bit 1), matching the CX register
+    /// layout.
+    /// </summary>
+    private static byte PackData67(bool d7, bool d6) =>
+        (byte)((d7 ? 0b10 : 0) | (d6 ? 0b01 : 0));
 
     public void CreateDebuggerWindows(List<DebuggerWindow> result)
     {
