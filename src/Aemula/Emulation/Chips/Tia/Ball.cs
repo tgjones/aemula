@@ -2,10 +2,11 @@ namespace Aemula.Emulation.Chips.Tia;
 
 /// <summary>
 /// The TIA ball object. It is a stripped-down missile: its own copy of the
-/// player LFSR counter and div-4 prescaler, an enable bit, a width and a
-/// HMOVE latch - but no NUSIZ, so no copies and a single start/reset decode
-/// point per line. The ball is simply "on" for <see cref="Width"/> colour
-/// clocks from that decode point, in COLUPF, sharing the playfield's priority
+/// player LFSR counter and div-4 prescaler, a vertical-delay enable pair, a
+/// width and a HMOVE latch - but no NUSIZ, so no copies and a single
+/// start/reset decode point per line. The ball is simply "on" for
+/// <see cref="Width"/> colour clocks from that decode point, in COLUPF,
+/// sharing the playfield's priority
 /// slot (order per CTRLPF D2).
 ///
 /// Modelled as its own small type rather than folded into
@@ -18,11 +19,17 @@ internal sealed class Ball
 {
     // Registers
 
-    /// <summary>
-    /// ENABL D1 - whether the ball graphic is enabled. VDELBL's delayed-enable
-    /// latch is not modelled here yet, so this is the displayed value.
-    /// </summary>
-    public bool Enabled;
+    // ENABL feeds two latches, mirroring the players' GRPx pair: "new" takes
+    // the value ENABL D1 writes, "old" is a deferred copy the GRP1 strobe
+    // clocks across (see LatchDelayedEnable) - NOT the ENABL write itself, and
+    // NOT GRP0. VDELBL (VerticalDelay) is a display-time mux: the drawing path
+    // reads "old" while it is set, "new" while it is clear.
+    private bool _enabledNew;
+    private bool _enabledOld;
+
+    /// <summary>VDELBL D0 - when set, the drawing path uses the "old" enable
+    /// latch instead of the freshly written "new" one.</summary>
+    public bool VerticalDelay;
 
     /// <summary>
     /// Ball graphic width in colour clocks (1 / 2 / 4 / 8), from CTRLPF
@@ -51,6 +58,17 @@ internal sealed class Ball
     /// always coloured from COLUPF.
     /// </summary>
     public bool PixelOn;
+
+    /// <summary>The enable bit the drawing path samples this colour clock:
+    /// the "old" latch under VDELBL, the "new" latch otherwise.</summary>
+    private bool ActiveEnabled => VerticalDelay ? _enabledOld : _enabledNew;
+
+    /// <summary>ENABL D1: write the ball's "new" enable latch.</summary>
+    public void WriteEnable(bool value) => _enabledNew = value;
+
+    /// <summary>Copy "new" into "old". Clocked by the GRP1 strobe, never by
+    /// ENABL itself - that one-write lag is the point of the delay latch.</summary>
+    public void LatchDelayedEnable() => _enabledOld = _enabledNew;
 
     /// <summary>
     /// Advances the ball's div-4 prescaler and LFSR counter - the same path
@@ -104,7 +122,7 @@ internal sealed class Ball
         if (_pixelsRemaining > 0)
         {
             _pixelsRemaining--;
-            _drawNext = Enabled;
+            _drawNext = ActiveEnabled;
         }
     }
 }

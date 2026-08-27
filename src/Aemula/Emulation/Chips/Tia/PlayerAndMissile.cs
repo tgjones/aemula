@@ -6,7 +6,21 @@ namespace Aemula.Emulation.Chips.Tia;
 internal sealed class PlayerAndMissile
 {
     // Registers
-    public byte Graphics;
+
+    // A GRPx write feeds two latches, not one: "new" takes the value the
+    // matching GRPx strobe writes, "old" is a deferred copy that the *other*
+    // player's GRPx strobe clocks across (see LatchDelayedGraphics). VDELPx
+    // (VerticalDelay) is a display-time mux - the drawing path reads "old"
+    // while it is set, "new" while it is clear. This is how a two-line-kernel
+    // sprite writes each player on alternate scanlines without tearing: the
+    // half that is not being written this line keeps showing its "old" copy.
+    private byte _graphicsNew;
+    private byte _graphicsOld;
+
+    /// <summary>VDELPx D0 - when set, the drawing path uses the "old"
+    /// graphics latch instead of the freshly written "new" one.</summary>
+    public bool VerticalDelay;
+
     public byte Color;
     public byte Luminance;
     public byte NumberSizePlayer;
@@ -71,6 +85,22 @@ internal sealed class PlayerAndMissile
     /// <see cref="TiaChip.Lum"/>/<see cref="TiaChip.Col"/> in turn.
     /// </summary>
     public bool PixelOn;
+
+    /// <summary>The graphics byte the drawing path samples this colour clock:
+    /// the "old" latch under VDELPx, the "new" latch otherwise.</summary>
+    private byte ActiveGraphics => VerticalDelay ? _graphicsOld : _graphicsNew;
+
+    /// <summary>This player's "new" graphics latch - for debug read-back only;
+    /// the drawing path goes through <see cref="ActiveGraphics"/>.</summary>
+    public byte GraphicsNew => _graphicsNew;
+
+    /// <summary>GRPx strobe: write this player's own "new" graphics latch.</summary>
+    public void WriteGraphics(byte value) => _graphicsNew = value;
+
+    /// <summary>Copy "new" into "old". Clocked by the *other* player's GRPx
+    /// strobe, never by this player's own - that one-write lag is the whole
+    /// point of the vertical-delay latch.</summary>
+    public void LatchDelayedGraphics() => _graphicsOld = _graphicsNew;
 
     public void UpdatePlayerDiv4()
     {
@@ -140,7 +170,7 @@ internal sealed class PlayerAndMissile
                 ? _scanCounter ^ 0b111
                 : _scanCounter;
 
-            _graphicsDelay = GetBit(Graphics, graphicsIndex);
+            _graphicsDelay = GetBit(ActiveGraphics, graphicsIndex);
 
             if (_scanCounter == 0b000)
             {

@@ -541,14 +541,22 @@ public sealed class TiaChip
                     case 0x1A:
                         break;
 
-                    // GRP0 - Graphics player 0
+                    // GRP0 - Graphics player 0. Writes P0's "new" graphics
+                    // latch, and clocks P1's "old" latch from P1's "new" - the
+                    // cross-player copy that makes VDELP1 lag by one write.
                     case 0x1B:
-                        PlayerAndMissile0.Graphics = (byte)(Data05 | Data67 << 6);
+                        PlayerAndMissile0.WriteGraphics((byte)(Data05 | Data67 << 6));
+                        PlayerAndMissile1.LatchDelayedGraphics();
                         break;
 
-                    // GRP1 - Graphics player 1
+                    // GRP1 - Graphics player 1. Writes P1's "new" graphics
+                    // latch, and clocks the "old" latches of both P0 and the
+                    // ball - the strobe every two-line kernel leans on to
+                    // advance its delayed objects.
                     case 0x1C:
-                        PlayerAndMissile1.Graphics = (byte)(Data05 | Data67 << 6);
+                        PlayerAndMissile1.WriteGraphics((byte)(Data05 | Data67 << 6));
+                        PlayerAndMissile0.LatchDelayedGraphics();
+                        Ball.LatchDelayedEnable();
                         break;
 
                     // ENAM0 - Graphics (enable) missile 0
@@ -561,11 +569,12 @@ public sealed class TiaChip
                         PlayerAndMissile1.MissileEnabled = GetBitAsBoolean(Data05, 1);
                         break;
 
-                    // ENABL - Graphics (enable) ball. D1 enables; the VDELBL
-                    // delayed-enable latch is not modelled yet, so D1 feeds
-                    // the displayed enable directly.
+                    // ENABL - Graphics (enable) ball. D1 writes the ball's
+                    // "new" enable latch. The copy across to "old" is done by
+                    // the GRP1 strobe, not here; VDELBL then selects which
+                    // latch the drawing path reads.
                     case 0x1F:
-                        Ball.Enabled = GetBitAsBoolean(Data05, 1);
+                        Ball.WriteEnable(GetBitAsBoolean(Data05, 1));
                         break;
 
                     // HMP0 - Horizontal motion player 0
@@ -613,16 +622,21 @@ public sealed class TiaChip
                             (Data67 >> 1 == 1 ? 0b0000 : 0b1000));
                         break;
 
-                    // VDELP0 - Vertical delay player 0
+                    // VDELP0 - Vertical delay player 0. D0 latches the mux that
+                    // makes the drawing path read P0's "old" graphics latch.
                     case 0x25:
+                        PlayerAndMissile0.VerticalDelay = GetBitAsBoolean(Data05, 0);
                         break;
 
-                    // VDELP1 - Vertical delay player 1
+                    // VDELP1 - Vertical delay player 1.
                     case 0x26:
+                        PlayerAndMissile1.VerticalDelay = GetBitAsBoolean(Data05, 0);
                         break;
 
-                    // VDELBL - Vertical delay ball
+                    // VDELBL - Vertical delay ball. D0 latches the mux that
+                    // makes the drawing path read the ball's "old" enable latch.
                     case 0x27:
+                        Ball.VerticalDelay = GetBitAsBoolean(Data05, 0);
                         break;
 
                     // RESMP0 - Reset missile 0 to player 0

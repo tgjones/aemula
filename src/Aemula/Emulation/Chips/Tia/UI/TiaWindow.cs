@@ -155,7 +155,7 @@ internal sealed class TiaWindow : DebuggerWindow
     {
         ImGuiUtility.Label("Graphics");
 
-        var graphics = player.Graphics;
+        var graphics = player.GraphicsNew;
 
         Span<uint> graphicsColors = stackalloc uint[8];
         Span<bool> graphicsClicked = stackalloc bool[8];
@@ -178,7 +178,7 @@ internal sealed class TiaWindow : DebuggerWindow
             if (graphicsClicked[i])
             {
                 graphics ^= (byte)(0x80 >> i);
-                player.Graphics = graphics;
+                player.WriteGraphics(graphics);
             }
         }
     }

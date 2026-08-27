@@ -157,7 +157,8 @@ public class TiaCompositingTests
         // The new PlayerAndMissile.DoPlayer() (no TiaChip argument) reports
         // its pixel via PixelOn instead of writing the video output. With no
         // graphics scan armed, the pixel stays off however full GRPx is.
-        var player = new PlayerAndMissile { Graphics = 0xFF };
+        var player = new PlayerAndMissile();
+        player.WriteGraphics(0xFF);
 
         player.DoPlayer();
 
