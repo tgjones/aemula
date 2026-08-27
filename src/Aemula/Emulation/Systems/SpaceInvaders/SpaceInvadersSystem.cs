@@ -77,7 +77,12 @@ public sealed partial class SpaceInvadersSystem : EmulatedSystem, IHasTelevision
     {
         void LoadRom(string fileName, ushort startAddress)
         {
-            var fullPath = Path.Combine("Emulation", "Systems", "SpaceInvaders", "Roms", fileName);
+            // Resolved against the executable's own directory, not the process's
+            // current working directory - matches AppleIISystem.LoadProgram, and
+            // means this doesn't silently break under a launcher (e.g. `dotnet run`)
+            // that sets the working directory to somewhere other than the build
+            // output.
+            var fullPath = Path.Combine(AppContext.BaseDirectory, "Emulation", "Systems", "SpaceInvaders", "Roms", fileName);
             using var fileStream = File.OpenRead(fullPath);
             fileStream.ReadExactly(_rom, startAddress, (int)fileStream.Length);
         }
