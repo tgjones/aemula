@@ -732,8 +732,30 @@ public sealed class TiaChip
 
     private bool _playerCounterEnable;
 
+    /// <summary>
+    /// The six raw per-object presence bits for the colour clock most
+    /// recently rendered by <see cref="DoVideo"/>, captured before the
+    /// priority resolver runs. Collision detection reads these (a collision
+    /// is registered for any overlapping pair, whatever the resolver drew);
+    /// nothing in the video path consumes them.
+    /// </summary>
+    internal ObjectPixels CurrentObjectPixels;
+
     private byte _playfieldIndex;
 
+    /// <summary>
+    /// Set true at the "Center" horizontal-counter state and cleared at the
+    /// start of every line, so it reads as "the beam has passed the centre of
+    /// the visible line". "Center" is where the playfield restarts for its
+    /// mirrored right half (<see cref="_playfieldIndex"/> is reset to 0 there
+    /// too) - i.e. exactly the playfield's left/right half boundary, PF pixel
+    /// 80 of the 160 visible. Score mode flips its playfield tint from COLUP0
+    /// to COLUP1 at that same boundary, so this one position flag feeds both
+    /// (passed to <see cref="ResolveVideoOutput"/> as its left/right
+    /// selector). It is purely a horizontal-position signal: CTRLPF D0
+    /// (reflect) is the separate <see cref="_playfieldReflect"/> field and
+    /// does not move this split.
+    /// </summary>
     private bool _playfieldCanReflect;
 
     private bool _playfieldReflect;
@@ -858,15 +880,28 @@ public sealed class TiaChip
         PlayerAndMissile1.DoMissile();
         Ball.DoBall();
 
+        // Publish the unresolved presence bits before the resolver runs, so
+        // collision detection can see every overlap rather than just the
+        // winning pixel.
+        CurrentObjectPixels.Player0 = PlayerAndMissile0.PixelOn;
+        CurrentObjectPixels.Missile0 = PlayerAndMissile0.MissilePixelOn;
+        CurrentObjectPixels.Player1 = PlayerAndMissile1.PixelOn;
+        CurrentObjectPixels.Missile1 = PlayerAndMissile1.MissilePixelOn;
+        CurrentObjectPixels.Playfield = playfieldBit;
+        CurrentObjectPixels.Ball = Ball.PixelOn;
+
         ResolveVideoOutput(
-            player0: PlayerAndMissile0.PixelOn || PlayerAndMissile0.MissilePixelOn,
-            player1: PlayerAndMissile1.PixelOn || PlayerAndMissile1.MissilePixelOn,
-            playfield: playfieldBit,
-            ball: Ball.PixelOn,
+            // A missile shares its player's colour and priority slot, so it
+            // is OR'd into that player's bit for the resolver.
+            player0: CurrentObjectPixels.Player0 || CurrentObjectPixels.Missile0,
+            player1: CurrentObjectPixels.Player1 || CurrentObjectPixels.Missile1,
+            playfield: CurrentObjectPixels.Playfield,
+            ball: CurrentObjectPixels.Ball,
             // _playfieldCanReflect is set at the "Center" horizontal-counter
-            // state and cleared at the start of each line, so it doubles as
-            // "are we past screen centre?" - exactly the left/right selector
-            // score mode needs.
+            // state and cleared at line start, so it also reads as "past
+            // screen centre" - the left/right selector score mode needs. See
+            // that field's remarks for why the split lands on the playfield
+            // half boundary.
             pastScreenCentre: _playfieldCanReflect);
 
         if (HorizontalBlank || VerticalBlank)
@@ -897,13 +932,19 @@ public sealed class TiaChip
     /// not a colour: the ball is always COLUPF, whereas a score-mode
     /// playfield takes a player's colour.
     ///
-    /// Priority order, per the Stella Programmer's Guide:
-    ///   normal            P0 -> P1 -> PF/BL -> BK
-    ///   CTRLPF D2 (PFP)   PF/BL -> P0 -> P1 -> BK
-    /// Score mode (CTRLPF D1) is suppressed while PFP is set. Otherwise a set
-    /// playfield bit is drawn in COLUP0 on the left half of the screen and
-    /// COLUP1 on the right - <paramref name="pastScreenCentre"/> is that
-    /// left/right selector.
+    /// Priority order, per the Stella Programmer's Guide and Stella's own
+    /// TIA renderPixel:
+    ///   normal            P0/M0 -> P1/M1 -> PF -> BL -> BK
+    ///   CTRLPF D2 (PFP)   PF -> BL -> P0/M0 -> P1/M1 -> BK
+    ///   score (CTRLPF D1) P0/M0 -> PF -> P1/M1 -> BL -> BK
+    /// Within the PF/BL group the playfield is always tested first, so on a
+    /// playfield/ball overlap the playfield's colour wins - the two only
+    /// differ in score mode, where PF takes a player's colour and BL keeps
+    /// COLUPF. Score mode also lifts the playfield above player 1: borrowing
+    /// a player's colour, it borrows that player's priority slot too (COLUP0
+    /// left of centre, COLUP1 right of it). PFP suppresses score mode
+    /// entirely. <paramref name="pastScreenCentre"/> is the left/right
+    /// selector for the score-mode tint.
     /// </summary>
     internal void ResolveVideoOutput(
         bool player0, bool player1, bool playfield, bool ball, bool pastScreenCentre)
@@ -911,8 +952,8 @@ public sealed class TiaChip
         if (_playfieldPriority)
         {
             // PFP: the playfield/ball group is composited above the players,
-            // and score mode is disabled - so the playfield always uses its
-            // own colour here.
+            // and score mode is disabled - so both draw in COLUPF and their
+            // intra-group order (PF ahead of BL) makes no visible difference.
             if (playfield || ball)
             {
                 Lum = _playfieldLuminance;
@@ -942,6 +983,18 @@ public sealed class TiaChip
             Lum = PlayerAndMissile0.Luminance;
             Col = PlayerAndMissile0.Color;
         }
+        else if (_playfieldScore && playfield)
+        {
+            // Score mode: the playfield bit takes a player's colour - COLUP0
+            // left of screen centre, COLUP1 right of it - and with that
+            // colour it takes that player's priority slot, so it outranks
+            // player 1 / missile 1 here (only player 0 / missile 0, tested
+            // above, still cover it). The ball is unaffected: it stays COLUPF
+            // and stays in the low PF/BL group below.
+            var player = pastScreenCentre ? PlayerAndMissile1 : PlayerAndMissile0;
+            Lum = player.Luminance;
+            Col = player.Color;
+        }
         else if (player1)
         {
             Lum = PlayerAndMissile1.Luminance;
@@ -949,23 +1002,16 @@ public sealed class TiaChip
         }
         else if (playfield)
         {
-            if (_playfieldScore)
-            {
-                // Score mode: tint the playfield bit with a player's colour -
-                // COLUP0 left of screen centre, COLUP1 right of it.
-                var player = pastScreenCentre ? PlayerAndMissile1 : PlayerAndMissile0;
-                Lum = player.Luminance;
-                Col = player.Color;
-            }
-            else
-            {
-                Lum = _playfieldLuminance;
-                Col = _playfieldColor;
-            }
+            // Outside score mode the playfield uses its own COLUPF and sits
+            // just above the ball, below both players.
+            Lum = _playfieldLuminance;
+            Col = _playfieldColor;
         }
         else if (ball)
         {
-            // The ball keeps COLUPF even in score mode.
+            // The ball is tested after the playfield, so a coincident PF bit
+            // wins the colour; the ball keeps COLUPF in every mode, score
+            // mode included.
             Lum = _playfieldLuminance;
             Col = _playfieldColor;
         }
