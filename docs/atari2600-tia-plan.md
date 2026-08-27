@@ -10,10 +10,19 @@ ladders and hazards render correctly**, and a small suite of TIA unit tests
 plus a Pitfall frame-comparison test pass.
 
 This plan does **not** touch the composite-video / `Television` path
-(`Atari2600System.CompositeVideo.cs`) — that landed already and is correct.
-It also keeps `TiaChip.Col` as a 4-bit hue index (see that field's own doc
-comment for why). Everything here is about what TIA puts on `Lum`/`Col`
-*before* the composite stage samples them.
+(`Atari2600System.CompositeVideo.cs`). It keeps `TiaChip.Col` as a 4-bit hue
+index (see that field's own doc comment for why). Everything here is about
+what TIA puts on `Lum`/`Col` *before* the composite stage samples them.
+
+> **Deferred, separate task (not a phase here):** the composite luma model
+> maps `lum` linearly as `BlankingLevel + (WhiteLevel - BlankingLevel) *
+> (lum / 7f)`, so *every* `lum == 0` colour collapses to black level
+> regardless of hue. Real 2600 luma-0 rows are black only for hue 0
+> (cf. `Palette.NtscPalette`, where `$10` = `0x444400`). This is why
+> Pitfall's tree trunks (reflected playfield in `COLUPF = $10`) render
+> near-black instead of dark olive-brown — found via register trace while
+> doing Phase 3. It is a `CompositeVideo.cs` luma-mapping fix, tracked
+> outside this plan; the TIA-object phases below do not address it.
 
 ## Current state
 
