@@ -600,24 +600,17 @@ public class Atari2600SystemTelevisionTests
     }
 
     // The grayscale ramp: hold each luminance code 0..7 (hue 0, no chroma)
-    // full-screen and check the decoded Luma against the exact curve the
-    // calibration produces. The emitted curve maps Palette.NtscPalette row
-    // 0's shape onto the byte scale with palette white (code 7, Y 236)
-    // landing on reference white 224; NtscYiqDecoder then maps reference
-    // white back to full-scale 255. Net, the decoded ramp is palette row 0
-    // scaled by 255/236 - a uniform ~8% above the palette, code 7 clamped
-    // at 255 - which is the intended headroom from choosing reference white
-    // 224 over 255. The tight per-code check pins that relationship; the
+    // full-screen and check the decoded Luma against Palette.NtscPalette
+    // row 0 directly. The emitted curve is that row run backwards through
+    // NtscYiqDecoder's normalization (byte = blanking + Y * (WhiteLevel -
+    // blanking) / 255), so a settled grey screen decodes straight back to
+    // the palette Y - code 7 included, which lands near 236 (~92 IRE), not
+    // full white, because real 2600 grey doesn't reach reference white. The
     // monotonic and compressive checks pin the DAC shape the old linear
     // lum/7f curve lacked.
     [Test]
     public async Task GrayscaleRampDecodesToTheCompressivePaletteCurve()
     {
-        // Reference white 224 decodes to full-scale 255, so palette white
-        // (code 7's Y) is the divisor that rescales the whole palette ramp
-        // onto the decoder's output range.
-        var paletteWhiteY = PaletteGreyY(7);
-
         var lumas = new double[8];
 
         for (var lum = 0; lum < 8; lum++)
@@ -647,8 +640,7 @@ public class Atari2600SystemTelevisionTests
 
         for (var lum = 0; lum < 8; lum++)
         {
-            var expected = Math.Min(255.0, PaletteGreyY(lum) * 255.0 / paletteWhiteY);
-            await Assert.That(Math.Abs(lumas[lum] - expected)).IsLessThan(6.0);
+            await Assert.That(Math.Abs(lumas[lum] - PaletteGreyY(lum))).IsLessThan(4.0);
         }
 
         // Compressive: each decoded step is no larger than the one before it

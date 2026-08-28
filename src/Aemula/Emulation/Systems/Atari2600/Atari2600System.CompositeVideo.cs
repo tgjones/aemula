@@ -67,27 +67,29 @@ public sealed partial class Atari2600System
     private static readonly float[] GreyDacLevels =
         { 0f, 64f, 108f, 144f, 176f, 200f, 220f, 236f };
 
-    // The one free scalar in the luma model - it stands in for TIA's
-    // LUM/COLOR pin drive voltage (Vdrive), the part of the network that
-    // genuinely isn't well documented. Pinned at a single calibration point,
-    // not fitted per level: grey DAC full scale (code 7) maps to reference
-    // white. The offset is BlankingLevel, so code 0 sits exactly on blanking;
-    // everything between follows GreyDacLevels' fixed shape.
-    private static readonly float LumaDacGain =
-        (WhiteLevel - BlankingLevel) / GreyDacLevels[7];
+    // GreyDacLevels are luma-Y values on NtscYiqDecoder's own 0..255 output
+    // scale, and the decoder recovers Y as (byte - BlankingLevel) * 255 /
+    // (WhiteLevel - BlankingLevel). Emitting a level is just that map run
+    // backwards - byte = BlankingLevel + Y * (WhiteLevel - BlankingLevel) /
+    // 255 - so a settled grey screen decodes straight back to its palette Y,
+    // with no free scalar to calibrate. lum 7 grey then lands near byte 212,
+    // ~92 IRE: real 2600 grey genuinely doesn't reach 100 IRE reference
+    // white. The palette carries that - its achromatic ramp stops at 236
+    // while its coloured rows reach ~252, i.e. luma+chroma swings above the
+    // grey ceiling but grey alone doesn't - and keeping it is the same
+    // choice AppleIISystem.CompositeVideo.cs makes emitting its measured-hot
+    // white instead of forcing it onto reference white.
+    private static readonly float LumaYToByteScale =
+        (WhiteLevel - BlankingLevel) / 255f;
 
-    // The eight active-video luma levels on the shared byte scale - the
-    // affine map above applied to GreyDacLevels once at type load, so there
-    // is no per-sample network solve. Emitted bytes are roughly 64, 107,
-    // 137, 162, 183, 200, 213, 224. NtscYiqDecoder maps reference white
-    // (224) back to full-scale 255, so a decoded grey ramp comes out as
-    // palette row 0 scaled by 255/236 - a uniform ~8% above the palette,
-    // with code 7 landing exactly on 255. That headroom is the deliberate
-    // point of putting reference white at 224 rather than 255: bright
-    // saturated hues can then swing past 100 IRE once chroma rides on luma
-    // without the decoder's comb filter clipping them flat. The compressive
-    // DAC shape - each step smaller than the last toward white - is what the
-    // old lum/7f line got wrong at every code but 0 and 7.
+    // The eight active-video luma levels on the shared byte scale - the map
+    // above applied to GreyDacLevels once at type load, so there is no
+    // per-sample network solve. Emitted bytes are roughly 64, 104, 132,
+    // 154, 174, 189, 202, 212, decoding straight back to palette row 0
+    // (0, 64, 108, 144, 176, 200, 220, 236). The compressive DAC shape -
+    // each step smaller than the last toward white - is what the old lum/7f
+    // line got wrong at every code but 0. Grey tops out well under byte 255,
+    // leaving headroom for chroma to ride above it (see ChromaAmplitude).
     private static readonly float[] LumaLevels = BuildLumaLevels();
 
     private static float[] BuildLumaLevels()
@@ -95,7 +97,7 @@ public sealed partial class Atari2600System
         var levels = new float[8];
         for (var i = 0; i < levels.Length; i++)
         {
-            levels[i] = BlankingLevel + GreyDacLevels[i] * LumaDacGain;
+            levels[i] = BlankingLevel + GreyDacLevels[i] * LumaYToByteScale;
         }
         return levels;
     }
@@ -135,7 +137,7 @@ public sealed partial class Atari2600System
     // BlankingLevel, i.e. below their midpoint 32). Chroma rides its lowest
     // pedestal during color burst, where that pedestal is BlankingLevel (64)
     // - the coloured-black floor lifts active-video coloured pedestals to
-    // ~107, so burst is the binding case - and the sine's one isolated low
+    // ~104, so burst is the binding case - and the sine's one isolated low
     // sample per cycle reaches BlankingLevel - amplitude. 0.40625 *
     // (BlankingLevel - SyncLevel) = 26 holds that at 38, the same ~6-byte
     // clearance over the midpoint the previous hand-set amplitude (24 -> 40)
