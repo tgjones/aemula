@@ -114,6 +114,26 @@ public sealed partial class AppleIISystem : EmulatedSystem, IHasTelevision
             characterRomStream.ReadExactly(_characterRom);
         }
 
+        // An optional override image for the $D000-$FFFF ROM space: a full 12K
+        // set, or a smaller diagnostic/monitor ROM such as the Apple II Dead
+        // Test (a 2K F8-socket image). The six ROM sockets fill this space from
+        // the top down - F8 ($F800), F0 ($F000), E8, E0, D8, D0 - so an image
+        // shorter than 12K is mapped at the high end, with the bundled
+        // Applesoft image left showing through the lower sockets, exactly as a
+        // partly-populated socket row behaves on real hardware.
+        if (!string.IsNullOrEmpty(filePath))
+        {
+            var overrideRom = File.ReadAllBytes(filePath);
+            if (overrideRom.Length == 0 || overrideRom.Length > _rom.Length)
+            {
+                throw new InvalidDataException(
+                    $"Apple II ROM image '{filePath}' is {overrideRom.Length} bytes; " +
+                    $"expected 1-{_rom.Length} bytes to map into $D000-$FFFF.");
+            }
+
+            Array.Copy(overrideRom, 0, _rom, _rom.Length - overrideRom.Length, overrideRom.Length);
+        }
+
         Reset();
 
         RaiseProgramLoaded();
