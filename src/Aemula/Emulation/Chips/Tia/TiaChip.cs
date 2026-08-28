@@ -294,8 +294,15 @@ public sealed class TiaChip
                 Ball.UpdateDiv4();
             }
 
-            DoVideo();
-
+            // DoVideo() is deliberately NOT called here. The pixel for this
+            // colour clock is rendered by RenderColorClock(), which the system
+            // calls *after* the 6507's bus write for this same tick has been
+            // applied (TiaChip.Phi2). Rendering here instead would sample the
+            // graphics/colour/playfield latches one colour clock before a
+            // same-cycle TIA store lands - the exact off-by-one that clipped
+            // the left edge of a digit in Pitfall's streaming score kernel,
+            // whose GRPx rewrites are timed to within ~1 colour clock of the
+            // player copy they feed.
             Blk = VerticalBlank || HorizontalBlank;
             Sync = VerticalSync || HorizontalSync;
 
@@ -1102,6 +1109,17 @@ public sealed class TiaChip
 
         Aud0 = _audio0.Output;
         Aud1 = _audio1.Output;
+    }
+
+    /// <summary>
+    /// Renders the pixel for the colour clock that just advanced in the
+    /// <see cref="Osc"/> step. Split out from the Osc step so the system can
+    /// apply the 6507's same-tick TIA bus write (<see cref="Phi2"/>) first -
+    /// see the comment where <see cref="DoVideo"/> used to be called.
+    /// </summary>
+    internal void RenderColorClock()
+    {
+        DoVideo();
     }
 
     private void DoVideo()

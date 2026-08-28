@@ -42,6 +42,11 @@ public class TiaNusizScalingTests
     {
         tia.Osc = false;
         tia.Osc = true;
+
+        // The system renders each colour clock after applying that tick's
+        // 6507 bus write; mirror that here so a Write() before this Tick() is
+        // visible on the pixel this Tick() produces.
+        tia.RenderColorClock();
     }
 
     // Advance to the first visible (non-blank) colour clock of the next line.

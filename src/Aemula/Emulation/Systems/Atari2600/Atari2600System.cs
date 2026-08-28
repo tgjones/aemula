@@ -99,14 +99,22 @@ public sealed partial class Atari2600System : EmulatedSystem, IHasTelevision
         _tia.Osc = false;
         _tia.Osc = true;
 
-        TickCompositeVideo();
-
         // Plain getter->setter propagation of TIA's Phi0 output into the
         // 6507's Phi0 input, same pattern as the _cpu.Rdy = _tia.Rdy line
         // below.
         _cpu.Phi0 = _tia.Phi0;
 
         DoAddressDecode();
+
+        // Render this colour clock's pixel only now - after DoAddressDecode
+        // has driven any 6507 write for this tick into TIA (TiaChip.Phi2). A
+        // store to a graphics/colour/playfield register must be visible on
+        // the colour clock it completes on, not the next one; rendering
+        // before this point clipped the leading edge of digits in Pitfall's
+        // race-the-beam score kernel.
+        _tia.RenderColorClock();
+
+        TickCompositeVideo();
 
         // TIA can pause CPU.
         _cpu.Rdy = _tia.Rdy;

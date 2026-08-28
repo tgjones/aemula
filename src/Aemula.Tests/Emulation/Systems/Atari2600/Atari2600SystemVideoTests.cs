@@ -44,7 +44,7 @@ public class Atari2600SystemVideoTests
 
     // FNV-1a 64-bit of the captured raster byte stream (Lum, Col, Blk-as-0/1
     // per colour clock). Regenerate as described in the class remarks.
-    private const ulong ExpectedRasterHash = 0x7E5E878274FC3E99UL;
+    private const ulong ExpectedRasterHash = 0x1AF0837363A824A9UL;
 
     private const ulong Fnv1a64OffsetBasis = 14695981039346656037UL;
     private const ulong Fnv1a64Prime = 1099511628211UL;

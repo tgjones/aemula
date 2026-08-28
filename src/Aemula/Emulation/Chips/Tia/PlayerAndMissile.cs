@@ -48,8 +48,23 @@ internal sealed class PlayerAndMissile
     /// </summary>
     public byte MissileWidth => (byte)(1 << ((NumberSizeMissile >> 1) & 0b11));
 
+    // Colour clocks between a copy-start decode on the position counter and
+    // the copy's first drawn pixel. The position counter runs at CLK/4 and its
+    // decode fires on a 4-colour-clock boundary, but the graphics scan does
+    // not begin on that same clock - real TIA walks an internal start counter
+    // for a few colour clocks first (Stella models this as Player/Missile
+    // renderCounterOffset, a negative render-counter preroll). Without it the
+    // scan starts too early relative to a graphics register written just ahead
+    // of the copy: Pitfall's streaming 6-digit score kernel leaves ~1 colour
+    // clock of slack on its last digit, and a too-early scan clipped that
+    // digit's leading column. 2 is the smallest preroll that renders that
+    // kernel's tightest digit whole against this codebase's existing
+    // RESx/HMOVE position calibration.
+    private const int GraphicsStartDelay = 2;
+
     // State
     public byte PlayerClockDiv4;
+    private int _pendingStart;
     private PolynomialCounter _counter;
     public bool Reset;
     private bool _draw;
@@ -82,7 +97,7 @@ internal sealed class PlayerAndMissile
     public byte MissileClockDiv4;
     private PolynomialCounter _missileCounter;
     public bool MissileReset;
-    private bool _missileStart;
+    private int _missilePendingStart;
     private byte _missilePixelsRemaining;
     private bool _missileDrawNext;
 
@@ -148,16 +163,12 @@ internal sealed class PlayerAndMissile
             case 0b111000 when NumberSizePlayer == 0b001 || NumberSizePlayer == 0b011:
             case 0b101111 when NumberSizePlayer == 0b011 || NumberSizePlayer == 0b010 || NumberSizePlayer == 0b110:
             case 0b111001 when NumberSizePlayer == 0b100 || NumberSizePlayer == 0b110:
-                _draw = true;
-                _scanCounter = 0b111;
-                _scanCounterDivider = 0;
+                _pendingStart = GraphicsStartDelay;
                 break;
 
             case 0b101101: // RESET
                 Reset = true;
-                _draw = true;
-                _scanCounter = 0b111;
-                _scanCounterDivider = 0;
+                _pendingStart = GraphicsStartDelay;
                 break;
         }
     }
@@ -171,6 +182,17 @@ internal sealed class PlayerAndMissile
     /// </summary>
     public void DoPlayer()
     {
+        // Preroll between the copy-start decode and the graphics scan actually
+        // beginning - see GraphicsStartDelay. A GRPx write that lands during
+        // these clocks (Pitfall's score kernel writes one just ahead of each
+        // copy) is therefore in place before the scan reads bit 7.
+        if (_pendingStart > 0 && --_pendingStart == 0)
+        {
+            _draw = true;
+            _scanCounter = 0b111;
+            _scanCounterDivider = 0;
+        }
+
         // The bit sampled on the previous colour clock is the one displayed
         // now - the deliberate one-clock delay (see the method summary).
         PixelOn = _graphicsDelay == 1;
@@ -266,13 +288,13 @@ internal sealed class PlayerAndMissile
             case 0b111000 when NumberSizePlayer == 0b001 || NumberSizePlayer == 0b011:
             case 0b101111 when NumberSizePlayer == 0b011 || NumberSizePlayer == 0b010 || NumberSizePlayer == 0b110:
             case 0b111001 when NumberSizePlayer == 0b100 || NumberSizePlayer == 0b110:
-                _missileStart = true;
+                _missilePendingStart = GraphicsStartDelay;
                 break;
 
             case 0b101101: // Main copy - also self-resets the counter, exactly
                            // like the player, so copies repeat at a fixed period.
                 MissileReset = true;
-                _missileStart = true;
+                _missilePendingStart = GraphicsStartDelay;
                 break;
         }
     }
@@ -288,9 +310,8 @@ internal sealed class PlayerAndMissile
         MissilePixelOn = _missileDrawNext;
         _missileDrawNext = false;
 
-        if (_missileStart)
+        if (_missilePendingStart > 0 && --_missilePendingStart == 0)
         {
-            _missileStart = false;
             _missilePixelsRemaining = MissileWidth;
         }
 
