@@ -28,19 +28,20 @@ public class Atari2600SystemTelevisionTests
     // Three COLUBK values (hue<<4 | luminance<<1 - real TIA's COLUBK byte
     // layout, confirmed against TiaChip's own COLUBK write handling) with
     // hues spaced 120 degrees apart around TIA's 15-phase color wheel (hue
-    // codes 5, 10, 15 -> (hue-1)*24 degrees = 96, 216, 336) and a bright,
-    // consistent luminance. Chosen empirically, not just by even phase
-    // spacing: measured decoded RGB for every one of the 15 hues at this
-    // luminance (holding each alone, in isolation, long enough to lock),
-    // several other evenly-spaced triples (e.g. hues 2/7/12) decode to a
-    // pair that lands under this test's 60-unit RGB distance threshold
+    // codes 5, 10, 15) at a mid luminance. Chosen empirically, not just by
+    // even phase spacing: measured decoded RGB for every one of the 15 hues
+    // at this luminance (holding each alone, in isolation, long enough to
+    // lock), several other evenly-spaced triples (e.g. hues 2/7/12) decode to
+    // a pair that lands under this test's 60-unit RGB distance threshold
     // despite being 120 degrees apart in phase, since the YIQ->RGB matrix
-    // doesn't preserve phase separation as RGB distance uniformly around
-    // the circle - this triple was checked to clear it with comfortable
-    // margin (66-74) in every pairing.
-    private const byte ColorABackground = 0x5C; // hue 5,  luma 6
-    private const byte ColorBBackground = 0xAC; // hue 10, luma 6
-    private const byte ColorCBackground = 0xFC; // hue 15, luma 6
+    // doesn't preserve phase separation as RGB distance uniformly around the
+    // circle - this triple was checked to clear it with comfortable margin
+    // (~76 in every pairing). Luma 5 rather than 6: the palette-derived luma
+    // curve puts code 6 close enough to reference white that all fifteen hues
+    // decode within ~68 of each other there, too tight for the threshold.
+    private const byte ColorABackground = 0x5A; // hue 5,  luma 5
+    private const byte ColorBBackground = 0xAA; // hue 10, luma 5
+    private const byte ColorCBackground = 0xFA; // hue 15, luma 5
 
     // Cartridge code starts right at the bottom of the cartridge-selected
     // address window - see BuildColorBarCartridge.
@@ -280,6 +281,115 @@ public class Atari2600SystemTelevisionTests
         return rom;
     }
 
+    // Two COLUBK bands alternating down the screen (A, B, A, B - four
+    // fixed-cycle holds, together ~1.3 frames, so every visible row lands
+    // in one band or the other and at least one full band of each colour is
+    // captured). Built from the same EmitColorBand busy-wait
+    // BuildColorBarCartridge uses; the point of the pair is a scene whose
+    // brightest area is only band A, to check band B decodes identically
+    // whether or not A is on screen with it.
+    private static byte[] BuildTwoBandCartridge(byte colubkA, byte colubkB)
+    {
+        var code = new List<byte>();
+
+        EmitColorBand(code, colubkA);
+        EmitColorBand(code, colubkB);
+        EmitColorBand(code, colubkA);
+        EmitColorBand(code, colubkB);
+
+        code.Add(0x4C);
+        code.Add((byte)(CodeStart & 0xFF));
+        code.Add((byte)(CodeStart >> 8));
+
+        var rom = new byte[4096];
+        code.CopyTo(rom);
+
+        rom[0xFFC] = (byte)(CodeStart & 0xFF);
+        rom[0xFFD] = (byte)(CodeStart >> 8);
+
+        return rom;
+    }
+
+    // Palette.NtscPalette row 0 is achromatic, so each entry's low byte is
+    // exactly that luminance code's decoded Y (0, 64, 108, 144, 176, 200,
+    // 220, 236 for codes 0..7) - the reference the derived luma curve is
+    // shaped from.
+    private static double PaletteGreyY(int lum) => Palette.NtscPalette[lum] & 0xFF;
+
+    // The chroma-vector magnitude of one palette entry, taken the same way
+    // PaletteHueAngleDegrees takes its angle (standard U/V: 0.492*(b-y),
+    // 0.877*(r-y)).
+    private static double PaletteChromaMagnitude(int hue, int lum)
+    {
+        var rgb = Palette.NtscPalette[hue * 8 + lum];
+        double r = (rgb >> 16) & 0xFF, g = (rgb >> 8) & 0xFF, b = rgb & 0xFF;
+
+        var y = 0.299 * r + 0.587 * g + 0.114 * b;
+        var u = 0.492 * (b - y);
+        var v = 0.877 * (r - y);
+
+        return Math.Sqrt(u * u + v * v);
+    }
+
+    // Mean decoded Luma over active-video samples in a horizontal strip
+    // through the middle of the picture - the luma counterpart of
+    // AverageChroma, used where the whole frame is one flat colour.
+    private static double AverageLuma(SampleBuffer buffer)
+    {
+        double sum = 0;
+        var count = 0;
+
+        for (var row = (int)(buffer.Height * 0.4); row < (int)(buffer.Height * 0.6); row++)
+        {
+            for (var column = 0; column < buffer.Width; column++)
+            {
+                var sample = buffer.Data[row * buffer.Width + column];
+                if (sample.Region != RasterRegion.ActiveVideo)
+                {
+                    continue;
+                }
+
+                sum += sample.Luma;
+                count++;
+            }
+        }
+
+        return count == 0 ? 0 : sum / count;
+    }
+
+    // Per-picture-row mean decoded Luma (rows that are mostly active video),
+    // top to bottom - lets a test pick out one band of a multi-band frame.
+    private static List<double> PictureRowLumas(SampleBuffer buffer)
+    {
+        var rows = new List<double>();
+
+        for (var row = 0; row < buffer.Height; row++)
+        {
+            double sum = 0;
+            var count = 0;
+
+            var rowOffset = row * buffer.Width;
+            for (var column = 0; column < buffer.Width; column++)
+            {
+                var sample = buffer.Data[rowOffset + column];
+                if (sample.Region != RasterRegion.ActiveVideo)
+                {
+                    continue;
+                }
+
+                sum += sample.Luma;
+                count++;
+            }
+
+            if (count >= buffer.Width * 0.5f)
+            {
+                rows.Add(sum / count);
+            }
+        }
+
+        return rows;
+    }
+
     // Where a chroma vector sits on the color wheel, in the standard NTSC
     // (U, V) plane a vectorscope displays - degrees counterclockwise from
     // +U, so burst is at 180, yellow at ~167, red at ~103.
@@ -463,5 +573,197 @@ public class Atari2600SystemTelevisionTests
         {
             File.Delete(path);
         }
+    }
+
+    // The grayscale ramp: hold each luminance code 0..7 (hue 0, no chroma)
+    // full-screen and check the decoded Luma climbs monotonically, compresses
+    // toward white, and lands near Palette.NtscPalette row 0's Y values.
+    // Tolerance is wide on purpose - the emitted curve pins code 7 to
+    // reference white 224 as the shared byte scale requires, but
+    // NtscSyncSeparator settles its black estimate above nominal blanking
+    // (the same offset the SMPTE asset shows), which shrinks the decode gain
+    // so the whole ramp reads progressively low toward white (~22 under the
+    // palette at code 7). What the test actually guards is the compressive
+    // *shape* and the low/mid codes landing near 64 / 108 / 144, which the
+    // old linear lum/7f curve got wrong at every step.
+    [Test]
+    public async Task GrayscaleRampDecodesToTheCompressivePaletteCurve()
+    {
+        const double toleranceY = 28.0;
+
+        var lumas = new double[8];
+
+        for (var lum = 0; lum < 8; lum++)
+        {
+            var system = new Atari2600System();
+            var path = WriteCartridgeToTempFile(BuildSolidBackgroundCartridge((byte)(lum << 1)));
+
+            try
+            {
+                system.LoadProgram(path);
+                system.Reset();
+
+                RunFrames(system, 20);
+
+                lumas[lum] = AverageLuma(system.Television.SampleBuffer);
+            }
+            finally
+            {
+                File.Delete(path);
+            }
+        }
+
+        for (var lum = 1; lum < 8; lum++)
+        {
+            await Assert.That(lumas[lum]).IsGreaterThan(lumas[lum - 1]);
+        }
+
+        for (var lum = 0; lum < 8; lum++)
+        {
+            await Assert.That(Math.Abs(lumas[lum] - PaletteGreyY(lum))).IsLessThan(toleranceY);
+        }
+
+        // Compressive: each decoded step is no larger than the one before it
+        // (within a small margin for decode noise), and the top step is well
+        // under the bottom one - the property the linear lum/7f curve lacked
+        // (its steps were all equal).
+        for (var lum = 2; lum < 8; lum++)
+        {
+            var step = lumas[lum] - lumas[lum - 1];
+            var previousStep = lumas[lum - 1] - lumas[lum - 2];
+            await Assert.That(step).IsLessThan(previousStep + 6.0);
+        }
+
+        await Assert.That(lumas[7] - lumas[6]).IsLessThan((lumas[1] - lumas[0]) * 0.6);
+    }
+
+    // Tree-trunk case: (lum 0, hue 1) = COLUBK $10 is a dark olive
+    // (Palette.NtscPalette $10 = 0x444400, Y ~= 60), not black. The linear
+    // curve collapsed every lum-0 entry onto blanking; the coloured-black
+    // floor keeps chroma-bearing entries on their raised sub-range.
+    [Test]
+    public async Task ColouredLumaZeroIsNotBlack()
+    {
+        var system = new Atari2600System();
+        var path = WriteCartridgeToTempFile(BuildSolidBackgroundCartridge(0x10));
+
+        try
+        {
+            system.LoadProgram(path);
+            system.Reset();
+
+            RunFrames(system, 20);
+
+            var buffer = system.Television.SampleBuffer;
+            var luma = AverageLuma(buffer);
+            var (i, q) = AverageChroma(buffer);
+
+            await Assert.That(luma).IsGreaterThan(40.0);
+            await Assert.That(Math.Sqrt(i * i + q * q)).IsGreaterThan(10.0);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    // Saturation magnitude, complementing EveryHueCodeDecodesCloseToTheReferencePalette's
+    // phase-only check: a mid hue (code 12) at lum 3 should decode to a
+    // chroma vector whose magnitude is near that palette entry's own
+    // |0.492*(b-y), 0.877*(r-y)|. The synthesis stage emits one fixed chroma
+    // amplitude for every hue, sync-safety-clamped a little below the
+    // palette's mean across hues at this luminance - so this passes for a
+    // mid-to-low-saturation hue and is expected to read low for the palette's
+    // most saturated entries.
+    [Test]
+    public async Task MidHueSaturationMatchesThePalette()
+    {
+        const int hue = 12;
+        const int lum = 3;
+        const double toleranceMagnitude = 10.0;
+
+        var system = new Atari2600System();
+        var path = WriteCartridgeToTempFile(BuildSolidBackgroundCartridge((byte)((hue << 4) | (lum << 1))));
+
+        try
+        {
+            system.LoadProgram(path);
+            system.Reset();
+
+            RunFrames(system, 20);
+
+            var (i, q) = AverageChroma(system.Television.SampleBuffer);
+            var decodedMagnitude = Math.Sqrt(i * i + q * q);
+
+            await Assert.That(Math.Abs(decodedMagnitude - PaletteChromaMagnitude(hue, lum)))
+                .IsLessThan(toleranceMagnitude);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    // End-to-end gain stability: a dim band (lum 2) must decode to the same
+    // Luma whether or not a brighter band (lum 6) shares the screen with it.
+    // With the old running-picture-peak AGC the lone-lum-2 frame settled at a
+    // lower white reference and inflated gain; the sync-anchored gain makes
+    // the two identical. Counterpart to the decoder-level stability check.
+    [Test]
+    public async Task DimBandDecodesTheSameWithOrWithoutABrightBand()
+    {
+        const double tolerance = 12.0;
+
+        double soloDimLuma;
+        {
+            var system = new Atari2600System();
+            var path = WriteCartridgeToTempFile(BuildSolidBackgroundCartridge(2 << 1));
+
+            try
+            {
+                system.LoadProgram(path);
+                system.Reset();
+                RunFrames(system, 20);
+                soloDimLuma = AverageLuma(system.Television.SampleBuffer);
+            }
+            finally
+            {
+                File.Delete(path);
+            }
+        }
+
+        double pairedDimLuma;
+        {
+            var system = new Atari2600System();
+            var path = WriteCartridgeToTempFile(BuildTwoBandCartridge(6 << 1, 2 << 1));
+
+            try
+            {
+                system.LoadProgram(path);
+                system.Reset();
+                RunFrames(system, 20);
+
+                var rowLumas = PictureRowLumas(system.Television.SampleBuffer);
+                rowLumas.Sort();
+
+                // The dim (lum 2) band's rows are the lower-luma half of the
+                // frame; average those, ignoring the few transition rows at
+                // each band boundary by trimming the extremes.
+                var lower = rowLumas.GetRange(2, rowLumas.Count / 2 - 2);
+                pairedDimLuma = 0;
+                foreach (var value in lower)
+                {
+                    pairedDimLuma += value;
+                }
+
+                pairedDimLuma /= lower.Count;
+            }
+            finally
+            {
+                File.Delete(path);
+            }
+        }
+
+        await Assert.That(Math.Abs(pairedDimLuma - soloDimLuma)).IsLessThan(tolerance);
     }
 }

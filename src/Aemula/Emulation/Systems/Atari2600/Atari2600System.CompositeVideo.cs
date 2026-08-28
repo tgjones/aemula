@@ -44,28 +44,106 @@ public sealed partial class Atari2600System
     private const byte BlankingLevel = 64;
     private const byte WhiteLevel = 224;
 
-    // Not sourced from a schematic (see the type-level remarks) - the real
-    // signal this stands in for has been through analog filtering by this
-    // point (see the type-level remarks' summary of TiaChip.Col's reasoning),
-    // so there's no real amplitude to measure here either. Used for both
-    // color burst and picture chroma, since real TIA generates both the
-    // same way, off the same pin (see TiaChip._colorBurst's remarks) -
-    // unlike AppleIISystem, which has physically separate burst/video
-    // resistor weights.
+    // TIA's three LUM lines are a binary code that a passive resistor ladder
+    // on the board turns back into one analog luma level (LUM0/1/2 pads ->
+    // motherboard R214/R215/R216 -> summing node -> RF modulator; the LUM
+    // pins also carry weak ~3.3k pull-ups, and R211/R213 trims the ramp -
+    // AtariAge schematic archive, RetroSix / TinkerDifferent composite-mod
+    // teardowns, Atari 2600 Field Service Manual). The ladder is deliberately
+    // not R-2R: the eight levels come out *compressive* - each step smaller
+    // than the last toward white - not a straight line, which is why the old
+    // lum/7f curve was wrong at every code but 0 and 7.
     //
-    // Kept well under half the sync-to-blanking swing (BlankingLevel -
-    // SyncLevel): NtscSyncSeparator classifies a sample as sync purely by
-    // level (closer to SyncLevel than BlankingLevel), and a sine's one
-    // isolated low sample per cycle (immediately bounded by non-dipping
-    // neighbors either side - see NtscSyncSeparator's own remarks on Apple
-    // II's burst, the same shape) is only safely tolerated there while it
-    // doesn't actually cross that midpoint. This value was originally tuned
-    // against a square wave's low HALF-cycle (two consecutive low samples,
-    // not sine's one) misclassifying as extra HSYNC pulses - a stricter
-    // requirement than sine actually needs, but there's no reason to loosen
-    // it now that chroma is a sine: the margin stays valid, just with room
-    // to spare.
-    private const float ChromaAmplitude = (BlankingLevel - SyncLevel) * 0.375f;
+    // The exact ladder resistances are not recoverable from any source
+    // reachable here - the schematic survives only as page scans and the
+    // AtariAge scope-measurement threads that would pin the LUM/COLOR pin
+    // drive are login-walled - so, as a deliberate fallback, the curve's
+    // *shape* is taken from this codebase's own hardware-derived reference:
+    // Palette.NtscPalette row 0, the achromatic ramp, whose entries are by
+    // definition each level's luma Y - 0, 64, 108, 144, 176, 200, 220, 236
+    // for codes 0..7 (steps 64, 44, 36, 32, 24, 20, 16). That row is the grey
+    // output of the real luma DAC; using it directly models the hardware more
+    // faithfully than resistor values reverse-fitted to reproduce it.
+    private static readonly float[] GreyDacLevels =
+        { 0f, 64f, 108f, 144f, 176f, 200f, 220f, 236f };
+
+    // The one free scalar in the luma model - it stands in for TIA's
+    // LUM/COLOR pin drive voltage (Vdrive), the part of the network that
+    // genuinely isn't well documented. Pinned at a single calibration point,
+    // not fitted per level: grey DAC full scale (code 7) maps to reference
+    // white. The offset is BlankingLevel, so code 0 sits exactly on blanking;
+    // everything between follows GreyDacLevels' fixed shape.
+    private static readonly float LumaDacGain =
+        (WhiteLevel - BlankingLevel) / GreyDacLevels[7];
+
+    // The eight active-video luma levels on the shared byte scale - the
+    // affine map above applied to GreyDacLevels once at type load, so there
+    // is no per-sample network solve. Emitted bytes are roughly 64, 107, 137,
+    // 162, 183, 200, 213, 224. Decoded back through NtscYiqDecoder they come
+    // out near Y = 0, 58, 98, 131, 159, 182, 199, 214: the compressive shape
+    // is preserved and the low/mid codes track palette row 0 (64, 108, 144)
+    // to within ~13, but the whole ramp reads progressively low toward white
+    // (~22 under the palette's 236 at code 7) because NtscSyncSeparator
+    // settles its black estimate above nominal blanking - the same offset the
+    // SMPTE asset shows - which shrinks the decode gain. That offset is a
+    // decoder-side property shared with every other producer, not a curve
+    // error here; emission stays pinned to reference white 224 at code 7 as
+    // the shared byte scale requires.
+    private static readonly float[] LumaLevels = BuildLumaLevels();
+
+    private static float[] BuildLumaLevels()
+    {
+        var levels = new float[8];
+        for (var i = 0; i < levels.Length; i++)
+        {
+            levels[i] = BlankingLevel + GreyDacLevels[i] * LumaDacGain;
+        }
+        return levels;
+    }
+
+    // Coloured entries are not black at lum 0. TIA's luma DAC keeps
+    // chroma-bearing hues on their own raised sub-range: Palette.NtscPalette's
+    // hue-1 lum-0 entry ($10 = 0x444400, RGB 68/68/0) has luma Y ~= 60, not
+    // 0 - "lum-0 colours (tree trunks) render black" is this sub-range being
+    // dropped. Modeled as a floor under the luma curve for any non-grey entry
+    // (Col != 0): the entry sits at max(level, floor). The palette puts that
+    // coloured-black luma (~60) right at the grey DAC's own code-1 output
+    // (GreyDacLevels[1] = 64), so the floor is simply LumaLevels[1] - it
+    // decodes back to ~0x444400's Y with no separate calibration constant.
+    // Only hue 1 is matched (it is the reported case and TIA's reference
+    // phase); other lum-0 hues, whose palette Y runs ~15..57, are lifted to
+    // the same floor too - a known simplification of the DAC's per-hue
+    // coloured-black spread.
+    private static readonly float ColourFloor = LumaLevels[1];
+
+    // The COLOR pin's share of that same summing node, as a sine amplitude on
+    // the byte scale (the real Col pin is a square wave - see the type-level
+    // remarks for why this stage synthesizes a sine instead). Calibrated the
+    // same way as the luma curve, against Palette.NtscPalette rather than a
+    // resistor value - but then clamped by sync safety, so it lands below the
+    // palette rather than on it.
+    //
+    // Target: NtscYiqDecoder recovers a chroma vector whose magnitude is this
+    // amplitude times its self-calibrated luma/chroma scale. That scale comes
+    // out around 1.3 in practice (NtscSyncSeparator settles its back-porch
+    // black estimate above nominal blanking - the same offset the SMPTE asset
+    // shows - which lowers the gain), so matching the palette's mean chroma
+    // magnitude across all 15 hues at lum 3 (~45, taken as
+    // |0.492*(b-y), 0.877*(r-y)|) would need an amplitude near 34.
+    //
+    // Sync safety caps it lower. NtscSyncSeparator classifies a sample as
+    // sync purely by level (closer to SyncLevel than BlankingLevel, i.e.
+    // below their midpoint 32). Chroma rides its lowest pedestal during color
+    // burst, where that pedestal is BlankingLevel (64) - the coloured-black
+    // floor lifts active-video coloured pedestals to ~107, so burst is the
+    // binding case - and the sine's one isolated low sample per cycle reaches
+    // BlankingLevel - amplitude. 0.40625 * (BlankingLevel - SyncLevel) = 26
+    // holds that at 38, the same ~6-byte clearance over the midpoint the
+    // previous hand-set amplitude (24 -> 40) kept. The residual
+    // undersaturation (decoded magnitude ~35 vs the palette's ~45) is the
+    // documented cost of that clamp; bright saturated hues decode a little
+    // flat for the same reason.
+    private const float ChromaAmplitude = (BlankingLevel - SyncLevel) * 0.40625f;
 
     // How far one hue code steps around the color wheel. Not 360/15 = 24:
     // TIA's hue generator is an analog delay line (see TiaChip.Col), and its
@@ -125,9 +203,31 @@ public sealed partial class Atari2600System
         var lum = _tia.Lum;
         var col = _tia.Col;
 
-        var luma = sync
-            ? SyncLevel
-            : BlankingLevel + (WhiteLevel - BlankingLevel) * (lum / 7f);
+        float luma;
+        if (sync)
+        {
+            luma = SyncLevel;
+        }
+        else if (_tia.Blk)
+        {
+            // Blanking, including the back porch that carries color burst:
+            // TIA forces the LUM lines off here, so the level is flat
+            // blanking whatever the lum code reads - and the coloured-black
+            // floor below must not lift it, since burst rides on blanking.
+            luma = BlankingLevel;
+        }
+        else
+        {
+            // Active video: the compressive luma DAC curve. Any non-grey
+            // entry (Col != 0) also takes the coloured-black floor, so lum-0
+            // hues keep TIA's raised coloured sub-range instead of collapsing
+            // to blanking.
+            luma = LumaLevels[lum];
+            if (col != 0)
+            {
+                luma = MathF.Max(luma, ColourFloor);
+            }
+        }
 
         // Television.Decode needs samples at exactly 4x the NTSC color
         // subcarrier (~14.318MHz). TIA's OSC input is the subcarrier rate
