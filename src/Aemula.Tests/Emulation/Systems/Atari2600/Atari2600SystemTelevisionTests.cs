@@ -27,25 +27,37 @@ public class Atari2600SystemTelevisionTests
 
     // Three COLUBK values (hue<<4 | luminance<<1 - real TIA's COLUBK byte
     // layout, confirmed against TiaChip's own COLUBK write handling) with
-    // hues spaced 120 degrees apart around TIA's 15-phase color wheel (hue
-    // codes 5, 10, 15) at a mid luminance. Chosen empirically, not just by
-    // even phase spacing: measured decoded RGB for every one of the 15 hues
-    // at this luminance (holding each alone, in isolation, long enough to
-    // lock), several other evenly-spaced triples (e.g. hues 2/7/12) decode to
-    // a pair that lands under this test's 60-unit RGB distance threshold
-    // despite being 120 degrees apart in phase, since the YIQ->RGB matrix
-    // doesn't preserve phase separation as RGB distance uniformly around the
-    // circle - this triple was checked to clear it with comfortable margin
-    // (~76 in every pairing). Luma 5 rather than 6: the palette-derived luma
-    // curve puts code 6 close enough to reference white that all fifteen hues
-    // decode within ~68 of each other there, too tight for the threshold.
-    private const byte ColorABackground = 0x5A; // hue 5,  luma 5
-    private const byte ColorBBackground = 0xAA; // hue 10, luma 5
-    private const byte ColorCBackground = 0xFA; // hue 15, luma 5
+    // hue codes 5, 10, 15 (roughly 120 degrees apart around TIA's 15-phase
+    // color wheel) at a bright, consistent luminance. Chosen empirically,
+    // not just by even phase spacing: measured decoded RGB for every one of
+    // the 15 hues at this luminance (holding each alone, in isolation, long
+    // enough to lock), several other evenly-spaced triples (e.g. hues
+    // 2/7/12) decode to a pair that lands under this test's 60-unit RGB
+    // distance threshold despite being 120 degrees apart in phase, since the
+    // YIQ->RGB matrix doesn't preserve phase separation as RGB distance
+    // uniformly around the circle - this triple was checked to clear the
+    // threshold in every pairing with margin to spare.
+    private const byte ColorABackground = 0x5C; // hue 5,  luma 6
+    private const byte ColorBBackground = 0xAC; // hue 10, luma 6
+    private const byte ColorCBackground = 0xFC; // hue 15, luma 6
 
     // Cartridge code starts right at the bottom of the cartridge-selected
     // address window - see BuildColorBarCartridge.
     private const ushort CodeStart = 0x1000;
+
+    // Column range, as a fraction of the buffer width, that every
+    // measurement below samples - a strip through the centre of the line.
+    // TIA's horizontal blanking is far wider than broadcast RS-170A (68 of
+    // 228 color clocks, ~19us, versus ~10.9us), so the real 2600 picture is
+    // inset with a black border on both sides - a period TV showed the same
+    // border, and Television reproduces it faithfully. Television frames
+    // active video by RS-170A proportions, though, so its ActiveVideo region
+    // is wider than TIA's actual picture and its edges include
+    // blanking-level (byte 64) columns. Averaging those in would drag every
+    // luma/chroma reading toward black (~16% low for a full-screen COLUBK);
+    // sampling only the centre keeps the measurement on real picture.
+    private const double PictureCentreLo = 0.42;
+    private const double PictureCentreHi = 0.58;
 
     private static byte[] BuildColorBarCartridge()
     {
@@ -159,13 +171,16 @@ public class Atari2600SystemTelevisionTests
     {
         var rowAverages = new List<RgbaByte>();
 
+        var columnLo = (int)(buffer.Width * PictureCentreLo);
+        var columnHi = (int)(buffer.Width * PictureCentreHi);
+
         for (var row = 0; row < buffer.Height; row++)
         {
             long sumR = 0, sumG = 0, sumB = 0;
             var count = 0;
 
             var rowOffset = row * buffer.Width;
-            for (var column = 0; column < buffer.Width; column++)
+            for (var column = columnLo; column < columnHi; column++)
             {
                 var sample = buffer.Data[rowOffset + column];
                 if (sample.Region != RasterRegion.ActiveVideo)
@@ -179,11 +194,10 @@ public class Atari2600SystemTelevisionTests
                 count++;
             }
 
-            // Only count rows that are genuinely part of the picture (most
-            // of their width is active video), the same threshold
-            // TelevisionWindow.ComputeVerticalActiveRange uses to tell real
-            // picture rows apart from blanking ones.
-            if (count < buffer.Width * 0.5f)
+            // Only count rows that are genuinely part of the picture (the
+            // whole centre strip is active video), telling real picture rows
+            // apart from blanking ones.
+            if (count < (columnHi - columnLo) * 0.5f)
             {
                 continue;
             }
@@ -331,17 +345,20 @@ public class Atari2600SystemTelevisionTests
         return Math.Sqrt(u * u + v * v);
     }
 
-    // Mean decoded Luma over active-video samples in a horizontal strip
-    // through the middle of the picture - the luma counterpart of
+    // Mean decoded Luma over a centre-strip block through the middle of the
+    // picture (see PictureCentreLo/Hi) - the luma counterpart of
     // AverageChroma, used where the whole frame is one flat colour.
     private static double AverageLuma(SampleBuffer buffer)
     {
         double sum = 0;
         var count = 0;
 
+        var columnLo = (int)(buffer.Width * PictureCentreLo);
+        var columnHi = (int)(buffer.Width * PictureCentreHi);
+
         for (var row = (int)(buffer.Height * 0.4); row < (int)(buffer.Height * 0.6); row++)
         {
-            for (var column = 0; column < buffer.Width; column++)
+            for (var column = columnLo; column < columnHi; column++)
             {
                 var sample = buffer.Data[row * buffer.Width + column];
                 if (sample.Region != RasterRegion.ActiveVideo)
@@ -357,11 +374,15 @@ public class Atari2600SystemTelevisionTests
         return count == 0 ? 0 : sum / count;
     }
 
-    // Per-picture-row mean decoded Luma (rows that are mostly active video),
-    // top to bottom - lets a test pick out one band of a multi-band frame.
+    // Per-picture-row mean decoded Luma (over the centre strip, rows that
+    // are fully active video there), top to bottom - lets a test pick out
+    // one band of a multi-band frame.
     private static List<double> PictureRowLumas(SampleBuffer buffer)
     {
         var rows = new List<double>();
+
+        var columnLo = (int)(buffer.Width * PictureCentreLo);
+        var columnHi = (int)(buffer.Width * PictureCentreHi);
 
         for (var row = 0; row < buffer.Height; row++)
         {
@@ -369,7 +390,7 @@ public class Atari2600SystemTelevisionTests
             var count = 0;
 
             var rowOffset = row * buffer.Width;
-            for (var column = 0; column < buffer.Width; column++)
+            for (var column = columnLo; column < columnHi; column++)
             {
                 var sample = buffer.Data[rowOffset + column];
                 if (sample.Region != RasterRegion.ActiveVideo)
@@ -381,7 +402,7 @@ public class Atari2600SystemTelevisionTests
                 count++;
             }
 
-            if (count >= buffer.Width * 0.5f)
+            if (count >= (columnHi - columnLo) * 0.5f)
             {
                 rows.Add(sum / count);
             }
@@ -424,21 +445,24 @@ public class Atari2600SystemTelevisionTests
         return (Math.Atan2(sumV, sumU) * 180.0 / Math.PI + 360.0) % 360.0;
     }
 
-    // Averages decoded I/Q over a band of rows through the middle of the
-    // picture. I/Q rather than RGB because this test is about *phase*: the
-    // YIQ->RGB matrix compresses the hue circle unevenly (the reason
-    // ColorBarCartridgeDecodesToDistinctBands below has to pick its three
-    // hues empirically rather than just spacing them 120 degrees apart), so
-    // an RGB-distance check can't express "this hue landed N degrees from
-    // where it should have" at all.
+    // Averages decoded I/Q over a centre-strip block through the middle of
+    // the picture (see PictureCentreLo/Hi). I/Q rather than RGB because this
+    // test is about *phase*: the YIQ->RGB matrix compresses the hue circle
+    // unevenly (the reason ColorBarCartridgeDecodesToDistinctBands below has
+    // to pick its three hues empirically rather than just spacing them 120
+    // degrees apart), so an RGB-distance check can't express "this hue
+    // landed N degrees from where it should have" at all.
     private static (double I, double Q) AverageChroma(SampleBuffer buffer)
     {
         double sumI = 0, sumQ = 0;
         var count = 0;
 
+        var columnLo = (int)(buffer.Width * PictureCentreLo);
+        var columnHi = (int)(buffer.Width * PictureCentreHi);
+
         for (var row = (int)(buffer.Height * 0.4); row < (int)(buffer.Height * 0.6); row++)
         {
-            for (var column = 0; column < buffer.Width; column++)
+            for (var column = columnLo; column < columnHi; column++)
             {
                 var sample = buffer.Data[row * buffer.Width + column];
                 if (sample.Region != RasterRegion.ActiveVideo)
@@ -576,20 +600,23 @@ public class Atari2600SystemTelevisionTests
     }
 
     // The grayscale ramp: hold each luminance code 0..7 (hue 0, no chroma)
-    // full-screen and check the decoded Luma climbs monotonically, compresses
-    // toward white, and lands near Palette.NtscPalette row 0's Y values.
-    // Tolerance is wide on purpose - the emitted curve pins code 7 to
-    // reference white 224 as the shared byte scale requires, but
-    // NtscSyncSeparator settles its black estimate above nominal blanking
-    // (the same offset the SMPTE asset shows), which shrinks the decode gain
-    // so the whole ramp reads progressively low toward white (~22 under the
-    // palette at code 7). What the test actually guards is the compressive
-    // *shape* and the low/mid codes landing near 64 / 108 / 144, which the
-    // old linear lum/7f curve got wrong at every step.
+    // full-screen and check the decoded Luma against the exact curve the
+    // calibration produces. The emitted curve maps Palette.NtscPalette row
+    // 0's shape onto the byte scale with palette white (code 7, Y 236)
+    // landing on reference white 224; NtscYiqDecoder then maps reference
+    // white back to full-scale 255. Net, the decoded ramp is palette row 0
+    // scaled by 255/236 - a uniform ~8% above the palette, code 7 clamped
+    // at 255 - which is the intended headroom from choosing reference white
+    // 224 over 255. The tight per-code check pins that relationship; the
+    // monotonic and compressive checks pin the DAC shape the old linear
+    // lum/7f curve lacked.
     [Test]
     public async Task GrayscaleRampDecodesToTheCompressivePaletteCurve()
     {
-        const double toleranceY = 28.0;
+        // Reference white 224 decodes to full-scale 255, so palette white
+        // (code 7's Y) is the divisor that rescales the whole palette ramp
+        // onto the decoder's output range.
+        var paletteWhiteY = PaletteGreyY(7);
 
         var lumas = new double[8];
 
@@ -620,7 +647,8 @@ public class Atari2600SystemTelevisionTests
 
         for (var lum = 0; lum < 8; lum++)
         {
-            await Assert.That(Math.Abs(lumas[lum] - PaletteGreyY(lum))).IsLessThan(toleranceY);
+            var expected = Math.Min(255.0, PaletteGreyY(lum) * 255.0 / paletteWhiteY);
+            await Assert.That(Math.Abs(lumas[lum] - expected)).IsLessThan(6.0);
         }
 
         // Compressive: each decoded step is no larger than the one before it
@@ -670,11 +698,11 @@ public class Atari2600SystemTelevisionTests
     // Saturation magnitude, complementing EveryHueCodeDecodesCloseToTheReferencePalette's
     // phase-only check: a mid hue (code 12) at lum 3 should decode to a
     // chroma vector whose magnitude is near that palette entry's own
-    // |0.492*(b-y), 0.877*(r-y)|. The synthesis stage emits one fixed chroma
-    // amplitude for every hue, sync-safety-clamped a little below the
-    // palette's mean across hues at this luminance - so this passes for a
-    // mid-to-low-saturation hue and is expected to read low for the palette's
-    // most saturated entries.
+    // |0.492*(b-y), 0.877*(r-y)| (~38). The synthesis stage emits one fixed
+    // chroma amplitude for every hue - at the nominal 1.594 decode gain it
+    // lands near 41, close for this mid hue - and, being fixed while the
+    // palette's saturation varies per hue, it reads a little high for the
+    // palette's dimmer hues and low for its most saturated ones.
     [Test]
     public async Task MidHueSaturationMatchesThePalette()
     {

@@ -78,17 +78,16 @@ public sealed partial class Atari2600System
 
     // The eight active-video luma levels on the shared byte scale - the
     // affine map above applied to GreyDacLevels once at type load, so there
-    // is no per-sample network solve. Emitted bytes are roughly 64, 107, 137,
-    // 162, 183, 200, 213, 224. Decoded back through NtscYiqDecoder they come
-    // out near Y = 0, 58, 98, 131, 159, 182, 199, 214: the compressive shape
-    // is preserved and the low/mid codes track palette row 0 (64, 108, 144)
-    // to within ~13, but the whole ramp reads progressively low toward white
-    // (~22 under the palette's 236 at code 7) because NtscSyncSeparator
-    // settles its black estimate above nominal blanking - the same offset the
-    // SMPTE asset shows - which shrinks the decode gain. That offset is a
-    // decoder-side property shared with every other producer, not a curve
-    // error here; emission stays pinned to reference white 224 at code 7 as
-    // the shared byte scale requires.
+    // is no per-sample network solve. Emitted bytes are roughly 64, 107,
+    // 137, 162, 183, 200, 213, 224. NtscYiqDecoder maps reference white
+    // (224) back to full-scale 255, so a decoded grey ramp comes out as
+    // palette row 0 scaled by 255/236 - a uniform ~8% above the palette,
+    // with code 7 landing exactly on 255. That headroom is the deliberate
+    // point of putting reference white at 224 rather than 255: bright
+    // saturated hues can then swing past 100 IRE once chroma rides on luma
+    // without the decoder's comb filter clipping them flat. The compressive
+    // DAC shape - each step smaller than the last toward white - is what the
+    // old lum/7f line got wrong at every code but 0 and 7.
     private static readonly float[] LumaLevels = BuildLumaLevels();
 
     private static float[] BuildLumaLevels()
@@ -124,25 +123,26 @@ public sealed partial class Atari2600System
     // palette rather than on it.
     //
     // Target: NtscYiqDecoder recovers a chroma vector whose magnitude is this
-    // amplitude times its self-calibrated luma/chroma scale. That scale comes
-    // out around 1.3 in practice (NtscSyncSeparator settles its back-porch
-    // black estimate above nominal blanking - the same offset the SMPTE asset
-    // shows - which lowers the gain), so matching the palette's mean chroma
-    // magnitude across all 15 hues at lum 3 (~45, taken as
-    // |0.492*(b-y), 0.877*(r-y)|) would need an amplitude near 34.
+    // amplitude times its decode scale, 255 / (whiteRef - black) = 255 / 160
+    // = 1.594 (the sync-anchored gain is exactly nominal - black and sync
+    // self-calibrate to the emitted 64 / 0). So amplitude 26 decodes to a
+    // magnitude near 41, against a palette mean across all 15 hues at lum 3
+    // of ~45 (taken as |0.492*(b-y), 0.877*(r-y)|) - a few percent shy of
+    // the mean, and a touch over the palette's less-saturated hues.
     //
-    // Sync safety caps it lower. NtscSyncSeparator classifies a sample as
-    // sync purely by level (closer to SyncLevel than BlankingLevel, i.e.
-    // below their midpoint 32). Chroma rides its lowest pedestal during color
-    // burst, where that pedestal is BlankingLevel (64) - the coloured-black
-    // floor lifts active-video coloured pedestals to ~107, so burst is the
-    // binding case - and the sine's one isolated low sample per cycle reaches
-    // BlankingLevel - amplitude. 0.40625 * (BlankingLevel - SyncLevel) = 26
-    // holds that at 38, the same ~6-byte clearance over the midpoint the
-    // previous hand-set amplitude (24 -> 40) kept. The residual
-    // undersaturation (decoded magnitude ~35 vs the palette's ~45) is the
-    // documented cost of that clamp; bright saturated hues decode a little
-    // flat for the same reason.
+    // Sync safety is what stops it going higher. NtscSyncSeparator classifies
+    // a sample as sync purely by level (closer to SyncLevel than
+    // BlankingLevel, i.e. below their midpoint 32). Chroma rides its lowest
+    // pedestal during color burst, where that pedestal is BlankingLevel (64)
+    // - the coloured-black floor lifts active-video coloured pedestals to
+    // ~107, so burst is the binding case - and the sine's one isolated low
+    // sample per cycle reaches BlankingLevel - amplitude. 0.40625 *
+    // (BlankingLevel - SyncLevel) = 26 holds that at 38, the same ~6-byte
+    // clearance over the midpoint the previous hand-set amplitude (24 -> 40)
+    // kept. TIA's real chroma:luma ratio is set by the output resistor
+    // network (not recoverable here - see the luma-curve remarks above), so
+    // this stays a palette calibration bounded by that sync-classification
+    // margin.
     private const float ChromaAmplitude = (BlankingLevel - SyncLevel) * 0.40625f;
 
     // How far one hue code steps around the color wheel. Not 360/15 = 24:
