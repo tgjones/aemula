@@ -30,16 +30,19 @@ public sealed partial class Atari2600System
     // remarks.
     public Television Television { get; } = new();
 
-    // Landmark levels on the composite-video byte scale (0-255) that
-    // Television.Decode expects. Not measured voltages (there's nothing
-    // real to measure - see the type-level remarks above) - chosen to match
-    // NtscSyncSeparator's own seeded defaults (sync tip = byte 0, black =
-    // byte 64, white = byte 255) so decoding is sane from sample 1, the
-    // same reasoning as AppleIISystem.CompositeVideo.cs's BlackVoltage/
-    // WhiteVoltage constants.
+    // Landmark levels on the shared composite-video byte scale that
+    // Television.Decode expects: sync tip 0, blanking 64, reference white
+    // 224 - 1.6 bytes/IRE with a 2.5x sync-to-white gain, the same scale
+    // every producer in the repo emits (and NtscSyncSeparator seeds its
+    // estimates to). Not measured voltages - there's nothing real to
+    // measure (see the type-level remarks) - but keeping to the one scale
+    // is what lets the decoder's sync-anchored gain reconstruct the same
+    // reference white from any of them. White is 224 rather than full-scale
+    // 255 so bright saturated hues can swing above 100 IRE once chroma
+    // rides on luma without the comb filter clipping it flat.
     private const byte SyncLevel = 0;
     private const byte BlankingLevel = 64;
-    private const byte WhiteLevel = 255;
+    private const byte WhiteLevel = 224;
 
     // Not sourced from a schematic (see the type-level remarks) - the real
     // signal this stands in for has been through analog filtering by this

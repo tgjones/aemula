@@ -5,11 +5,14 @@ namespace Aemula.Tests.Emulation.Output;
 internal static class SmpteAsset
 {
     // smpte.ntsc's raw bytes are on a 0-200 scale - its own capture's own
-    // calibration - not the 0-255 scale Television expects (byte 0 = 0V
-    // sync tip, byte 255 = white, matching AppleIISystem.CompositeVideo's
-    // own encoder scale). Rescaling once here, at the point the asset is
-    // loaded, keeps Television itself agnostic to the fact that two
-    // differently-calibrated producers exist.
+    // calibration, where the 100 IRE white bar sits at raw 200 - not the
+    // shared byte scale every producer and Television now use (sync tip 0,
+    // blanking 64, reference white 224). The asset's 100 IRE white bar is
+    // reference white, so it is mapped to 224: raw * 224 / 200. Sync and
+    // blanking then follow the asset's own ratio, which is already ~spec.
+    // Rescaling once here, at the point the asset is loaded, keeps
+    // Television itself agnostic to the fact that differently-calibrated
+    // producers exist.
     public static byte[] LoadNormalized()
     {
         var filePath = Path.GetFullPath(Path.Combine("Emulation", "Output", "Assets", "smpte.ntsc"));
@@ -18,7 +21,7 @@ internal static class SmpteAsset
         var normalized = new byte[rawBytes.Length];
         for (var i = 0; i < rawBytes.Length; i++)
         {
-            normalized[i] = (byte)(rawBytes[i] * 255 / 200);
+            normalized[i] = (byte)(rawBytes[i] * 224 / 200);
         }
 
         CorrectNonStandardBurstPhase(normalized);
@@ -61,11 +64,11 @@ internal static class SmpteAsset
     // line.
     private static void CorrectNonStandardBurstPhase(byte[] samples)
     {
-        // Midway between this asset's sync tip (raw 4 -> 5 here) and its
-        // blanking level (raw 60 -> 76 here) - the same "is this sample
-        // sync or not" question NtscSyncSeparator answers, asked much more
-        // crudely, since all this needs is to find the trailing edges, not
-        // to classify or measure the pulses.
+        // Between this asset's sync tip (raw 4 -> 4 here) and its blanking
+        // level (raw 60 -> 67 here) - the same "is this sample sync or not"
+        // question NtscSyncSeparator answers, asked much more crudely,
+        // since all this needs is to find the trailing edges, not to
+        // classify or measure the pulses.
         const byte SyncThreshold = 40;
 
         // Saturated dark bars swing their chroma below SyncThreshold for a
@@ -89,9 +92,10 @@ internal static class SmpteAsset
         const int WindowStart = 6;
         const int WindowLength = 40;
 
-        // Real burst on this asset swings roughly +/-30 on the normalized
-        // scale; anything flatter than this is a line that simply has no
-        // burst (the vertical interval), which needs no correction.
+        // Real burst on this asset swings roughly +/-26 on the normalized
+        // scale (raw +/-23 * 224/200); anything flatter than this is a line
+        // that simply has no burst (the vertical interval), which needs no
+        // correction.
         const int MinimumBurstSwing = 20;
 
         var syncRunLength = 0;

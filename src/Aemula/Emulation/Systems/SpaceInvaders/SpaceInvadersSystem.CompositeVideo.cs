@@ -61,10 +61,14 @@ public sealed partial class SpaceInvadersSystem
     // case rather than literally summed. SyncLevel/BlankingLevel/WhiteLevel
     // below reuse Atari2600System.CompositeVideo.cs's own byte-scale values -
     // not measured, and not meant to be more precise than that file's, since
-    // neither system has real voltages to calibrate against.
+    // neither system has real voltages to calibrate against. WhiteLevel is
+    // 224 (140 IRE reference white on the shared scale, sync 0 / blanking
+    // 64), not the full-scale 255: the signal is 1-bit, so white still
+    // decodes to pure white regardless, but keeping every producer on one
+    // scale also keeps the Channel.Analog scope range honest.
     private const byte SyncLevel = 0;
     private const byte BlankingLevel = 64;
-    private const byte WhiteLevel = 255;
+    private const byte WhiteLevel = 224;
 
     // Narrow HSYNC window within HBLANK (H=192..255): real NTSC spends
     // ~1.5us/4.7us/4.7us of its 10.9us blanking interval on front porch/

@@ -95,6 +95,30 @@ public sealed class NtscYiqDecoder
     private static readonly Vector128<float> RgbCoeffI = Vector128.Create(0.956f, -0.272f, -1.106f, 0.0f);
     private static readonly Vector128<float> RgbCoeffQ = Vector128.Create(0.621f, -0.647f, 1.703f, 0.0f);
 
+    // The decode gain must not depend on how bright the current scene
+    // happens to be. A real receiver runs gated-sync AGC: a detector
+    // samples the signal only during the sync interval, measures the
+    // sync-tip-to-blanking excursion, and drives IF/video gain to hold it
+    // constant - it never keys off picture white, which a dim scene (a
+    // forest, a night sky) may simply never contain. So reference white is
+    // reconstructed here from the two points the signal always carries -
+    // sync tip and blanking - as blackLevel + K * (blackLevel - syncLevel),
+    // with K = 100 IRE picture / 40 IRE sync-to-blanking = 2.5 exactly on
+    // the shared byte scale (sync 0, blanking 64, reference white 224).
+    // Scaling off a running picture-peak max instead (as this once did)
+    // inflates gain on any persistently-dim signal.
+    internal const float WhiteReferenceGainFromSyncSwing = 2.5f;
+
+    /// <summary>
+    /// Reference white on the incoming signal's own self-calibrated scale,
+    /// reconstructed from its sync tip and blanking levels rather than a
+    /// running picture peak - see <see cref="WhiteReferenceGainFromSyncSwing"/>.
+    /// <see cref="Television"/> computes the identical value to feed the
+    /// color-burst PLL's detection threshold.
+    /// </summary>
+    internal static float WhiteReference(float blackLevel, float syncLevel) =>
+        blackLevel + WhiteReferenceGainFromSyncSwing * (blackLevel - syncLevel);
+
     // The comb filter (see Process below) and the I/Q box-average both work
     // over a rolling one-subcarrier-cycle (4-sample) window, so both keep a
     // small ring buffer of recent values rather than reaching back into the
@@ -140,15 +164,17 @@ public sealed class NtscYiqDecoder
     /// <summary>
     /// Decodes one composite-video sample into a pixel. <paramref name="phaseOffsetRadians"/>
     /// should be <see cref="NtscColorBurstPll.PhaseOffsetRadians"/>, and
-    /// <paramref name="blackLevel"/>/<paramref name="whiteLevel"/> should be
-    /// <see cref="NtscSyncSeparator.BlackLevel"/>/<see cref="NtscSyncSeparator.WhiteLevel"/>
-    /// for this same sample - this class doesn't know or care whether the
+    /// <paramref name="blackLevel"/>/<paramref name="syncLevel"/> should be
+    /// <see cref="NtscSyncSeparator.BlackLevel"/>/<see cref="NtscSyncSeparator.SyncLevel"/>
+    /// for this same sample - reference white is reconstructed from those
+    /// two points (see <see cref="WhiteReference"/>), not taken from a
+    /// running picture peak. This class doesn't know or care whether the
     /// sample it's given actually falls in active video; callers only need
     /// to consult <see cref="NtscYiqDecoder"/>'s output where
     /// <c>Television.IsActiveVideo</c> is true (sync/blanking samples decode
     /// to meaningless colors, harmlessly, since nothing displays them).
     /// </summary>
-    public void Process(byte sample, float phaseOffsetRadians, float blackLevel, float whiteLevel)
+    public void Process(byte sample, float phaseOffsetRadians, float blackLevel, float syncLevel)
     {
         // Step 1: luma via a comb filter. Every sample is exactly 90
         // degrees of subcarrier phase from its neighbors (the 4x-fsc
@@ -179,12 +205,16 @@ public sealed class NtscYiqDecoder
         // Step 2: chroma is simply whatever's left after luma is removed.
         var rawChroma = sample - rawLuma;
 
-        // Rescale from this signal's own self-calibrated sync/black/white
-        // levels (see NtscSyncSeparator) onto the fixed 0-255 black-to-white
-        // scale the YIQ->RGB matrix below assumes - the same rescale factor
-        // applies to chroma, since chroma's amplitude lives in the same
-        // volts/byte units as luma does.
-        var scale = 255f / (whiteLevel - blackLevel);
+        // Rescale from this signal's own self-calibrated levels (see
+        // NtscSyncSeparator) onto the fixed 0-255 black-to-white scale the
+        // YIQ->RGB matrix below assumes - the same rescale factor applies to
+        // chroma, since chroma's amplitude lives in the same volts/byte
+        // units as luma does. Reference white is reconstructed from sync
+        // tip and blanking (gated-sync AGC - see WhiteReferenceGainFromSyncSwing),
+        // not read off a running picture peak: a dim scene never contains
+        // reference white, so a running-max AGC would balloon the gain.
+        var whiteRef = WhiteReference(blackLevel, syncLevel);
+        var scale = 255f / (whiteRef - blackLevel);
         Luma = Math.Clamp((rawLuma - blackLevel) * scale, 0, 255);
         var chroma = rawChroma * scale;
 

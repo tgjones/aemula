@@ -16,10 +16,12 @@ public class TelevisionTests
         await Assert.That(normalized.Length).IsEqualTo(955_500);
 
         // The raw asset's actual range is [4, 199] (confirmed by inspection,
-        // not assumed) - rescaled by *255/200 with integer truncation, that
-        // becomes [5, 253]. Asserting the exact rescaled extremes (rather
-        // than just "some values changed") catches an off-by-one in the
-        // rescale formula, not just its general direction.
+        // not assumed) - rescaled by *224/200 (so the 100 IRE white bar at
+        // raw 200 lands on reference white 224) with integer truncation,
+        // that becomes [4, 222]: 4*224/200 = 4.48 -> 4, 199*224/200 =
+        // 222.88 -> 222. Asserting the exact rescaled extremes (rather than
+        // just "some values changed") catches an off-by-one in the rescale
+        // formula, not just its general direction.
         var min = normalized[0];
         var max = normalized[0];
 
@@ -29,8 +31,8 @@ public class TelevisionTests
             if (sample > max) max = sample;
         }
 
-        await Assert.That(min).IsEqualTo((byte)5);
-        await Assert.That(max).IsEqualTo((byte)253);
+        await Assert.That(min).IsEqualTo((byte)4);
+        await Assert.That(max).IsEqualTo((byte)222);
     }
 
     // smpte.ntsc encodes the classic SMPTE 75% color-bar test pattern - a

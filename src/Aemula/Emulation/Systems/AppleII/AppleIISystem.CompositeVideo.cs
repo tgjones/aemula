@@ -33,6 +33,26 @@ public sealed partial class AppleIISystem
     private const double BlackVoltage = 0.5;
     private const double WhiteVoltage = 2.0;
 
+    // The volts->byte map is anchored on Gayler's two measured low
+    // landmarks - sync 0V -> byte 0, blanking 0.5V -> byte 64 - i.e.
+    // byte = volts * (BlankingByte / BlackVoltage) = volts * 128. Those two
+    // points are shared, to the byte, with every other producer's scale
+    // (sync 0, blanking 64), so Apple II sync and blanking stay
+    // spec-conformant with no fudge.
+    //
+    // The Apple II genuinely drives white hot: its measured 2.0V white is a
+    // 1:3 sync-to-black vs black-to-white split, not spec's 1:2.5, so it
+    // lands at byte 4*64 = 256 -> clamps to 255 (~120 IRE, ~20% over
+    // reference white 224). That is faithful - a period TV would not have
+    // hard-clipped it either (its AGC keys off sync, not white, so the
+    // excursion passed at full amplitude); what compressed it was soft -
+    // beam-current limiting, CRT saturation, the viewer's contrast knob.
+    // NtscYiqDecoder's luma clamp downstream is a crude stand-in for that
+    // soft top-end compression. For 1-bit white text this is invisible;
+    // only bright artifact-colour pixels whose luma+chroma exceeds 224
+    // actually shift.
+    private const double BlankingByte = 64;
+
     // Solved directly from Gayler's two measured non-burst levels, not
     // assumed component tolerances: v_base(black) - Vbe = BlackVoltage and
     // v_base(white) - Vbe = WhiteVoltage, where v_base = EffectiveLogicHigh
@@ -45,7 +65,9 @@ public sealed partial class AppleIISystem
     // Targets the measured 0.7Vpp burst window (Gayler Fig. 4-4), added on
     // top of the digital-only baseline - which already lands exactly on
     // BlackVoltage during the burst window, since VIDEO DATA is blanked
-    // and SYNC is high there.
+    // and SYNC is high there. In the same volts units as everything else
+    // here, so it rides through the volts->byte map unchanged: +/-0.35V
+    // still lands ~0.7Vpp, i.e. +/-45 bytes about blanking.
     private const double BurstAmplitudeVolts = 0.35;
 
     // One byte sample per master tick; a fixed-capacity ring buffer sized to
@@ -137,8 +159,11 @@ public sealed partial class AppleIISystem
             vOut += BurstAmplitudeVolts * Math.Sin(phase);
         }
 
-        var clamped = Math.Clamp(vOut, 0.0, WhiteVoltage);
-        var sample = (byte)Math.Round(clamped / WhiteVoltage * 255.0);
+        // Anchored on Gayler's measured sync/blanking landmarks:
+        // byte = volts * (BlankingByte / BlackVoltage) = volts * 128. White
+        // legitimately overshoots byte 255 and clamps - see BlankingByte's
+        // remarks.
+        var sample = (byte)Math.Clamp(Math.Round(vOut * (BlankingByte / BlackVoltage)), 0, 255);
 
         CompositeVideo[CompositeVideoWriteIndex] = sample;
         CompositeVideoWriteIndex = (CompositeVideoWriteIndex + 1) % CompositeVideoCapacity;

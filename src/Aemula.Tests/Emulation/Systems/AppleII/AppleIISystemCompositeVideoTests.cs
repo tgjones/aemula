@@ -127,14 +127,16 @@ public class AppleIISystemCompositeVideoTests
         // Only 4 samples/cycle are achievable at this sample rate (the
         // subcarrier is exactly master/4), landing every sample exactly on
         // a zero-crossing or a peak: the black baseline (64), and the two
-        // extremes of +/-0.35V around it (byte 19 and 108 - not exactly the
-        // Gayler-quoted 13-102, since this formula centers the burst on
-        // BlackVoltage (0.5V) rather than Gayler's measured 0.45V center;
-        // an accepted small offset).
+        // extremes of +/-0.35V around it. The volts->byte map is now
+        // byte = volts * 128 (anchored on sync 0V / blanking 0.5V), so
+        // 0.5 +/- 0.35V -> byte 19 and 109 - not exactly the Gayler-quoted
+        // 13-102, since this formula centers the burst on BlackVoltage
+        // (0.5V) rather than Gayler's measured 0.45V center; an accepted
+        // small offset.
         await Assert.That(observed.Count).IsEqualTo(3);
         await Assert.That(observed.Contains((byte)64)).IsTrue();
         await Assert.That(observed.Contains((byte)19)).IsTrue();
-        await Assert.That(observed.Contains((byte)108)).IsTrue();
+        await Assert.That(observed.Contains((byte)109)).IsTrue();
     }
 
     // Line/frame length tests against the already-implemented video

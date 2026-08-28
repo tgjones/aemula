@@ -73,16 +73,19 @@ public sealed class NtscSyncSeparator
     private const float HSyncWidthSmoothingRate = 0.1f;
     private const float BlackLevelSmoothingRate = 0.05f;
 
-    // Seeded from the Apple II's own measured levels so decoding is sane
-    // from sample 1, without waiting for the running estimates to
-    // converge: sync tip = byte 0,
-    // black ≈ byte 64 (0.5V on Apple II's own 0V-2.0V scale), white = byte
-    // 255. These are just a starting guess, not a hard assumption - real
-    // incoming samples immediately start pulling all three estimates
-    // wherever they actually belong.
+    // Seeded so decoding is sane from sample 1, without waiting for the
+    // running estimates to converge: sync tip = byte 0, black = byte 64
+    // (40 IRE at 1.6 bytes/IRE - the shared byte scale every producer now
+    // emits; also exactly where Gayler's measured Apple II blanking, 0.5V
+    // on its 0-2.0V scale, lands under a clean byte = volts * 128 map),
+    // white = byte 224 (140 IRE reference white). These are just a starting
+    // guess, not a hard assumption - real incoming samples immediately
+    // start pulling all three estimates wherever they actually belong, and
+    // _whiteLevel in particular now only feeds the UI status readout, not
+    // decode (see Television.Decode).
     private const float InitialSyncLevel = 0;
     private const float InitialBlackLevel = 64;
-    private const float InitialWhiteLevel = 255;
+    private const float InitialWhiteLevel = 224;
 
     private float _syncLevel = InitialSyncLevel;
     private float _blackLevel = InitialBlackLevel;

@@ -120,10 +120,13 @@ public sealed class NtscColorBurstPll
     /// <see cref="NtscSyncSeparator.BlackLevel"/> - burst oscillates around
     /// the black/blanking level, not around byte value zero, so it has to
     /// be re-centered before correlating against the local oscillator.
-    /// <paramref name="whiteLevel"/> is only used to scale the detection
-    /// threshold to this signal's own black-to-white swing.
+    /// <paramref name="whiteReference"/> is only used to scale the detection
+    /// threshold to this signal's own black-to-white swing. It is a fixed
+    /// sync-derived reference white (<see cref="NtscYiqDecoder.WhiteReference"/>),
+    /// not a running picture-peak maximum - a stable threshold makes burst
+    /// detection steadier on dim signals, where a running peak would sag.
     /// </summary>
-    public void Process(byte sample, float currentColumn, float blackLevel, float whiteLevel)
+    public void Process(byte sample, float currentColumn, float blackLevel, float whiteReference)
     {
         var phase = MathF.PI / 2f * (_sampleCounter % 4) + _phaseOffsetRadians;
         _sampleCounter++;
@@ -167,7 +170,7 @@ public sealed class NtscColorBurstPll
         }
         else if (_windowSampleCount > 0)
         {
-            FinishBurstWindow(whiteLevel - blackLevel);
+            FinishBurstWindow(whiteReference - blackLevel);
         }
     }
 

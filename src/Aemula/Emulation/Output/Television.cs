@@ -243,8 +243,19 @@ public sealed class Television
     {
         _syncSeparator.Process(sample);
         _rasterOscillators.Process(_syncSeparator.HSyncDetected, _syncSeparator.VSyncDetected);
-        _colorBurstPll.Process(sample, _rasterOscillators.CurrentColumn, _syncSeparator.BlackLevel, _syncSeparator.WhiteLevel);
-        _yiqDecoder.Process(sample, _colorBurstPll.PhaseOffsetRadians, _syncSeparator.BlackLevel, _syncSeparator.WhiteLevel);
+
+        // Decode gain is anchored to a reference white reconstructed from
+        // the sync tip and blanking levels the signal always carries, not
+        // to NtscSyncSeparator's running picture-peak _whiteLevel: a dim
+        // scene (Pitfall's forest, a night sky) may never contain reference
+        // white at all, and a running-max AGC then inflates the gain and
+        // blows out every colour. This mirrors a real receiver's gated-sync
+        // AGC, which keys off the sync interval, never off picture white.
+        // NtscSyncSeparator still tracks its running _whiteLevel for the
+        // WhiteLevel status readout, but nothing in decode consumes it now.
+        var whiteRef = NtscYiqDecoder.WhiteReference(_syncSeparator.BlackLevel, _syncSeparator.SyncLevel);
+        _colorBurstPll.Process(sample, _rasterOscillators.CurrentColumn, _syncSeparator.BlackLevel, whiteRef);
+        _yiqDecoder.Process(sample, _colorBurstPll.PhaseOffsetRadians, _syncSeparator.BlackLevel, _syncSeparator.SyncLevel);
         UpdateVerticalBlanking();
 
         ResizeSampleBufferIfDetectedTimingChanged();
