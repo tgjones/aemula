@@ -6,7 +6,6 @@ using Aemula.Emulation.Output;
 using Aemula.Emulation.Systems.AppleII;
 using Aemula.Emulation.Systems.Atari2600;
 using Aemula.Emulation.Systems.Chip8;
-using Aemula.Emulation.Systems.Nes;
 using Aemula.Emulation.Systems.SpaceInvaders;
 
 namespace Aemula.Benchmarks;
@@ -23,7 +22,6 @@ internal sealed record SystemSpec(
     ulong CyclesPerSecond,
     int WarmupTicks,
     int TicksPerInvocation,
-    bool ResetEachInvocation,
     Func<EmulatedSystem, long> Probe);
 
 internal static class SystemSpecs
@@ -36,7 +34,6 @@ internal static class SystemSpecs
     private const ulong AppleIIHz = 14_318_180;
     private const ulong Atari2600Hz = 3_580_000;
     private const ulong Chip8Hz = 600;
-    private const ulong NesHz = 21_477_272;
     private const ulong SpaceInvadersHz = 19_968_000;
 
     private static long TelevisionRow(EmulatedSystem system) => ((IHasTelevision)system).Television.CurrentRow;
@@ -50,7 +47,6 @@ internal static class SystemSpecs
             AppleIIHz,
             WarmupTicks: 240_000,          // ≈1 frame: past reset, into the steady text screen
             TicksPerInvocation: 480_000,   // ≈2 frames
-            ResetEachInvocation: false,
             TelevisionRow),
 
         new SystemSpec(
@@ -60,7 +56,6 @@ internal static class SystemSpecs
             Atari2600Hz,
             WarmupTicks: 120_000,          // ≈2 frames: past the RAM-clear loop, into steady raster
             TicksPerInvocation: 120_000,   // ≈2 frames
-            ResetEachInvocation: false,
             TelevisionRow),
 
         new SystemSpec(
@@ -70,18 +65,11 @@ internal static class SystemSpecs
             Chip8Hz,
             WarmupTicks: 4_000,            // past CLS + register setup, into the steady loop
             TicksPerInvocation: 200_000,   // no natural "frame"; ≈2 ms of wall time
-            ResetEachInvocation: false,    // Chip8System.Reset() wipes loaded program memory
             static system => ((Chip8System)system).PC),
 
-        new SystemSpec(
-            "nes",
-            static () => new NesSystem(),
-            Workloads.PatchedNestest,
-            NesHz,
-            WarmupTicks: 0,                // Reset() below restarts nestest cleanly each invocation
-            TicksPerInvocation: 400_000,   // ≈1 full automated nestest pass (~30k CPU cycles @ 13 master ticks each)
-            ResetEachInvocation: true,
-            static system => ((NesSystem)system).Cpu.PC),
+        // No "nes" spec: NesSystem's PPU/mapper support is still a stub, so
+        // nestest runs off the rails past its automated section ($C66E) with
+        // nothing valid to execute. Re-add once the NES is a real perf target.
 
         new SystemSpec(
             "spaceinvaders",
@@ -90,7 +78,6 @@ internal static class SystemSpecs
             SpaceInvadersHz,
             WarmupTicks: 340_000,          // ≈1 frame: into attract mode
             TicksPerInvocation: 680_000,   // ≈2 frames (covers both the mid-screen and VBLANK IRQs)
-            ResetEachInvocation: false,
             TelevisionRow),
     ];
 
@@ -116,23 +103,6 @@ internal static class Workloads
     {
         var path = Path.Combine(Path.GetTempPath(), "aemula-bench-chip8.ch8");
         File.WriteAllBytes(path, Chip8TestProgram.Bytes);
-        return path;
-    }
-
-    // nestest.nes is copied next to the executable (see the .csproj). Its RESET
-    // vector points at the interactive entry point; patch it to $C000, the
-    // automated-run entry, the same way Ricoh2A03ChipTests does.
-    public static string PatchedNestest()
-    {
-        var source = Path.Combine(AppContext.BaseDirectory, "Workloads", "nestest.nes");
-        var bytes = File.ReadAllBytes(source);
-
-        // 16-byte iNES header + PRG offset $3FFC/$3FFD.
-        bytes[0x400C] = 0x00;
-        bytes[0x400D] = 0xC0;
-
-        var path = Path.Combine(Path.GetTempPath(), "aemula-bench-nestest.nes");
-        File.WriteAllBytes(path, bytes);
         return path;
     }
 }

@@ -21,13 +21,12 @@ public class DebuggerOverheadBenchmark
     // calling it once per rendered frame rather than once for the whole budget.
     private const int Chunks = 4;
 
-    [Params("appleii", "atari2600", "chip8", "nes", "spaceinvaders")]
+    [Params("appleii", "atari2600", "chip8", "spaceinvaders")]
     public string SystemName = "";
 
     private EmulatedSystem _system = null!;
     private Debugger _debugger = null!;
     private int _ticksPerInvocation;
-    private bool _resetEachInvocation;
     private TimeSpan _chunkDuration;
 
     [GlobalSetup]
@@ -43,7 +42,6 @@ public class DebuggerOverheadBenchmark
         }
 
         _ticksPerInvocation = spec.TicksPerInvocation;
-        _resetEachInvocation = spec.ResetEachInvocation;
 
         // Duration that RunForDuration turns back into ~TicksPerInvocation/Chunks
         // ticks (it does duration -> ticks internally via CyclesPerSecond), so
@@ -61,11 +59,6 @@ public class DebuggerOverheadBenchmark
     public void RawTick()
     {
         var system = _system;
-        if (_resetEachInvocation)
-        {
-            system.Reset();
-        }
-
         for (var i = 0; i < _ticksPerInvocation; i++)
         {
             system.Tick();
@@ -76,11 +69,6 @@ public class DebuggerOverheadBenchmark
     public void ViaDebugger()
     {
         var debugger = _debugger;
-        if (_resetEachInvocation)
-        {
-            _system.Reset();
-        }
-
         debugger.Stopped = false;
 
         for (var i = 0; i < Chunks; i++)

@@ -8,7 +8,7 @@ SDL/ImGui and is safe to iterate on freely.
 
 | Class | What it measures |
 | --- | --- |
-| `AppleIIBenchmark`, `Atari2600Benchmark`, `Chip8Benchmark`, `NesBenchmark`, `SpaceInvadersBenchmark` | Raw `EmulatedSystem.Tick()` throughput for a fixed workload, `TicksPerInvocation` ticks per op (see `SystemSpecs.cs`). Enough ticks to exercise every periodic path: sub-frame video/audio dividers, per-frame sync regions, interrupts, the 60 Hz timer, the frame boundary. |
+| `AppleIIBenchmark`, `Atari2600Benchmark`, `Chip8Benchmark`, `SpaceInvadersBenchmark` | Raw `EmulatedSystem.Tick()` throughput for a fixed workload, `TicksPerInvocation` ticks per op (see `SystemSpecs.cs`). Enough ticks to exercise every periodic path: sub-frame video/audio dividers, per-frame sync regions, interrupts, the 60 Hz timer, the frame boundary. |
 | `DebuggerOverheadBenchmark` | `Debugger.RunForDuration` (the Aemula.UI production path) vs. raw `Tick()`, same tick budget. `Ratio` = cost of the breakpoint / step-mode / disassembler scaffolding. Parameterised by system. |
 | `TelevisionDecodeBenchmark` | `Television.Decode` (runs on every video sample regardless of whether TelevisionWindow is open) in isolation, plus each of its four NTSC stages. See the caveat in the class about inlining making the stage numbers non-additive. |
 
@@ -25,12 +25,10 @@ and the ms needed to simulate one 1/60 s frame.
   sprite / HMOVE registers every scanline.
 - **Chip-8** runs a small hand-written program (`Chip8TestProgram.cs`) that
   loops over sprite draw, the ALU group, RND, BCD, block load/store and timers.
-- **NES** runs `nestest.nes` (shared with `Aemula.Tests`) with its RESET vector
-  patched to `$C000`, the automated-run entry point. `NesBenchmark` calls
-  `Reset()` each invocation so every op runs one full automated pass rather than
-  spinning in nestest's end loop. This is a CPU-fetch + PPU-tick throughput
-  number, not a representative game; revisit with a homebrew NROM demo if the
-  NES PPU becomes a perf target.
+- **NES** has no benchmark yet: `NesSystem`'s PPU/mapper support is still a stub,
+  so there's no workload that stays on valid code for a whole invocation
+  (nestest runs off the rails past its automated section). Add one once the NES
+  is a real perf target.
 
 ## Running
 
