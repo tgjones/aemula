@@ -96,6 +96,12 @@ public sealed partial class AppleIISystem : EmulatedSystem, IHasTelevision
         _keyboardEncoder = new Ay53600Chip();
         _keyboardStrobeLatch = new Ttl7474Chip();
 
+        _speakerFlipFlop = new Ttl7474Chip();
+        _gameInputMux = new Ttl74251Chip();
+        _paddleTimers = [new Ne555Chip(), new Ne555Chip(), new Ne555Chip(), new Ne555Chip()];
+        _paddlePositions = [127, 127, 127, 127];
+        _pushButtons = new bool[3];
+
         Cpu.Res = false;
         Cpu.Res = true;
     }
@@ -149,6 +155,7 @@ public sealed partial class AppleIISystem : EmulatedSystem, IHasTelevision
     {
         TickVideoTiming();
         TickKeyboard();
+        TickGameIo();
     }
 
     private void DoCpuMemoryAccess()
@@ -234,6 +241,13 @@ public sealed partial class AppleIISystem : EmulatedSystem, IHasTelevision
                 return 0xFF;
             }
 
+            if (!_ioControlDecoder.Y3)
+            {
+                // $C03X: any access toggles the speaker flip-flop.
+                ToggleSpeaker();
+                return 0xFF;
+            }
+
             if (!_ioControlDecoder.Y5)
             {
                 // Screen mode soft switches (and, at $C058-$C05F, the
@@ -244,9 +258,23 @@ public sealed partial class AppleIISystem : EmulatedSystem, IHasTelevision
                 return 0xFF;
             }
 
-            // Remaining I/O Section (cassette, speaker, C040 strobe, serial
-            // mux, paddle trigger, slot I/O SELECT'/DEVICE SELECT') not
-            // wired up yet, so it reads as open bus.
+            if (!_ioControlDecoder.Y6)
+            {
+                // $C06X: the game-connector input mux (pushbuttons, paddle
+                // one-shot outputs, cassette in) onto data bit 7.
+                return ReadGameInputMux(address);
+            }
+
+            if (!_ioControlDecoder.Y7)
+            {
+                // $C07X: any access re-triggers the four paddle one-shots.
+                TriggerPaddleTimers();
+                return 0xFF;
+            }
+
+            // Remaining I/O Section (cassette out, C040 strobe, slot I/O
+            // SELECT'/DEVICE SELECT') not wired up yet, so it reads as open
+            // bus.
             return 0xFF;
         }
 
@@ -275,6 +303,17 @@ public sealed partial class AppleIISystem : EmulatedSystem, IHasTelevision
             if (!_ioControlDecoder.Y1)
             {
                 ClearKeyboardStrobe();
+            }
+
+            if (!_ioControlDecoder.Y3)
+            {
+                // A write to $C03X clicks the speaker just like a read does.
+                ToggleSpeaker();
+            }
+
+            if (!_ioControlDecoder.Y7)
+            {
+                TriggerPaddleTimers();
             }
 
             // $C05X (mode switches) and the rest of the I/O Section - not
@@ -337,6 +376,21 @@ public sealed partial class AppleIISystem : EmulatedSystem, IHasTelevision
                 Channel.Digital("VSync", () => VSyncPulse),
                 Channel.Digital("Video Data", () => VideoDataBit),
                 Channel.Analog("Composite Video", () => CurrentCompositeVideoSample, 0, WhiteVoltage, "V"),
+            ]),
+            new ChannelGroup("Game I/O",
+            [
+                Channel.Digital("Speaker", () => SpeakerBit),
+                Channel.Digital("AN0", () => Annunciator0),
+                Channel.Digital("AN1", () => Annunciator1),
+                Channel.Digital("AN2", () => Annunciator2),
+                Channel.Digital("AN3", () => Annunciator3),
+                Channel.Digital("PB0", () => _pushButtons[0]),
+                Channel.Digital("PB1", () => _pushButtons[1]),
+                Channel.Digital("PB2", () => _pushButtons[2]),
+                Channel.Digital("PDL0 Timer", () => _paddleTimers[0].Out),
+                Channel.Digital("PDL1 Timer", () => _paddleTimers[1].Out),
+                Channel.Digital("PDL2 Timer", () => _paddleTimers[2].Out),
+                Channel.Digital("PDL3 Timer", () => _paddleTimers[3].Out),
             ]),
         ];
     }

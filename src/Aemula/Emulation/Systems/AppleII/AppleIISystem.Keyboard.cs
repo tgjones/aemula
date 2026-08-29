@@ -3,7 +3,7 @@ using Hexa.NET.SDL3;
 
 namespace Aemula.Emulation.Systems.AppleII;
 
-// Phase 4: the AY-5-3600 keyboard matrix encoder and the $C000/$C010 soft
+// The AY-5-3600 keyboard matrix encoder and the $C000/$C010 soft
 // switches. The Apple II+'s ~47-key matrix wiring and the $C000/$C010
 // latch/clear behaviour are drawn from Jim Sather's "Understanding the
 // Apple II" chapter 7 and "The Apple II Circuit Description"; see

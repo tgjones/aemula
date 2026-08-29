@@ -2,7 +2,7 @@ using Aemula.Emulation.Chips;
 
 namespace Aemula.Emulation.Systems.AppleII;
 
-// Phase 3: the video scanner (horizontal/vertical counter chain) and the
+// The video scanner (horizontal/vertical counter chain) and the
 // clock generator that derives PHASE0 (the 6502's clock) from it, including
 // the once-per-scanline "long cycle" stretch. Modelled from Jim Sather's
 // "Understanding the Apple II", chapter 3 ("Timing Generation and the Video
@@ -108,7 +108,7 @@ public sealed partial class AppleIISystem
     // The sub-scanline counter: increments once per raster line within an
     // 8-line text row (0-7), rolling into V0 (as part of the shared 9-bit
     // vertical count) rather than being part of the DRAM address itself -
-    // it addresses the character ROM's row-within-glyph instead (phase 4).
+    // it addresses the character ROM's row-within-glyph instead.
     private bool VA => _videoScannerD13.Qd;
     private bool VB => _videoScannerD12.Qa;
     private bool VC => _videoScannerD12.Qb;

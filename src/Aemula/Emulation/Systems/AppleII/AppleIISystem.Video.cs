@@ -2,13 +2,13 @@ using Aemula.Emulation.Chips;
 
 namespace Aemula.Emulation.Systems.AppleII;
 
-// Phase 4: TEXT/LORES video address generation, character-ROM lookup, and
-// NORMAL/INVERSE/FLASH, driven off the phase-3 video scanner. Modelled from
+// TEXT/LORES video address generation, character-ROM lookup, and
+// NORMAL/INVERSE/FLASH, driven off the video scanner. Modelled from
 // Jim Sather's "Understanding the Apple II", chapter 5 ("RAM in the Apple
 // II", "The Arithmetic of Video Scanner Memory Addressing") and chapter 8
 // ("Video Generation"), cross-checked against AppleWin's Video.cpp.
 //
-// Phase 5: the $C050-$C057 screen mode soft switches, LORES color block
+// And the $C050-$C057 screen mode soft switches, LORES color block
 // generation, and HIRES addressing/shifting, plus PAGE2 for both. Also
 // modelled from Sather chapters 5, 7 ("Address Decoding and Input/Output"),
 // and 8, cross-checked against AppleWin's VideoGetScannerAddress.

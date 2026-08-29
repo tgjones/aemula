@@ -3,7 +3,7 @@ using Aemula.Emulation.Systems.AppleII;
 
 namespace Aemula.Tests.Emulation.Systems.AppleII;
 
-// Phase 5: the $C050-$C057 screen mode soft switches, LORES color block
+// The $C050-$C057 screen mode soft switches, LORES color block
 // generation, and HIRES addressing/shifting/PAGE2, cross-checked against
 // Jim Sather's "Understanding the Apple II" chapters 5, 7, and 8.
 public class AppleIISystemVideoModesTests

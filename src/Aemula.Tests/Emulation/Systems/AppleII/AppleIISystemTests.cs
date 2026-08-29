@@ -43,7 +43,7 @@ public class AppleIISystemTests
         // The Autostart ROM prints an "APPLE ][" banner and BASIC prompt
         // without any input - after enough emulated time to both run that
         // code and scan a few frames of video, the text-mode pipeline
-        // (phase 4) should have written some lit pixels into Display.
+        // should have written some lit pixels into Display.
         var system = new AppleIISystem();
         system.LoadProgram("");
 

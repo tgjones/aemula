@@ -4,7 +4,7 @@ using Aemula.Emulation.Systems.AppleII;
 
 namespace Aemula.Tests.Emulation.Systems.AppleII;
 
-// Cross-checks the phase 3 video scanner / clock generator against the
+// Cross-checks the video scanner / clock generator against the
 // exact worked examples and frequencies given in Jim Sather's "Understanding
 // the Apple II", chapter 3.
 public class AppleIISystemVideoTimingTests
