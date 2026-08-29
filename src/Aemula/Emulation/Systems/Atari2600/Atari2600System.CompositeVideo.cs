@@ -202,34 +202,9 @@ public sealed partial class Atari2600System
         // likewise held constant within their own faster-than-the-digital-
         // signal sample loop.
         var sync = _tia.Sync;
+        var blk = _tia.Blk;
         var lum = _tia.Lum;
         var col = _tia.Col;
-
-        float luma;
-        if (sync)
-        {
-            luma = SyncLevel;
-        }
-        else if (_tia.Blk)
-        {
-            // Blanking, including the back porch that carries color burst:
-            // TIA forces the LUM lines off here, so the level is flat
-            // blanking whatever the lum code reads - and the coloured-black
-            // floor below must not lift it, since burst rides on blanking.
-            luma = BlankingLevel;
-        }
-        else
-        {
-            // Active video: the compressive luma DAC curve. Any non-grey
-            // entry (Col != 0) also takes the coloured-black floor, so lum-0
-            // hues keep TIA's raised coloured sub-range instead of collapsing
-            // to blanking.
-            luma = LumaLevels[lum];
-            if (col != 0)
-            {
-                luma = MathF.Max(luma, ColourFloor);
-            }
-        }
 
         // Television.Decode needs samples at exactly 4x the NTSC color
         // subcarrier (~14.318MHz). TIA's OSC input is the subcarrier rate
@@ -244,57 +219,18 @@ public sealed partial class Atari2600System
         // which exists because Apple II's video-data bit changes slower
         // than its own master clock - TIA's Sync/Blk/Lum/Col genuinely
         // don't).
+        //
+        // Every sub-sample byte is a pure function of (sync, blk, lum, col,
+        // subSample) - all small and finite - and every other term in the
+        // luma-DAC-plus-chroma-sine formula is a compile-time constant, so
+        // the whole per-sub-sample chain (a luma branch, a MathF.Sin, the
+        // round and the clamp) precomputes into SampleTable once and
+        // collapses here to four lookups. See BuildSampleTable.
+        var baseIndex = SampleTableIndex(sync, blk, lum, col, 0);
+
         for (var subSample = 0; subSample < 4; subSample++)
         {
-            var chroma = 0f;
-
-            // Col == 0 is grayscale (no chroma - see TiaChip.Col's own doc
-            // comment on the hue-index approximation this plan phase keeps
-            // as-is). The !sync guard is a pragmatic safety net, not
-            // something sourced from a schematic: TiaChip's _colorBurst
-            // window is purely horizontal-counter-driven, so it can in
-            // principle overlap a broad vertical-sync pulse's own extended
-            // low period on a handful of lines per frame - genuine sync tip
-            // shouldn't carry chroma regardless of how that edge case
-            // really behaves on real silicon.
-            if (col != 0 && !sync)
-            {
-                // One full subcarrier cycle per call (see above), so the 4
-                // sub-samples are exactly 90 degrees apart; hue code 1 is
-                // TIA's own reference phase (0 degrees, the same phase as
-                // color burst - see TiaChip._colorBurst's remarks, and note
-                // that this file needs no special case to make that true:
-                // TiaChip drives Col = 1 for the burst window itself, so
-                // burst is literally hue 1, exactly as the real delay line's
-                // shared tap makes it), so hues 2-15 fall at
-                // (Col-1)*HueStepDegrees from there.
-                //
-                // Negative, not positive: real TIA's hue generator is a
-                // phase-*delay* line (see TiaChip.Col's own doc comment -
-                // "a digital phase shifter... with fifteen phase angles"),
-                // and delaying a sinusoid in time is a negative phase
-                // shift, not a positive one - increasing hue code adds more
-                // delay, so it should rotate the phase backward, not
-                // forward. Corroborated independently by the reference
-                // palette: converting Palette.NtscPalette's own entries back
-                // to chroma phase walks the hue circle in exactly this
-                // direction as the hue code rises (gold, orange, red,
-                // purple, blue, cyan, green), which on a standard NTSC
-                // vectorscope is decreasing phase.
-                //
-                // A sine, not the real square wave TIA's Col pin actually
-                // outputs - see TiaChip.Col's own doc comment for why: this
-                // decodes exactly (0 error against the mathematically exact
-                // target), where reducing a real square wave to Television's
-                // 4-samples-per-cycle contract by any method measured
-                // (direct 4-point evaluation, or averaging finer
-                // sub-samples down to 4) introduced real, measured hue and
-                // saturation error instead.
-                var phaseRadians = (subSample * 90f - (col - 1) * HueStepDegrees) * MathF.PI / 180f;
-                chroma = ChromaAmplitude * MathF.Sin(phaseRadians);
-            }
-
-            var sample = (byte)Math.Clamp(MathF.Round(luma + chroma), 0, 255);
+            var sample = SampleTable[baseIndex + subSample];
 
             Television.Decode(sample);
 
@@ -302,5 +238,128 @@ public sealed partial class Atari2600System
 
             CompositeVideoSampled?.Invoke();
         }
+    }
+
+    // Flat [sync, blk, lum(0..7), col(0..15), subSample(0..3)] -> composite
+    // sample byte. col == 0 is grey (no chroma); sync forces sync level and
+    // gates chroma off; blk forces blanking level but still carries chroma
+    // (the back porch's colour burst rides on blanking).
+    private static readonly byte[] SampleTable = BuildSampleTable();
+
+    private static int SampleTableIndex(bool sync, bool blk, int lum, int col, int subSample) =>
+        ((((((sync ? 1 : 0) << 1) | (blk ? 1 : 0)) * 8 + lum) * 16 + col) * 4) + subSample;
+
+    private static byte[] BuildSampleTable()
+    {
+        var table = new byte[2 * 2 * 8 * 16 * 4];
+
+        for (var syncBit = 0; syncBit < 2; syncBit++)
+        {
+            var sync = syncBit != 0;
+
+            for (var blkBit = 0; blkBit < 2; blkBit++)
+            {
+                for (var lum = 0; lum < 8; lum++)
+                {
+                    for (var col = 0; col < 16; col++)
+                    {
+                        float luma;
+                        if (sync)
+                        {
+                            luma = SyncLevel;
+                        }
+                        else if (blkBit != 0)
+                        {
+                            // Blanking, including the back porch that carries
+                            // color burst: TIA forces the LUM lines off here,
+                            // so the level is flat blanking whatever the lum
+                            // code reads - and the coloured-black floor below
+                            // must not lift it, since burst rides on blanking.
+                            luma = BlankingLevel;
+                        }
+                        else
+                        {
+                            // Active video: the compressive luma DAC curve.
+                            // Any non-grey entry (Col != 0) also takes the
+                            // coloured-black floor, so lum-0 hues keep TIA's
+                            // raised coloured sub-range instead of collapsing
+                            // to blanking.
+                            luma = LumaLevels[lum];
+                            if (col != 0)
+                            {
+                                luma = MathF.Max(luma, ColourFloor);
+                            }
+                        }
+
+                        for (var subSample = 0; subSample < 4; subSample++)
+                        {
+                            var chroma = 0f;
+
+                            // Col == 0 is grayscale (no chroma - see
+                            // TiaChip.Col's own doc comment on the hue-index
+                            // approximation this plan phase keeps as-is). The
+                            // !sync guard is a pragmatic safety net, not
+                            // something sourced from a schematic: TiaChip's
+                            // _colorBurst window is purely horizontal-counter-
+                            // driven, so it can in principle overlap a broad
+                            // vertical-sync pulse's own extended low period on
+                            // a handful of lines per frame - genuine sync tip
+                            // shouldn't carry chroma regardless of how that
+                            // edge case really behaves on real silicon.
+                            if (col != 0 && !sync)
+                            {
+                                // One full subcarrier cycle per call (see
+                                // above), so the 4 sub-samples are exactly 90
+                                // degrees apart; hue code 1 is TIA's own
+                                // reference phase (0 degrees, the same phase
+                                // as color burst - see TiaChip._colorBurst's
+                                // remarks, and note that this file needs no
+                                // special case to make that true: TiaChip
+                                // drives Col = 1 for the burst window itself,
+                                // so burst is literally hue 1, exactly as the
+                                // real delay line's shared tap makes it), so
+                                // hues 2-15 fall at (Col-1)*HueStepDegrees
+                                // from there.
+                                //
+                                // Negative, not positive: real TIA's hue
+                                // generator is a phase-*delay* line (see
+                                // TiaChip.Col's own doc comment - "a digital
+                                // phase shifter... with fifteen phase
+                                // angles"), and delaying a sinusoid in time
+                                // is a negative phase shift, not a positive
+                                // one - increasing hue code adds more delay,
+                                // so it should rotate the phase backward, not
+                                // forward. Corroborated independently by the
+                                // reference palette: converting
+                                // Palette.NtscPalette's own entries back to
+                                // chroma phase walks the hue circle in
+                                // exactly this direction as the hue code
+                                // rises (gold, orange, red, purple, blue,
+                                // cyan, green), which on a standard NTSC
+                                // vectorscope is decreasing phase.
+                                //
+                                // A sine, not the real square wave TIA's Col
+                                // pin actually outputs - see TiaChip.Col's own
+                                // doc comment for why: this decodes exactly (0
+                                // error against the mathematically exact
+                                // target), where reducing a real square wave
+                                // to Television's 4-samples-per-cycle contract
+                                // by any method measured (direct 4-point
+                                // evaluation, or averaging finer sub-samples
+                                // down to 4) introduced real, measured hue and
+                                // saturation error instead.
+                                var phaseRadians = (subSample * 90f - (col - 1) * HueStepDegrees) * MathF.PI / 180f;
+                                chroma = ChromaAmplitude * MathF.Sin(phaseRadians);
+                            }
+
+                            table[SampleTableIndex(sync, blkBit != 0, lum, col, subSample)] =
+                                (byte)Math.Clamp(MathF.Round(luma + chroma), 0, 255);
+                        }
+                    }
+                }
+            }
+        }
+
+        return table;
     }
 }
