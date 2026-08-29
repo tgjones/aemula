@@ -137,6 +137,17 @@ public sealed class NtscYiqDecoder
 
     private ulong _sampleCounter;
 
+    // sin/cos of the demodulation base angle, memoised across samples. The
+    // base angle is phaseOffsetRadians (the color-burst PLL's slowly-drifting
+    // lock) plus a fixed rotation constant, and the PLL only nudges its offset
+    // once per line (NtscColorBurstPll.FinishBurstWindow) - so this argument
+    // holds steady for a whole line's ~900 samples, and recomputing SinCos
+    // every sample was pure waste. Recompute only when the angle actually
+    // moves; NaN-safe because the initial _lastBaseAngle != any real angle.
+    private float _lastBaseAngle = float.NaN;
+    private float _lastBaseSin;
+    private float _lastBaseCos;
+
     /// <summary>
     /// The most recently decoded luma (brightness), rescaled so black = 0
     /// and white = 255 - <see cref="Television.Decode"/>'s own byte scale,
@@ -264,7 +275,14 @@ public sealed class NtscYiqDecoder
         var baseAngle = phaseOffsetRadians + (float)BurstToIAxisRotationRadians;
         _sampleCounter++;
 
-        var (baseSin, baseCos) = MathF.SinCos(baseAngle);
+        if (baseAngle != _lastBaseAngle)
+        {
+            (_lastBaseSin, _lastBaseCos) = MathF.SinCos(baseAngle);
+            _lastBaseAngle = baseAngle;
+        }
+
+        var baseSin = _lastBaseSin;
+        var baseCos = _lastBaseCos;
         var (cos, sin) = slot switch
         {
             0 => (baseCos, baseSin),
