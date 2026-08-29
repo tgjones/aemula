@@ -121,49 +121,17 @@ public sealed partial class AppleIISystem
             _ticksSincePhase0Edge++;
         }
 
-        var videoBit = VideoDataBit ? 1.0 : 0.0;
-        var syncBit = SyncBit ? 1.0 : 0.0;
-
-        var vBase = EffectiveLogicHigh * (WVideo * videoBit + WSync * syncBit);
-        var vOut = Math.Max(0.0, vBase - TransistorVbe);
-
-        if (ColorBurstGate)
-        {
-            // Only 4 samples/cycle are achievable at this sample rate (the
-            // subcarrier is exactly master/4). That lands every sample
-            // exactly on a zero-crossing or a peak (0, +1, 0, -1), not a
-            // smooth curve - still a real sine's *shape*, and a genuine step up from a
-            // flat square wave, which is what this replaces.
-            //
-            // The +2 (half a subcarrier cycle) is a real, load-bearing part
-            // of the encoding, not cosmetic. Burst's job is to tell the
-            // receiver where zero phase is, so which of the four master
-            // ticks this sine starts on is what fixes every decoded hue on
-            // screen - and _masterTickCounter is only a free-running
-            // counter from power-on (see its own remarks), with no
-            // hardware-derived alignment of its own to the VIDEO DATA
-            // shift-register phase that actually carries the picture's
-            // chroma. So the offset between the two has to be calibrated
-            // against a known-correct landmark, exactly the way this file's
-            // EffectiveLogicHigh/TransistorVbe are solved from Gayler's
-            // measured levels rather than assumed. The landmark used is
-            // Sather's worked example (Understanding the Apple II, p.8-15,
-            // quoted in full in AppleIISystemTelevisionTests): $2A at even
-            // addresses / $55 at odd addresses "produces a short green
-            // line", and swapping the two produces violet. Without this
-            // offset those two decode to each other's colors - the picture
-            // stays perfectly self-consistent, just half a turn around the
-            // hue circle from real hardware, which is precisely the failure
-            // a burst phase is defined to prevent.
-            var phase = 2.0 * Math.PI * ((_masterTickCounter + 2) % 4) / 4.0;
-            vOut += BurstAmplitudeVolts * Math.Sin(phase);
-        }
-
-        // Anchored on Gayler's measured sync/blanking landmarks:
-        // byte = volts * (BlankingByte / BlackVoltage) = volts * 128. White
-        // legitimately overshoots byte 255 and clamps - see BlankingByte's
-        // remarks.
-        var sample = (byte)Math.Clamp(Math.Round(vOut * (BlankingByte / BlackVoltage)), 0, 255);
+        // The analog summing formula (see BuildSampleTable) has only three
+        // runtime inputs - the VIDEO DATA bit, the SYNC bit, and, while the
+        // burst gate is open, which of the subcarrier's four phase slots this
+        // master tick lands on - and every other term is a compile-time
+        // constant. That is at most 2 x 2 x (1 + 4) = 20 distinct output
+        // bytes, so the whole per-tick chain of double multiplies, the Sin,
+        // the Round and the Clamp collapses to one table lookup. The table is
+        // built once by running the original formula verbatim, so the bytes
+        // it yields are bit-identical to computing them here every tick.
+        var burstSlot = ColorBurstGate ? (int)((_masterTickCounter + 2) % 4) + 1 : 0;
+        var sample = SampleTable[SampleTableIndex(VideoDataBit, SyncBit, burstSlot)];
 
         CompositeVideo[CompositeVideoWriteIndex] = sample;
         CompositeVideoWriteIndex = (CompositeVideoWriteIndex + 1) % CompositeVideoCapacity;
@@ -171,5 +139,81 @@ public sealed partial class AppleIISystem
         Television.Decode(sample);
 
         _masterTickCounter++;
+    }
+
+    // Flat [videoBit, syncBit, burstSlot] -> composite sample byte, indexed
+    // via SampleTableIndex. burstSlot 0 means the color-burst gate was closed
+    // this tick; 1..4 means it was open and (_masterTickCounter + 2) % 4 was
+    // 0..3. A plain byte[] with a hand-rolled index beats a byte[,,] here -
+    // this runs once per master tick and multidimensional-array access carries
+    // extra bounds-check overhead the JIT can't hoist away.
+    private static readonly byte[] SampleTable = BuildSampleTable();
+
+    private static int SampleTableIndex(bool videoBit, bool syncBit, int burstSlot) =>
+        (((videoBit ? 1 : 0) << 1) | (syncBit ? 1 : 0)) * 5 + burstSlot;
+
+    private static byte[] BuildSampleTable()
+    {
+        var table = new byte[2 * 2 * 5];
+
+        for (var v = 0; v < 2; v++)
+        {
+            for (var s = 0; s < 2; s++)
+            {
+                var vBase = EffectiveLogicHigh * (WVideo * v + WSync * s);
+
+                for (var burstSlot = 0; burstSlot < 5; burstSlot++)
+                {
+                    var vOut = Math.Max(0.0, vBase - TransistorVbe);
+
+                    if (burstSlot > 0)
+                    {
+                        // Only 4 samples/cycle are achievable at this sample
+                        // rate (the subcarrier is exactly master/4). That
+                        // lands every sample exactly on a zero-crossing or a
+                        // peak (0, +1, 0, -1), not a smooth curve - still a
+                        // real sine's *shape*, and a genuine step up from a
+                        // flat square wave, which is what this replaces.
+                        //
+                        // The +2 (half a subcarrier cycle) folded into
+                        // burstSlot by the caller is a real, load-bearing
+                        // part of the encoding, not cosmetic. Burst's job is
+                        // to tell the receiver where zero phase is, so which
+                        // of the four master ticks this sine starts on is
+                        // what fixes every decoded hue on screen - and
+                        // _masterTickCounter is only a free-running counter
+                        // from power-on (see its own remarks), with no
+                        // hardware-derived alignment of its own to the VIDEO
+                        // DATA shift-register phase that actually carries the
+                        // picture's chroma. So the offset between the two has
+                        // to be calibrated against a known-correct landmark,
+                        // exactly the way this file's EffectiveLogicHigh/
+                        // TransistorVbe are solved from Gayler's measured
+                        // levels rather than assumed. The landmark used is
+                        // Sather's worked example (Understanding the Apple
+                        // II, p.8-15, quoted in full in
+                        // AppleIISystemTelevisionTests): $2A at even
+                        // addresses / $55 at odd addresses "produces a short
+                        // green line", and swapping the two produces violet.
+                        // Without this offset those two decode to each
+                        // other's colors - the picture stays perfectly
+                        // self-consistent, just half a turn around the hue
+                        // circle from real hardware, which is precisely the
+                        // failure a burst phase is defined to prevent.
+                        var phase = 2.0 * Math.PI * (burstSlot - 1) / 4.0;
+                        vOut += BurstAmplitudeVolts * Math.Sin(phase);
+                    }
+
+                    // Anchored on Gayler's measured sync/blanking landmarks:
+                    // byte = volts * (BlankingByte / BlackVoltage) = volts *
+                    // 128. White legitimately overshoots byte 255 and clamps
+                    // - see BlankingByte's remarks.
+                    table[SampleTableIndex(v != 0, s != 0, burstSlot)] = (byte)Math.Clamp(
+                        Math.Round(vOut * (BlankingByte / BlackVoltage)), 0, 255);
+                }
+            }
+        }
+
+        return table;
     }
 }
