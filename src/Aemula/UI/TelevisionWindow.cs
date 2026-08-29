@@ -144,6 +144,14 @@ public sealed class TelevisionWindow : DebuggerWindow
     public TelevisionWindow(Television television)
     {
         _television = television;
+
+        // This window's per-sample hover tooltip is the only consumer of the
+        // Sample diagnostic fields (Region/RawSample/CarrierPhaseRadians/
+        // Luma/I/Q), which Television skips populating unless asked - see
+        // Television.CaptureSampleDiagnostics. The window object outlives any
+        // one open/close, so this is left on for the process's lifetime
+        // rather than toggled with visibility.
+        _television.CaptureSampleDiagnostics = true;
     }
 
     private SampleBuffer SampleBuffer => _television.SampleBuffer;

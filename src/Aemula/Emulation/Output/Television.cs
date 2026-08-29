@@ -41,6 +41,26 @@ public sealed class Television
         (uint)MathF.Round(NtscTiming.NominalSamplesPerLine),
         (uint)MathF.Round(NtscTiming.NominalLinesPerField));
 
+    /// <summary>
+    /// Whether <see cref="Decode"/> populates every field of each
+    /// <see cref="Sample"/> except <see cref="Sample.Color"/> -
+    /// <see cref="Sample.Region"/> (the raster-region overlays and
+    /// <see cref="ComputeActiveVideoRowRange"/>), plus
+    /// <see cref="Sample.RawSample"/>, <see cref="Sample.CarrierPhaseRadians"/>,
+    /// <see cref="Sample.Luma"/>, <see cref="Sample.I"/> and
+    /// <see cref="Sample.Q"/> (<c>TelevisionWindow</c>'s per-sample hover
+    /// tooltip). Nothing in the decode pipeline or the plain rendered picture
+    /// reads any of them, so they are skipped on every one of the millions of
+    /// samples per emulated second unless a consumer has switched this on.
+    /// <see cref="Sample.Color"/> is written regardless - it carries the
+    /// actual picture - and the whole decode pipeline always runs, so
+    /// <see cref="CurrentColumn"/>/<see cref="CurrentRow"/>/
+    /// <see cref="ColorBurstLocked"/> and the rest stay correct either way.
+    /// Off by default; a consumer that turns it on sees these fields go live
+    /// within one frame (they hold their previous values until then).
+    /// </summary>
+    public bool CaptureSampleDiagnostics { get; set; }
+
     // State behind _isVerticallyBlanked below - see UpdateVerticalBlanking.
     private bool _wasInSyncRegion;
     private float _samplesSincePulseStart = float.MaxValue;
@@ -280,30 +300,38 @@ public sealed class Television
 
         var region = ClassifyCurrentSample();
 
-        // Every sample is written here, at its true raster position - not
-        // just active video - so TelevisionWindow's full-raster view has
-        // real pixels for its region overlays to sit over. But only active
-        // video gets its full
-        // decoded *color* - sync/blanking/color-burst samples decode to real
-        // but meaningless chroma (NtscYiqDecoder's own remarks), and writing
-        // that as-is would paint color burst's own reference-phase flicker
-        // as a spurious, wrongly-hued stripe. Luma alone (I = Q = 0, i.e.
-        // plain grayscale) is still a faithful *brightness* reading for
-        // those samples - and for sync/blanking, whose sample value barely
-        // deviates from black/sync level, that comes out close to black
-        // anyway, same as this buffer's un-written background used to be.
-        SampleBuffer.Data[row * SampleBuffer.Width + column] = new Sample
+        // Color is written for every sample, at its true raster position -
+        // not just active video - so a consumer always has a full-raster
+        // picture to show. Only active video gets its full decoded *color*
+        // though: sync/blanking/color-burst samples decode to real but
+        // meaningless chroma (NtscYiqDecoder's own remarks), and writing that
+        // as-is would paint color burst's own reference-phase flicker as a
+        // spurious, wrongly-hued stripe. Luma alone (I = Q = 0, i.e. plain
+        // grayscale) is still a faithful *brightness* reading for those
+        // samples - and for sync/blanking, whose sample value barely deviates
+        // from black/sync level, that comes out close to black anyway, same
+        // as this buffer's un-written background used to be.
+        ref var slot = ref SampleBuffer.Data[row * SampleBuffer.Width + column];
+        slot.Color = region == RasterRegion.ActiveVideo
+            ? _yiqDecoder.Rgb
+            : GrayscaleFromLuma(_yiqDecoder.Luma);
+
+        // Region drives the raster-region overlays and the active-video row
+        // detection; RawSample/CarrierPhaseRadians/Luma/I/Q feed only
+        // TelevisionWindow's per-sample hover tooltip (read back out of
+        // neighbouring cells as a rolling log of the raw signal). Nothing in
+        // the decode pipeline or the plain rendered picture needs any of
+        // them, so they are populated only on request - see
+        // CaptureSampleDiagnostics.
+        if (CaptureSampleDiagnostics)
         {
-            Region = region,
-            Color = region == RasterRegion.ActiveVideo
-                ? _yiqDecoder.Rgb
-                : GrayscaleFromLuma(_yiqDecoder.Luma),
-            RawSample = sample,
-            CarrierPhaseRadians = _colorBurstPll.CurrentPhaseRadians,
-            Luma = _yiqDecoder.Luma,
-            I = _yiqDecoder.I,
-            Q = _yiqDecoder.Q,
-        };
+            slot.Region = region;
+            slot.RawSample = sample;
+            slot.CarrierPhaseRadians = _colorBurstPll.CurrentPhaseRadians;
+            slot.Luma = _yiqDecoder.Luma;
+            slot.I = _yiqDecoder.I;
+            slot.Q = _yiqDecoder.Q;
+        }
     }
 
     // Which part of the signal produced the sample just processed - read

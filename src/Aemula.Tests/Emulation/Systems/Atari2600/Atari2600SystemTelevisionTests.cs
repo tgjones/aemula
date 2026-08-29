@@ -144,6 +144,10 @@ public class Atari2600SystemTelevisionTests
     // PLL are locked well before the frame under test is captured.
     private static void RunFrames(Atari2600System system, int frameCount)
     {
+        // These tests read the per-sample Luma/I/Q diagnostic fields back out
+        // of SampleBuffer, which Television only populates when asked to.
+        system.Television.CaptureSampleDiagnostics = true;
+
         // 262 lines * 228 OSC ticks/line - see EmitColorBand's remarks.
         const int ticksPerFrame = 262 * 228;
 

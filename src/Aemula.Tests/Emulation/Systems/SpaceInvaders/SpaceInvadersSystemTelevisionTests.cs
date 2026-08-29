@@ -62,6 +62,10 @@ public class SpaceInvadersSystemTelevisionTests
     // no analog jitter to average out).
     private static void RunFrames(SpaceInvadersSystem system, int frameCount)
     {
+        // This test reads the per-sample Luma diagnostic field back out of
+        // SampleBuffer, which Television only populates when asked to.
+        system.Television.CaptureSampleDiagnostics = true;
+
         for (var i = 0; i < frameCount * TicksPerFrame; i++)
         {
             system.TickVideoForTests();

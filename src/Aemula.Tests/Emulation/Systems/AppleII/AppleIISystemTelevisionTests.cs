@@ -27,6 +27,10 @@ public class AppleIISystemTelevisionTests
     // even poked in.
     private static void BootToIdle(AppleIISystem system)
     {
+        // These tests read Sample.Region back out of SampleBuffer, which
+        // Television only populates when asked to.
+        system.Television.CaptureSampleDiagnostics = true;
+
         for (var i = 0; i < 500_000; i++)
         {
             system.Tick();

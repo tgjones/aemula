@@ -40,6 +40,15 @@ public static class Program
         var system = createSystem();
         var television = ((IHasTelevision)system).Television;
 
+        // ScreenshotWriter reads Sample.Region (via ComputeActiveVideoRowRange)
+        // and Sample.Color out of SampleBuffer; Region is only populated when
+        // capture is enabled. Left off for a screenshot-less run so a long
+        // headless pass keeps the faster decode path.
+        if (screenshotPath != null)
+        {
+            television.CaptureSampleDiagnostics = true;
+        }
+
         var screenshotsWritten = new List<string>();
 
         // Zero-padded to a fixed 6 digits regardless of framesRequested - simpler
