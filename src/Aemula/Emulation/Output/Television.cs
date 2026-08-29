@@ -105,8 +105,9 @@ public sealed class Television
     /// Whether a real color burst (as opposed to noise, or active-video
     /// content that happened to fall in the expected window) was found on
     /// the most recently completed line - see <see cref="NtscColorBurstPll"/>.
-    /// A status readout's idea of "burst locked", not something the decode
-    /// pipeline itself branches on.
+    /// The decode pipeline branches on this too: a line with no detected
+    /// burst is decoded as grayscale, the same as a real receiver's color
+    /// killer (see <see cref="NtscYiqDecoder.Process"/>).
     /// </summary>
     public bool ColorBurstLocked => _colorBurstPll.BurstDetected;
 
@@ -255,7 +256,7 @@ public sealed class Television
         // WhiteLevel status readout, but nothing in decode consumes it now.
         var whiteRef = NtscYiqDecoder.WhiteReference(_syncSeparator.BlackLevel, _syncSeparator.SyncLevel);
         _colorBurstPll.Process(sample, _rasterOscillators.CurrentColumn, _syncSeparator.BlackLevel, whiteRef);
-        _yiqDecoder.Process(sample, _colorBurstPll.PhaseOffsetRadians, _syncSeparator.BlackLevel, _syncSeparator.SyncLevel);
+        _yiqDecoder.Process(sample, _colorBurstPll.PhaseOffsetRadians, _syncSeparator.BlackLevel, _syncSeparator.SyncLevel, _colorBurstPll.BurstDetected);
         UpdateVerticalBlanking();
 
         ResizeSampleBufferIfDetectedTimingChanged();

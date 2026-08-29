@@ -62,8 +62,20 @@ public sealed partial class AppleIISystem
     public bool Vbl => V4 && V3;
 
     // The color burst gate: ~9 cycles of COLOR REFERENCE go out during this
-    // window, once per scanline, starting right after HSync.
-    public bool ColorBurstGate => !H5 && !H4 && H3 && H2;
+    // window, once per scanline, starting right after HSync - unless the
+    // color killer is shunting the reference away (see ColorKiller).
+    public bool ColorBurstGate => !H5 && !H4 && H3 && H2 && !ColorKiller;
+
+    // The color-killer transistor fitted to Revision 1 and later boards,
+    // gated by the TEXT soft switch: in full-screen text mode it pulls the
+    // COLOR REFERENCE away from the video-summing node, so no burst leaves
+    // the machine and a color receiver's own killer squelches chroma to show
+    // crisp monochrome text. Revision 0 had no such circuit, so its text
+    // shimmered with composite artifact color on a color set. Mixed
+    // text/graphics leaves the TEXT switch low (it runs in GRAPHICS mode with
+    // MIX set), so its bottom text rows keep bursting and still fringe on
+    // every revision.
+    private bool ColorKiller => _revision != AppleIIRevision.Revision0 && TextMode;
 
     // HSync (Rev.7+/RFI board, matching the Autostart Monitor target
     // config): a 4-H-count pulse immediately preceding ColorBurstGate's

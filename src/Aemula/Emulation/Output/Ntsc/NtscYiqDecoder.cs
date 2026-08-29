@@ -173,8 +173,15 @@ public sealed class NtscYiqDecoder
     /// to consult <see cref="NtscYiqDecoder"/>'s output where
     /// <c>Television.IsActiveVideo</c> is true (sync/blanking samples decode
     /// to meaningless colors, harmlessly, since nothing displays them).
+    /// <paramref name="colorBurstDetected"/> should be
+    /// <see cref="NtscColorBurstPll.BurstDetected"/> for the line this sample
+    /// belongs to: when it is false this acts as a real receiver's color
+    /// killer and mutes the chroma path entirely (see below), so a
+    /// burst-less source (a monochrome signal, or an Apple II with its
+    /// color-killer circuit suppressing burst in text mode) decodes as
+    /// grayscale instead of pulling spurious hue out of sharp edges.
     /// </summary>
-    public void Process(byte sample, float phaseOffsetRadians, float blackLevel, float syncLevel)
+    public void Process(byte sample, float phaseOffsetRadians, float blackLevel, float syncLevel, bool colorBurstDetected)
     {
         // Step 1: luma via a comb filter. Every sample is exactly 90
         // degrees of subcarrier phase from its neighbors (the 4x-fsc
@@ -217,6 +224,20 @@ public sealed class NtscYiqDecoder
         var scale = 255f / (whiteRef - blackLevel);
         Luma = Math.Clamp((rawLuma - blackLevel) * scale, 0, 255);
         var chroma = rawChroma * scale;
+
+        // The color killer. A real receiver mutes its chroma demodulator on
+        // any line whose back porch carried no color burst - with no phase
+        // reference recovered for that line, whatever the comb filter leaves
+        // behind is high-frequency luma, not color. Zeroing chroma here (and
+        // still running the demod math below, so the I/Q box filter and slot
+        // counter stay warm for a clean transition when burst returns) makes
+        // I and Q settle to zero within one subcarrier cycle and collapses
+        // the YIQ->RGB matrix to plain grayscale - the same outcome as a TV
+        // whose color-killer squelch has engaged.
+        if (!colorBurstDetected)
+        {
+            chroma = 0f;
+        }
 
         // Step 3: I/Q quadrature demodulation. Multiplying chroma by the
         // burst-locked local oscillator's in-phase/quadrature references and

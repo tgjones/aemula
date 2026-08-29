@@ -56,7 +56,7 @@ public class NtscYiqDecoderTests
 
         for (var i = 0; i < 40; i++)
         {
-            decoder.Process(150, phaseOffsetRadians: 0, blackLevel: BlackLevel, syncLevel: SyncLevel);
+            decoder.Process(150, phaseOffsetRadians: 0, blackLevel: BlackLevel, syncLevel: SyncLevel, colorBurstDetected: true);
 
             if (i >= WarmupSamples)
             {
@@ -86,7 +86,7 @@ public class NtscYiqDecoderTests
         for (var i = 0; i < 40; i++)
         {
             var sample = BuildSample(i, rawLuma, amplitude, extraAngle: 0);
-            decoder.Process(sample, phaseOffsetRadians: 0, blackLevel: BlackLevel, syncLevel: SyncLevel);
+            decoder.Process(sample, phaseOffsetRadians: 0, blackLevel: BlackLevel, syncLevel: SyncLevel, colorBurstDetected: true);
 
             if (i >= WarmupSamples)
             {
@@ -112,7 +112,7 @@ public class NtscYiqDecoderTests
         for (var i = 0; i < 40; i++)
         {
             var sample = BuildSample(i, rawLuma, amplitude, extraAngle: MathF.PI / 2f);
-            decoder.Process(sample, phaseOffsetRadians: 0, blackLevel: BlackLevel, syncLevel: SyncLevel);
+            decoder.Process(sample, phaseOffsetRadians: 0, blackLevel: BlackLevel, syncLevel: SyncLevel, colorBurstDetected: true);
 
             if (i >= WarmupSamples)
             {
@@ -139,7 +139,7 @@ public class NtscYiqDecoderTests
         for (var i = 0; i < 40; i++)
         {
             var sample = BuildSample(i, rawLuma, amplitude, extraAngle);
-            decoder.Process(sample, phaseOffsetRadians: 0, blackLevel: BlackLevel, syncLevel: SyncLevel);
+            decoder.Process(sample, phaseOffsetRadians: 0, blackLevel: BlackLevel, syncLevel: SyncLevel, colorBurstDetected: true);
 
             if (i >= WarmupSamples)
             {
@@ -156,7 +156,7 @@ public class NtscYiqDecoderTests
 
         for (var i = 0; i < 40; i++)
         {
-            decoder.Process(200, phaseOffsetRadians: 0, blackLevel: BlackLevel, syncLevel: SyncLevel);
+            decoder.Process(200, phaseOffsetRadians: 0, blackLevel: BlackLevel, syncLevel: SyncLevel, colorBurstDetected: true);
         }
 
         // I = Q = 0 collapses the YIQ->RGB matrix to R = G = B = Y for every
@@ -168,6 +168,39 @@ public class NtscYiqDecoderTests
         await Assert.That(decoder.Rgb.R).IsEqualTo(decoder.Rgb.G);
         await Assert.That(decoder.Rgb.G).IsEqualTo(decoder.Rgb.B);
         await Assert.That((int)decoder.Rgb.R).IsBetween(expectedLuma - 2, expectedLuma + 2);
+    }
+
+    [Test]
+    public async Task ColorKillerMutesChromaWhenNoBurstDetected()
+    {
+        // The exact same strongly-chromatic signal DemodulatesChromaAlignedWithIAxis
+        // feeds - but with colorBurstDetected: false, standing in for a line
+        // whose back porch carried no reference burst. A real receiver's
+        // color killer squelches chroma entirely in that case, so I and Q
+        // must collapse to zero and RGB must come out as pure grayscale,
+        // even though the sample stream itself still carries subcarrier-
+        // frequency content the comb filter can't fully remove.
+        const float rawLuma = 120;
+        const float amplitude = 30;
+
+        var expectedLuma = (int)MathF.Round((rawLuma - BlackLevel) * DecodeScale);
+
+        var decoder = new NtscYiqDecoder();
+
+        for (var i = 0; i < 40; i++)
+        {
+            var sample = BuildSample(i, rawLuma, amplitude, extraAngle: MathF.PI / 2f);
+            decoder.Process(sample, phaseOffsetRadians: 0, blackLevel: BlackLevel, syncLevel: SyncLevel, colorBurstDetected: false);
+
+            if (i >= WarmupSamples)
+            {
+                await Assert.That(decoder.I).IsBetween(-0.01f, 0.01f);
+                await Assert.That(decoder.Q).IsBetween(-0.01f, 0.01f);
+                await Assert.That(decoder.Rgb.R).IsEqualTo(decoder.Rgb.G);
+                await Assert.That(decoder.Rgb.G).IsEqualTo(decoder.Rgb.B);
+                await Assert.That((int)decoder.Rgb.R).IsBetween(expectedLuma - 2, expectedLuma + 2);
+            }
+        }
     }
 
     [Test]
@@ -186,7 +219,7 @@ public class NtscYiqDecoderTests
         for (var i = 0; i < 40; i++)
         {
             var sample = BuildSample(i, rawLuma, amplitude, extraAngle: MathF.PI / 2f);
-            decoder.Process(sample, phaseOffsetRadians: 0, blackLevel: BlackLevel, syncLevel: SyncLevel);
+            decoder.Process(sample, phaseOffsetRadians: 0, blackLevel: BlackLevel, syncLevel: SyncLevel, colorBurstDetected: true);
         }
 
         var decodedLuma = (rawLuma - BlackLevel) * DecodeScale;
@@ -222,7 +255,7 @@ public class NtscYiqDecoderTests
         var greyOnly = new NtscYiqDecoder();
         for (var i = 0; i < 40; i++)
         {
-            greyOnly.Process(MidGrey, phaseOffsetRadians: 0, blackLevel: BlackLevel, syncLevel: SyncLevel);
+            greyOnly.Process(MidGrey, phaseOffsetRadians: 0, blackLevel: BlackLevel, syncLevel: SyncLevel, colorBurstDetected: true);
         }
 
         // Reference white first, then the same mid-grey run - warmed well
@@ -231,11 +264,11 @@ public class NtscYiqDecoderTests
         var withWhite = new NtscYiqDecoder();
         for (var i = 0; i < 20; i++)
         {
-            withWhite.Process(ReferenceWhite, phaseOffsetRadians: 0, blackLevel: BlackLevel, syncLevel: SyncLevel);
+            withWhite.Process(ReferenceWhite, phaseOffsetRadians: 0, blackLevel: BlackLevel, syncLevel: SyncLevel, colorBurstDetected: true);
         }
         for (var i = 0; i < 40; i++)
         {
-            withWhite.Process(MidGrey, phaseOffsetRadians: 0, blackLevel: BlackLevel, syncLevel: SyncLevel);
+            withWhite.Process(MidGrey, phaseOffsetRadians: 0, blackLevel: BlackLevel, syncLevel: SyncLevel, colorBurstDetected: true);
         }
 
         await Assert.That(greyOnly.Luma).IsBetween(expectedLuma - 0.5f, expectedLuma + 0.5f);

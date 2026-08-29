@@ -20,6 +20,10 @@ public sealed partial class AppleIISystem : EmulatedSystem, IHasTelevision
 
     public readonly Mos6502Chip Cpu;
 
+    // The board revision, which selects whether the colour-killer circuit is
+    // present - see ColorKiller in AppleIISystem.VideoTiming.cs.
+    private readonly AppleIIRevision _revision;
+
     // 48K of RAM, mapped at $0000-$BFFF.
     private readonly byte[] _ram = new byte[0xC000];
 
@@ -63,7 +67,14 @@ public sealed partial class AppleIISystem : EmulatedSystem, IHasTelevision
     private readonly Ttl74138Chip _ioControlDecoder;
 
     public AppleIISystem()
+        : this(AppleIISystemOptions.Default)
     {
+    }
+
+    public AppleIISystem(AppleIISystemOptions options)
+    {
+        _revision = options.Revision;
+
         Cpu = new Mos6502Chip(Mos6502Options.Default);
 
         _addressDecodeInverters = new Ttl7404Chip();

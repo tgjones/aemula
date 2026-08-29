@@ -160,6 +160,97 @@ public class AppleIISystemTelevisionTests
         await Assert.That(mismatchCount).IsLessThan((int)(litCount * 0.05));
     }
 
+    // Fills the whole of text page 1 with one screen code, bypassing the
+    // scrambled line-base layout - every byte the scanner fetches for the
+    // text area reads back the same glyph, so the picture is a uniform field
+    // of that character. 0xC8 is a normal (non-inverse) 'H': two full-height
+    // vertical strokes per cell, i.e. lots of single-dot-wide verticals, the
+    // pattern that fringes hardest under composite decoding.
+    private static void FillTextPage1(AppleIISystem system, byte screenCode)
+    {
+        for (var address = 0x400; address <= 0x7FF; address++)
+        {
+            system.WriteByteDebug((ushort)address, screenCode);
+        }
+    }
+
+    // Scans every active-video sample and counts how many lit ones carry a
+    // real hue (channel spread well above the grayscale noise floor).
+    private static (int Lit, int Colored) CountLitAndColored(SampleBuffer buffer)
+    {
+        var lit = 0;
+        var colored = 0;
+
+        foreach (var sample in buffer.Data)
+        {
+            if (sample.Region != RasterRegion.ActiveVideo)
+            {
+                continue;
+            }
+
+            var pixel = sample.Color;
+            if (pixel.R + pixel.G + pixel.B < 60)
+            {
+                continue;
+            }
+
+            lit++;
+
+            var max = Math.Max(pixel.R, Math.Max(pixel.G, pixel.B));
+            var min = Math.Min(pixel.R, Math.Min(pixel.G, pixel.B));
+            if (max - min > 40)
+            {
+                colored++;
+            }
+        }
+
+        return (lit, colored);
+    }
+
+    [Test]
+    public async Task Revision1PlusShowsMonochromeTextWithColorKillerEngaged()
+    {
+        // A Revision 1-or-later board (the default): the color-killer circuit
+        // suppresses color burst in full-screen text mode, so Television's
+        // PLL never locks and its own color killer decodes the whole picture
+        // as grayscale - crisp monochrome text, matching real hardware.
+        var system = new AppleIISystem(new AppleIISystemOptions(AppleIIRevision.Revision1Plus));
+        system.LoadProgram("");
+
+        BootToIdle(system); // The Autostart ROM leaves the machine in TEXT mode.
+        FillTextPage1(system, 0xC8);
+        TickOneFrame(system);
+
+        await Assert.That(system.Television.ColorBurstLocked).IsFalse();
+
+        var (lit, colored) = CountLitAndColored(system.Television.SampleBuffer);
+        await Assert.That(lit).IsGreaterThan(10_000);
+        // Essentially nothing carries hue - a handful of edge samples during
+        // the PLL's brief unlock transient are the ceiling, not thousands.
+        await Assert.That(colored).IsLessThan(lit / 100);
+    }
+
+    [Test]
+    public async Task Revision0ShowsArtifactColorOnTextWithNoColorKiller()
+    {
+        // A Revision 0 board has no color-killer circuit, so burst goes out
+        // during text mode too and the same 'H' field fringes green/violet
+        // on a color receiver - authentic to that revision.
+        var system = new AppleIISystem(new AppleIISystemOptions(AppleIIRevision.Revision0));
+        system.LoadProgram("");
+
+        BootToIdle(system);
+        FillTextPage1(system, 0xC8);
+        TickOneFrame(system);
+
+        await Assert.That(system.Television.ColorBurstLocked).IsTrue();
+
+        var (lit, colored) = CountLitAndColored(system.Television.SampleBuffer);
+        await Assert.That(lit).IsGreaterThan(10_000);
+        // A large fraction of the lit text carries real hue.
+        await Assert.That(colored).IsGreaterThan(lit / 4);
+    }
+
     [Test]
     public async Task HiresGreenLinePatternDecodesToGreen()
     {

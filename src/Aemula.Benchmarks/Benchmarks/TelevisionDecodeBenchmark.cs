@@ -77,6 +77,6 @@ public class TelevisionDecodeBenchmark
     public void YiqDecoder_Process()
     {
         var phase = (_i & 63) * (MathF.PI / 32f); // 0..2π in 64 steps
-        _yiqDecoder.Process(NextSample(), phase, BlackLevel, WhiteLevel);
+        _yiqDecoder.Process(NextSample(), phase, BlackLevel, WhiteLevel, colorBurstDetected: true);
     }
 }
