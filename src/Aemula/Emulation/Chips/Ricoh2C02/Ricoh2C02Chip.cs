@@ -23,10 +23,11 @@ public sealed partial class Ricoh2C02Chip
     private readonly Color[] _systemPalette;
     private readonly byte[] _paletteMemory;
 
-    private byte _ppuScrollPositionX;
-    private byte _ppuScrollPositionY;
-
-    private ushort _ppuAddress;
+    // NESDev "loopy" PPU registers. See https://www.nesdev.org/wiki/PPU_scrolling
+    internal ushort _v; // Current VRAM address (15 bits)
+    internal ushort _t; // Temporary VRAM address (15 bits)
+    internal byte _x;   // Fine X scroll (3 bits)
+    internal bool _w;   // Write toggle: false = first write, true = second write
 
     private byte _ppuReadBuffer;
     private VramReadTarget _vramReadTarget;
@@ -38,20 +39,6 @@ public sealed partial class Ricoh2C02Chip
     private byte _vramRequestData;
 
     private byte _currentLatchData;
-
-    //private ushort _patternShiftRegister1;
-    //private ushort _patternShiftRegister2;
-    //private byte _paletteShiftRegister1;
-    //private byte _paletteShiftRegister2;
-
-    // Temporary VRAM address (15 bits)
-    //private ushort _t;
-
-    // Fine X scroll (3 bits)
-    //private byte _x;
-
-    // Latch around two-bytes writes into 0x2005 and 0x2006
-    private bool _firstWrite = true;
 
     // Registers
     internal PpuCtrlRegister CtrlRegister;
@@ -236,7 +223,7 @@ public sealed partial class Ricoh2C02Chip
                     StatusRegister.Unused = _currentLatchData;
                     result = StatusRegister.Data.Value;
                     StatusRegister.VBlankStarted = false;
-                    _firstWrite = true;
+                    _w = false;
                     break;
 
                 case OamAddrAddress: // Write-only
@@ -273,6 +260,9 @@ public sealed partial class Ricoh2C02Chip
             {
                 case PpuCtrlAddress:
                     CtrlRegister.Data.Value = pins.CpuData;
+                    // t: ...GH.. ........ <- d: ......GH
+                    // Nametable select (t bits 10-11) = data bits 0-1.
+                    _t = (ushort)((_t & 0xF3FF) | ((pins.CpuData & 0x03) << 10));
                     // TODO: If we're in vblank, and _ppuStatusRegister.VBlankStarted is set, changing NMI flag from 0 to 1 should trigger NMI.
                     break;
 
@@ -293,30 +283,44 @@ public sealed partial class Ricoh2C02Chip
                     break;
 
                 case PpuScrollAddress:
-                    if (_firstWrite)
+                    if (!_w)
                     {
-                        _ppuScrollPositionX = pins.CpuData;
-                        _firstWrite = false;
+                        // First write.
+                        // t: ....... ...ABCDE <- d: ABCDE...
+                        // x:              FGH <- d: .....FGH
+                        _t = (ushort)((_t & 0xFFE0) | (pins.CpuData >> 3));
+                        _x = (byte)(pins.CpuData & 0x07);
+                        _w = true;
                     }
                     else
                     {
-                        _ppuScrollPositionY = pins.CpuData;
-                        _firstWrite = true;
+                        // Second write.
+                        // t: FGH..AB CDE..... <- d: ABCDEFGH
+                        _t = (ushort)((_t & 0x0C1F)
+                            | ((pins.CpuData & 0xF8) << 2)
+                            | ((pins.CpuData & 0x07) << 12));
+                        _w = false;
                     }
                     break;
 
                 case PpuAddrAddress:
-                    if (_firstWrite)
+                    if (!_w)
                     {
-                        // Write high byte.
-                        _ppuAddress = (ushort)((pins.CpuData << 8) | (_ppuAddress & 0xFF));
-                        _firstWrite = false;
+                        // First write.
+                        // t: .CDEFGH ........ <- d: ..CDEFGH
+                        //        <unused>     <- d: AB......
+                        // t: Z...... ........ <- 0 (bit 14 cleared)
+                        _t = (ushort)((_t & 0x00FF) | ((pins.CpuData & 0x3F) << 8));
+                        _w = true;
                     }
                     else
                     {
-                        // Write low byte.
-                        _ppuAddress = (ushort)((_ppuAddress & 0xFF00) | pins.CpuData);
-                        _firstWrite = true;
+                        // Second write.
+                        // t: ....... ABCDEFGH <- d: ABCDEFGH
+                        // v: <...all bits...> <- t: <...all bits...>
+                        _t = (ushort)((_t & 0xFF00) | pins.CpuData);
+                        _v = _t;
+                        _w = false;
                     }
                     break;
 
@@ -333,7 +337,7 @@ public sealed partial class Ricoh2C02Chip
 
     private void IncrementPpuAddress()
     {
-        _ppuAddress += (CtrlRegister.VRamAddressIncrementMode == VRamAddressIncrementMode.Add32)
+        _v += (CtrlRegister.VRamAddressIncrementMode == VRamAddressIncrementMode.Add32)
             ? (ushort)32
             : (ushort)1;
     }
@@ -392,11 +396,11 @@ public sealed partial class Ricoh2C02Chip
         var result = _ppuReadBuffer;
 
         _vramRequestState = VramRequestState.SetupAddressForRead;
-        _vramRequestAddress = _ppuAddress;
+        _vramRequestAddress = _v;
 
-        if ((_ppuAddress >> 8) == 0x3F)
+        if ((_v >> 8) == 0x3F)
         {
-            result = _ppuReadBuffer = ReadPaletteMemory(_ppuAddress);
+            result = _ppuReadBuffer = ReadPaletteMemory(_v);
         }
 
         return result;
@@ -405,12 +409,12 @@ public sealed partial class Ricoh2C02Chip
     private void PpuWrite(byte data)
     {
         _vramRequestState = VramRequestState.SetupAddressForWrite;
-        _vramRequestAddress = _ppuAddress;
+        _vramRequestAddress = _v;
         _vramRequestData = data;
 
-        if ((_ppuAddress >> 8) == 0x3F)
+        if ((_v >> 8) == 0x3F)
         {
-            _paletteMemory[GetPaletteAddress(_ppuAddress)] = data;
+            _paletteMemory[GetPaletteAddress(_v)] = data;
         }
     }
 
