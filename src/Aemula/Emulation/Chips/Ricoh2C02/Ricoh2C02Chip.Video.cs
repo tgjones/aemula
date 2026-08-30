@@ -42,8 +42,10 @@ partial class Ricoh2C02Chip
     // square wave alternating _l (the $xD level) and _h (the $x0 level); $x0 is
     // a constant _h (grey, no chroma); $xD is a constant _l (dark grey);
     // $xE/$xF sit at the blanking level (same voltage as $1D).
-    private const ushort DacSyncLow = 0;     // vid_sync_l  - sync tip (Bisqwit 0.0)
-    private const ushort DacSyncHigh = 518;  // vid_sync_h  - blanking (Bisqwit black)
+    // internal so NesSystem.CompositeVideo can anchor its DAC-code -> byte map on
+    // exactly these two points (sync tip and blanking).
+    internal const ushort DacSyncLow = 0;    // vid_sync_l  - sync tip (Bisqwit 0.0)
+    internal const ushort DacSyncHigh = 518; // vid_sync_h  - blanking (Bisqwit black)
     private const ushort DacBurstLow = 196;  // vid_burst_l - NESDev CBL 148 mV
     private const ushort DacBurstHigh = 934; // vid_burst_h - NESDev CBH 524 mV
 

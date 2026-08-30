@@ -50,6 +50,12 @@ public sealed partial class Ricoh2C02Chip
     internal ulong CurrentScanline;
     internal ulong CurrentDot;
 
+    // Master-clock divider. The 2C02's master-clock input drives an internal
+    // divide-by-four counter whose output is the ~5.37 MHz dot clock; one dot
+    // (CycleDot) runs on every fourth Tick(). Starts at 0 so the first Tick()
+    // after construction runs a dot.
+    private int _dotClockDivider;
+
     public Ricoh2C02Pins Pins;
 
     public Ricoh2C02Chip()
@@ -130,7 +136,27 @@ public sealed partial class Ricoh2C02Chip
         _paletteMemory = new byte[32];
     }
 
-    public void Cycle()
+    /// <summary>
+    /// Master-clock entry point, called once per NES master clock cycle
+    /// (~21.48 MHz). Advances the internal divide-by-four dot-clock counter and
+    /// runs one PPU dot (<see cref="CycleDot"/>) on every fourth call. Returns
+    /// <c>true</c> on the ticks where a dot actually ran, so the containing
+    /// system knows when to service the PPU's external address/data bus.
+    /// </summary>
+    public bool Tick()
+    {
+        if (_dotClockDivider == 0)
+        {
+            _dotClockDivider = 3;
+            CycleDot();
+            return true;
+        }
+
+        _dotClockDivider--;
+        return false;
+    }
+
+    private void CycleDot()
     {
         // TODO
 

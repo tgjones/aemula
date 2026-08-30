@@ -5,7 +5,7 @@ using Aemula.Debugging;
 
 namespace Aemula.Emulation.Systems.Nes;
 
-public sealed class NesSystem : EmulatedSystem
+public sealed partial class NesSystem : EmulatedSystem
 {
     public override ulong CyclesPerSecond => 21477272;
 
@@ -14,7 +14,6 @@ public sealed class NesSystem : EmulatedSystem
 
     private Cartridge? _cartridge;
 
-    private byte _ppuCycle;
     private byte _vramLowAddressLatch;
 
     private bool? _lastM2;
@@ -39,29 +38,17 @@ public sealed class NesSystem : EmulatedSystem
 
     public override void Tick()
     {
-        if (_ppuCycle == 0)
-        {
-            DoCpuCycle();
-        }
+        // One master clock cycle (21.477272 MHz). Both chips are fed the master
+        // clock every tick: the 2A03's internal divide-by-12 makes the CPU phi0
+        // (one CPU cycle = 12 ticks), and the 2C02's internal divide-by-4 makes
+        // the dot clock (one dot = 4 ticks).
+        DoCpuCycle();
 
         DoPpuCycle();
 
-        _ppuCycle++;
-
-        if (_ppuCycle == 13)
-        {
-            _ppuCycle = 0;
-        }
+        TickCompositeVideo();
 
         Cpu.Nmi = Ppu.Pins.Nmi;
-    }
-
-    private void TickCpu()
-    {
-        do
-        {
-            Tick();
-        } while (_ppuCycle != 0);
     }
 
     private void DoCpuCycle()
@@ -69,16 +56,12 @@ public sealed class NesSystem : EmulatedSystem
         Cpu.Clk = false;
         Cpu.Clk = true;
 
-        if (_lastM2 == null)
-        {
-            _lastM2 = Cpu.M2;
-        }
-        else if (_lastM2 == Cpu.M2)
-        {
-            return;
-        }
-
-        if (!Cpu.M2)
+        // The CPU bus transaction must run exactly once per M2 rising edge, not
+        // on every tick M2 stays high.
+        var m2 = Cpu.M2;
+        var m2Rising = m2 && _lastM2 == false;
+        _lastM2 = m2;
+        if (!m2Rising)
         {
             return;
         }
@@ -130,7 +113,12 @@ public sealed class NesSystem : EmulatedSystem
 
     private void DoPpuCycle()
     {
-        Ppu.Cycle();
+        // Feed the PPU the master clock. It only runs a dot on every fourth
+        // tick; the external address/data bus is serviced only on those ticks.
+        if (!Ppu.Tick())
+        {
+            return;
+        }
 
         ref var ppuPins = ref Ppu.Pins;
 
