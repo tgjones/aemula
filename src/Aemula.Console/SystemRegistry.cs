@@ -9,7 +9,7 @@ namespace Aemula.Console;
 public static class SystemRegistry
 {
     // Only the 3 systems that implement IHasTelevision - frame counting below is
-    // defined in terms of Television.CurrentRow, which Chip8System/NesSystem have no
+    // defined in terms of Television.CurrentRow, which NesSystem have no
     // equivalent of, so they're out of scope for this tool rather than half-supported.
     public static readonly Dictionary<string, Func<EmulatedSystem>> Systems = new()
     {

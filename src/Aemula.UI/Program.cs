@@ -6,7 +6,6 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using Aemula.Emulation.Systems.AppleII;
 using Aemula.Emulation.Systems.Atari2600;
-using Aemula.Emulation.Systems.Chip8;
 using Aemula.Emulation.Systems.Nes;
 using Aemula.Emulation.Systems.SpaceInvaders;
 using Hexa.NET.ImGui;
@@ -22,7 +21,6 @@ public static class Program
     {
         { "appleii", () => new AppleIISystem() },
         { "atari2600", () => new Atari2600System() },
-        { "chip8", () => new Chip8System() },
         { "nes", () => new NesSystem() },
         { "spaceinvaders", () => new SpaceInvadersSystem() },
     };

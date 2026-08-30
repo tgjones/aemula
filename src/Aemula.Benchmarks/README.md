@@ -8,7 +8,7 @@ SDL/ImGui and is safe to iterate on freely.
 
 | Class | What it measures |
 | --- | --- |
-| `AppleIIBenchmark`, `Atari2600Benchmark`, `Chip8Benchmark`, `SpaceInvadersBenchmark` | Raw `EmulatedSystem.Tick()` throughput for a fixed workload, `TicksPerInvocation` ticks per op (see `SystemSpecs.cs`). Enough ticks to exercise every periodic path: sub-frame video/audio dividers, per-frame sync regions, interrupts, the 60 Hz timer, the frame boundary. |
+| `AppleIIBenchmark`, `Atari2600Benchmark`, `SpaceInvadersBenchmark` | Raw `EmulatedSystem.Tick()` throughput for a fixed workload, `TicksPerInvocation` ticks per op (see `SystemSpecs.cs`). Enough ticks to exercise every periodic path: sub-frame video/audio dividers, per-frame sync regions, interrupts, the 60 Hz timer, the frame boundary. |
 | `DebuggerOverheadBenchmark` | `Debugger.RunForDuration` (the Aemula.UI production path) vs. raw `Tick()`, same tick budget. `Ratio` = cost of the breakpoint / step-mode / disassembler scaffolding. Parameterised by system. |
 | `TelevisionDecodeBenchmark` | `Television.Decode` (runs on every video sample regardless of whether TelevisionWindow is open) in isolation, plus each of its four NTSC stages. See the caveat in the class about inlining making the stage numbers non-additive. |
 
@@ -23,8 +23,6 @@ and the ms needed to simulate one 1/60 s frame.
 - **Atari 2600** runs a purpose-built 4 KiB test kernel (`Atari2600TestKernel.cs`)
   that drives a full frame structure and rewrites the playfield / colour /
   sprite / HMOVE registers every scanline.
-- **Chip-8** runs a small hand-written program (`Chip8TestProgram.cs`) that
-  loops over sprite draw, the ALU group, RND, BCD, block load/store and timers.
 - **NES** has no benchmark yet: `NesSystem`'s PPU/mapper support is still a stub,
   so there's no workload that stays on valid code for a whole invocation
   (nestest runs off the rails past its automated section). Add one once the NES

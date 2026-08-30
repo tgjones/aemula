@@ -5,7 +5,6 @@ using System.Linq;
 using Aemula.Emulation.Output;
 using Aemula.Emulation.Systems.AppleII;
 using Aemula.Emulation.Systems.Atari2600;
-using Aemula.Emulation.Systems.Chip8;
 using Aemula.Emulation.Systems.SpaceInvaders;
 
 namespace Aemula.Benchmarks;
@@ -33,7 +32,6 @@ internal static class SystemSpecs
     // boundary so odd/even-frame handling is covered.
     private const ulong AppleIIHz = 14_318_180;
     private const ulong Atari2600Hz = 3_580_000;
-    private const ulong Chip8Hz = 600;
     private const ulong SpaceInvadersHz = 19_968_000;
 
     private static long TelevisionRow(EmulatedSystem system) => ((IHasTelevision)system).Television.CurrentRow;
@@ -57,15 +55,6 @@ internal static class SystemSpecs
             WarmupTicks: 120_000,          // ≈2 frames: past the RAM-clear loop, into steady raster
             TicksPerInvocation: 120_000,   // ≈2 frames
             TelevisionRow),
-
-        new SystemSpec(
-            "chip8",
-            static () => new Chip8System(),
-            Workloads.Chip8Program,
-            Chip8Hz,
-            WarmupTicks: 4_000,            // past CLS + register setup, into the steady loop
-            TicksPerInvocation: 200_000,   // no natural "frame"; ≈2 ms of wall time
-            static system => ((Chip8System)system).PC),
 
         // No "nes" spec: NesSystem's PPU/mapper support is still a stub, so
         // nestest runs off the rails past its automated section ($C66E) with
@@ -96,13 +85,6 @@ internal static class Workloads
     {
         var path = Path.Combine(Path.GetTempPath(), "aemula-bench-atari2600.bin");
         File.WriteAllBytes(path, Atari2600TestKernel.Image);
-        return path;
-    }
-
-    public static string Chip8Program()
-    {
-        var path = Path.Combine(Path.GetTempPath(), "aemula-bench-chip8.ch8");
-        File.WriteAllBytes(path, Chip8TestProgram.Bytes);
         return path;
     }
 }

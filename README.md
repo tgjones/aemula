@@ -66,7 +66,7 @@ dotnet run --project Aemula.UI -- appleii
 dotnet run --project Aemula.UI -- nes path/to/game.nes
 ```
 
-Valid system names are `appleii`, `atari2600`, `chip8`, `nes`, and
+Valid system names are `appleii`, `atari2600`, `nes`, and
 `spaceinvaders`. The Apple II and Space Invaders ROMs are already bundled
 under their systems' `Roms/` folders; other systems expect a program path as
 the second argument.

@@ -148,7 +148,6 @@ Per current `LoadProgram` behaviour:
 | `atari2600`    | **Required**   | `LoadProgram` does `File.ReadAllBytes(filePath)` — needs a cartridge (`.a26`, `.bin`). |
 | `spaceinvaders`| **None**       | Loads four fixed ROM files from the build output; `filePath` ignored. |
 | `nes`          | **Required**   | `Cartridge.FromFile(filePath)` (`.nes`). |
-| `chip8`        | **Required**   | Reads program bytes into memory (`.ch8`). |
 
 `Atari2600System.LoadProgram` currently throws on a null/empty path — with
 `RomRequirement.Required` the emulation window won't call `SetSystem` for it
@@ -244,7 +243,7 @@ rebindable / modifier-guarded if a supported system needs the key.
 ## Systems without a `Television` (NES, CHIP-8)
 
 `IHasTelevision` is implemented only by `appleii`, `atari2600`, `spaceinvaders`.
-For `nes` / `chip8` the emulation window renders the system's `DisplayBuffer`
+For `nes` the emulation window renders the system's `DisplayBuffer`
 via the existing `ScreenDisplayWindow` upload path (extracted into the shared
 helper) instead of the `Television` path. `SetSystem` picks the path from
 whether the system implements `IHasTelevision`. No new rendering work — both

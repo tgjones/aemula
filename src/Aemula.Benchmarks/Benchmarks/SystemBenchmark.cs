@@ -16,7 +16,7 @@ namespace Aemula.Benchmarks;
 //
 // BenchmarkDotNet does not discover [Benchmark] methods inherited from an
 // abstract base, so each concrete system gets its own one-line Tick() that
-// calls RunTicks(). Keeping a class per system also makes --filter '*Chip8*'
+// calls RunTicks(). Keeping a class per system also makes --filter '*Atari2600*'
 // etc. behave the way you'd expect.
 public abstract class SystemBenchmark
 {
@@ -76,14 +76,6 @@ public class AppleIIBenchmark : SystemBenchmark
 public class Atari2600Benchmark : SystemBenchmark
 {
     private protected override string SystemName => "atari2600";
-
-    [Benchmark]
-    public long Tick() => RunTicks();
-}
-
-public class Chip8Benchmark : SystemBenchmark
-{
-    private protected override string SystemName => "chip8";
 
     [Benchmark]
     public long Tick() => RunTicks();

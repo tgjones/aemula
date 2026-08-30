@@ -21,7 +21,7 @@ public class DebuggerOverheadBenchmark
     // calling it once per rendered frame rather than once for the whole budget.
     private const int Chunks = 4;
 
-    [Params("appleii", "atari2600", "chip8", "spaceinvaders")]
+    [Params("appleii", "atari2600", "spaceinvaders")]
     public string SystemName = "";
 
     private EmulatedSystem _system = null!;
