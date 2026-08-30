@@ -489,4 +489,13 @@ public sealed partial class Ricoh2C02Chip
         var paletteId = ReadPaletteMemory(address);
         return _systemPalette[paletteId];
     }
+
+    /// <summary>
+    /// The hardware-derived RGB the 2C02's built-in palette maps a 6-bit NES
+    /// colour code ($00-$3F) to. This is the reference the composite-video
+    /// decode is checked against - what a code is <em>supposed</em> to look like
+    /// once it has gone out as an analog waveform and come back through the
+    /// Television's NTSC decoder.
+    /// </summary>
+    internal Color GetSystemPaletteEntry(byte code) => _systemPalette[code & 0x3F];
 }
