@@ -10,44 +10,62 @@ namespace Aemula.Emulation.Chips.Ricoh2C02;
 // NextVideoCell() - two per master clock - and box-averages groups of three down
 // to the Television's 4x-f_SC sample rate.
 //
-// Signal-level structure ported from the orphaned Ppu/Ricoh2C02 prototype; exact
-// dot / scanline numbers and the DAC level table are calibrated against the
-// transistor-level Flawless2C02 oracle in a later step.
+// Signal-level structure ported from the orphaned Ppu/Ricoh2C02 prototype; the
+// exact dot / scanline numbers are calibrated against the transistor-level
+// Flawless2C02 oracle in a later step.
 partial class Ricoh2C02Chip
 {
     // --- DAC level table (arbitrary units) ------------------------------------
     //
-    // Seven entries are transcribed from the prototype's VOut getter (itself
-    // taken from NESDev / lidnariq NTSC-video measurements). The other five are
-    // estimated here by fitting Bisqwit's relative level curve
-    //   low  = { .350, .518, .962, 1.550 }
-    //   high = { 1.094, 1.506, 1.962, 1.962 }
-    // onto the transcribed anchors of each column (sync tip = 0, luma3_l = 880;
-    // luma0_h = 616, luma3_h = 1100). Rough - the shared byte-scale mapping and
-    // the exact level table land in step 4.
-    // TODO(step 4): complete from the NESDev NTSC-video level table / lidnariq's
-    // measurements and drop the estimates below.
-    private const ushort DacSyncLow = 48;    // vid_sync_l  - sync tip
-    private const ushort DacSyncHigh = 312;  // vid_sync_h  - blanking level
-    private const ushort DacBurstLow = 148;  // vid_burst_l
-    private const ushort DacBurstHigh = 524; // vid_burst_h
+    // One linear scale for every video tap, with the sync tip at 0. The luma
+    // pairs are Bisqwit's NES palette-generator constants (his levels[8], given
+    // relative to sync voltage) multiplied by 1000:
+    //
+    //   Bisqwit: black = 0.518, white = 1.962
+    //            levels[8] = { 0.350, 0.518, 0.962, 1.550,   // signal low,  luma 0..3
+    //                          1.094, 1.506, 1.962, 1.962 }   // signal high, luma 0..3
+    //
+    // Colour burst is not part of levels[8], so its two levels come from
+    // lidnariq's terminated die measurements on the NESDev "NTSC video" page
+    // (SYNC 48 mV, blanking 312 mV, CBL 148 mV, CBH 524 mV) carried onto this
+    // scale by the sync->blanking fit  units = (mV - 48) * 518 / (312 - 48):
+    // CBL -> 196, CBH -> 934, straddling the 518 blanking level.
+    //
+    // NESDev's measured luma levels match Bisqwit to ~1 unit at the dark end
+    // (0D 228 mV -> 353, 1D 312 mV -> 518) but run ~3-5% higher at the bright
+    // end (2D 552 mV -> 989 vs 962, 20 1100 mV -> 2064 vs 1962). The plan
+    // standardises on Bisqwit's levels[8]; the absolute scale is irrelevant
+    // anyway because NesSystem.CompositeVideo re-anchors on sync / blanking /
+    // white before handing bytes to the Television.
+    //
+    // How the hue codes use these pairs (NESDev "NTSC video"): $x1..$xC emit a
+    // square wave alternating _l (the $xD level) and _h (the $x0 level); $x0 is
+    // a constant _h (grey, no chroma); $xD is a constant _l (dark grey);
+    // $xE/$xF sit at the blanking level (same voltage as $1D).
+    private const ushort DacSyncLow = 0;     // vid_sync_l  - sync tip (Bisqwit 0.0)
+    private const ushort DacSyncHigh = 518;  // vid_sync_h  - blanking (Bisqwit black)
+    private const ushort DacBurstLow = 196;  // vid_burst_l - NESDev CBL 148 mV
+    private const ushort DacBurstHigh = 934; // vid_burst_h - NESDev CBH 524 mV
 
-    // vid_luma{0..3}_l - indexed by the 2-bit luma code (LLHH bits 4-5).
+    // vid_luma{0..3}_l - the $xD levels, indexed by the 2-bit luma code
+    // (LLHH bits 4-5). Bisqwit levels[0..3] x 1000.
     private static readonly ushort[] DacLumaLow =
     {
-        236,  // estimated
-        326,  // estimated
-        564,  // estimated
-        880,
+        350,
+        518,
+        962,
+        1550,
     };
 
-    // vid_luma{0..3}_h.
+    // vid_luma{0..3}_h - the $x0 levels. Bisqwit levels[4..7] x 1000; luma
+    // codes 2 and 3 both clip at white (1962), matching the 2C02 DAC (NESDev
+    // has no $30 measurement either).
     private static readonly ushort[] DacLumaHigh =
     {
-        616,
-        846,   // estimated
-        1100,  // estimated
-        1100,
+        1094,
+        1506,
+        1962,
+        1962,
     };
 
     // --- Horizontal timing (dots) ------------------------------------------------
