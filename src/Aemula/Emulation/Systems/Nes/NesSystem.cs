@@ -16,7 +16,7 @@ public sealed partial class NesSystem : EmulatedSystem
 
     private byte _vramLowAddressLatch;
 
-    private bool? _lastM2;
+    private bool _lastCpuPhi2;
 
     public readonly Ricoh2A03Chip Cpu;
 
@@ -56,12 +56,17 @@ public sealed partial class NesSystem : EmulatedSystem
         Cpu.Clk = false;
         Cpu.Clk = true;
 
-        // The CPU bus transaction must run exactly once per M2 rising edge, not
-        // on every tick M2 stays high.
-        var m2 = Cpu.M2;
-        var m2Rising = m2 && _lastM2 == false;
-        _lastM2 = m2;
-        if (!m2Rising)
+        // Service the external bus once per CPU cycle, on the rising edge of the
+        // core's phi2. M2 rises three master cycles earlier (a head start the
+        // 2A03 gives slow carts), but the 6502 only drives the write value onto
+        // the data pins when phi2 goes high - sampling at M2 rising would latch
+        // the previous fetch byte instead. phi2 rising is also the phase the
+        // cycle-accurate Ricoh2A03 pin test performs its own bus access on, and
+        // the core has not yet advanced the address bus to the next cycle there.
+        var cpuPhi2 = Cpu.CpuCorePhi2;
+        var cpuPhi2Rising = cpuPhi2 && !_lastCpuPhi2;
+        _lastCpuPhi2 = cpuPhi2;
+        if (!cpuPhi2Rising)
         {
             return;
         }
