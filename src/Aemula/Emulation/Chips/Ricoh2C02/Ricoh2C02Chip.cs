@@ -168,6 +168,11 @@ public sealed partial class Ricoh2C02Chip
         // scroll-address updates and the background pixel mux.
         RenderTick();
 
+        // Update the composite-video region / DAC-tap selection for this dot. The
+        // per-12x-f_SC-cell samples are pulled from here by NesSystem.CompositeVideo
+        // via NextVideoCell().
+        UpdateVideoSignal();
+
         if (CurrentScanline == 241 && CurrentDot == 1)
         {
             StatusRegister.VBlankStarted = true;
@@ -179,15 +184,27 @@ public sealed partial class Ricoh2C02Chip
             StatusRegister.SpriteOverflow = false;
         }
 
-        // Increment dot and scanline counters.
+        // Increment dot and scanline counters. With rendering enabled, odd frames
+        // drop the last dot of the pre-render line (scanline 261, dot 340),
+        // jumping straight from dot 339 to (0, 0). The shorter odd field shifts
+        // the dot<->subcarrier phase relationship every frame, matching real
+        // hardware; because the chroma phase counter free-runs, dropping the dot
+        // is all that is needed. Which frames count as "odd" is a calibration
+        // landmark for the Flawless2C02 comparison (step 6).
+        var renderingEnabled = MaskRegister.RenderBackground || MaskRegister.RenderSprites;
+        var skipLastDot =
+            CurrentScanline == 261 &&
+            CurrentDot == 339 &&
+            renderingEnabled &&
+            (Frames & 1) == 1;
+
         CurrentDot++;
-        if (CurrentDot == 341)
+        if (CurrentDot == 341 || skipLastDot)
         {
             CurrentDot = 0;
             CurrentScanline++;
             if (CurrentScanline == 262)
             {
-                // TODO: Need to skip last cycle of scanline 261 for odd frames.
                 CurrentScanline = 0;
 
                 Frames++;
