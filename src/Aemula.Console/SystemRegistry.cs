@@ -9,9 +9,9 @@ namespace Aemula.Console;
 
 public static class SystemRegistry
 {
-    // Every system here implements IHasTelevision - frame counting below is
-    // defined in terms of Television.CurrentRow, so a system without a live
-    // Television cannot be driven by this tool.
+    // Frame counting below is defined in terms of EmulatedSystem.Television's
+    // CurrentRow, so a system whose Television never locks to a signal cannot
+    // be driven by this tool.
     public static readonly Dictionary<string, Func<EmulatedSystem>> Systems = new()
     {
         { "appleii", () => new AppleIISystem() },

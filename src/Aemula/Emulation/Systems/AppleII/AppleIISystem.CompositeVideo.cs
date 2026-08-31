@@ -10,13 +10,6 @@ namespace Aemula.Emulation.Systems.AppleII;
 // against Gayler's measured output levels.
 public sealed partial class AppleIISystem
 {
-    // Fed one sample at a time from TickCompositeVideo below, live, the
-    // same tick the analog summing stage produces it - the same way every
-    // other signal in this emulator propagates through the chips/systems
-    // that consume it, rather than a UI window pulling a backlog from a
-    // ring buffer once per frame.
-    public Television Television { get; } = new();
-
     // Real resistor values (kΩ) from the video-summing circuit.
     private const double R7Video = 1.5;
     private const double R8Sync = 2.0;

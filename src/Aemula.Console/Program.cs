@@ -5,7 +5,6 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using Aemula.Emulation.Output;
 
 namespace Aemula.Console;
 
@@ -38,7 +37,7 @@ public static class Program
         }
 
         var system = createSystem();
-        var television = ((IHasTelevision)system).Television;
+        var television = system.Television;
 
         // ScreenshotWriter reads Sample.Region (via ComputeActiveVideoRowRange)
         // and Sample.Color out of SampleBuffer; Region is only populated when

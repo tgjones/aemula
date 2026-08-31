@@ -30,11 +30,6 @@ public sealed partial class SpaceInvadersSystem
     // blanked - which is why every read of it below is inverted.
     private readonly Ttl7455Chip _compositeBlankingGate = new();
 
-    // Fed one sample at a time from TickCompositeVideo below, live, the same
-    // tick the summing stage produces it - see AppleIISystem.CompositeVideo.cs's
-    // Television field for the same "no ring-buffer pull" reasoning.
-    public Television Television { get; } = new();
-
     // The real board's blanking window (Hblank/Vblank, 64 H-states/38
     // V-lines - see SpaceInvadersSystem.VideoTiming.cs) is far wider than a
     // real NTSC sync pulse (~4.7us of a 63.5us line, ~7.4%): the schematic's

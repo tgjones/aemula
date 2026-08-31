@@ -1,5 +1,6 @@
 ﻿using System;
 using Aemula.Debugging;
+using Aemula.Emulation.Output;
 using Hexa.NET.SDL3;
 
 namespace Aemula;
@@ -7,6 +8,15 @@ namespace Aemula;
 public abstract class EmulatedSystem : IDisposable
 {
     public event EventHandler? ProgramLoaded;
+
+    // Every system decodes its composite-video output through a Television,
+    // fed one sample at a time from the same tick the analog summing stage
+    // produces it - the same way every other signal in this emulator
+    // propagates through the chips/systems that consume it, rather than a UI
+    // window pulling a backlog from a ring buffer once per frame. Tooling
+    // (the headless runner, benchmarks) reads frame progress off this
+    // generically, without switching on concrete system type.
+    public Television Television { get; } = new();
 
     protected void RaiseProgramLoaded()
     {

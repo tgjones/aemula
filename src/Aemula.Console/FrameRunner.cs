@@ -1,5 +1,4 @@
 using System;
-using Aemula.Emulation.Output;
 
 namespace Aemula.Console;
 
@@ -19,7 +18,7 @@ public static class FrameRunner
     // itself keeps from any particular consumer of its output.
     public static FrameRunResult Run(EmulatedSystem system, int requestedFrames, Action<int>? onFrameCompleted = null)
     {
-        var television = ((IHasTelevision)system).Television;
+        var television = system.Television;
 
         var previousRow = television.CurrentRow;
         var framesCompleted = 0;

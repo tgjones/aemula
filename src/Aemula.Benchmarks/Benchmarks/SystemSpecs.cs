@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using Aemula.Emulation.Output;
 using Aemula.Emulation.Systems.AppleII;
 using Aemula.Emulation.Systems.Atari2600;
 using Aemula.Emulation.Systems.SpaceInvaders;
@@ -34,7 +33,7 @@ internal static class SystemSpecs
     private const ulong Atari2600Hz = 3_580_000;
     private const ulong SpaceInvadersHz = 19_968_000;
 
-    private static long TelevisionRow(EmulatedSystem system) => ((IHasTelevision)system).Television.CurrentRow;
+    private static long TelevisionRow(EmulatedSystem system) => system.Television.CurrentRow;
 
     public static readonly IReadOnlyList<SystemSpec> All =
     [

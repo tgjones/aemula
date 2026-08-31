@@ -25,11 +25,6 @@ namespace Aemula.Emulation.Systems.Atari2600;
 // approximation.
 public sealed partial class Atari2600System
 {
-    // Same "fed one sample at a time, live, from the same tick that
-    // produced it" reasoning as AppleIISystem.Television - see that field's
-    // remarks.
-    public Television Television { get; } = new();
-
     // Landmark levels on the shared composite-video byte scale that
     // Television.Decode expects: sync tip 0, blanking 64, reference white
     // 224 - 1.6 bytes/IRE with a 2.5x sync-to-white gain, the same scale

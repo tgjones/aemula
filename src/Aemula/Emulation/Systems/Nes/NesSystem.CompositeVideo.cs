@@ -16,12 +16,8 @@ namespace Aemula.Emulation.Systems.Nes;
 // and resample the 12x-f_SC stream 3:1 down to the 4x-f_SC rate Television.Decode
 // expects with a short band-limiting FIR. "Chip = behaviour, system = analog
 // sum", the same split the Apple II and Atari 2600 files use.
-public sealed partial class NesSystem : IHasTelevision
+public sealed partial class NesSystem
 {
-    // Fed one sample at a time, live, from the same tick that produced it - see
-    // AppleIISystem.Television / Atari2600System.Television for the reasoning.
-    public Television Television { get; } = new();
-
     // Landmark levels on the shared composite-video byte scale Television.Decode
     // expects: sync tip 0, blanking 64 (nominal reference white would be 224).
     // NtscYiqDecoder reconstructs its whole gain from the sync<->blanking span -

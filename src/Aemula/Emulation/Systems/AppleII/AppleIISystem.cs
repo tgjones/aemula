@@ -4,13 +4,12 @@ using System.IO;
 using Aemula.Debugging;
 using Aemula.Emulation.Chips;
 using Aemula.Emulation.Chips.Mos6502;
-using Aemula.Emulation.Output;
 using Aemula.Emulation.Systems.AppleII.Debugging;
 using Aemula.UI.LogicAnalyzer;
 
 namespace Aemula.Emulation.Systems.AppleII;
 
-public sealed partial class AppleIISystem : EmulatedSystem, IHasTelevision
+public sealed partial class AppleIISystem : EmulatedSystem
 {
     // The Apple II's master oscillator: 4x the NTSC color subcarrier (3.579545MHz).
     // The CPU clock, video dot clock, and color subcarrier are all synchronous
