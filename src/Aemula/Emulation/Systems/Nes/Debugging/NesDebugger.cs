@@ -64,5 +64,6 @@ public sealed class NesDebugger : Debugger
         result.Add(new BreakpointsWindow(this));
         result.Add(new MemoryEditor(1, address => _nes.ReadByteDebug((ushort)address), (address, data) => _nes.WriteByteDebug((ushort)address, data)));
         result.Add(new PatternTableWindow(_nes));
+        result.Add(new TelevisionWindow(_nes.Television));
     }
 }
