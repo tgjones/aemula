@@ -81,9 +81,9 @@ debugger user expects.
 Owns one `SDL_Window` + its ImGui context, and:
 
 - `void SetSystem(EmulatedSystem system)` — swaps which system it renders.
-  Grabs `((IHasTelevision)system).Television` when the system implements it;
-  otherwise falls back to the system's `DisplayBuffer` (see "Systems without a
-  Television" below).
+  Every system exposes `EmulatedSystem.Television` (concrete on the base
+  class — see "Every system has a `Television`" below), so this just grabs
+  `system.Television`.
 - **Rendering** — a texture-upload of the active-video region of the
   `Television`, drawn with `ImGui.Image` into a full-window, no-decoration,
   no-padding host window (`ImGuiWindowFlags.NoDecoration | NoBringToFrontOnFocus`,
@@ -199,7 +199,6 @@ File
       Atari 2600
       NES
       Space Invaders
-      CHIP-8
   Open ROM…           (enabled iff current system's Rom != None; Ctrl+O)
   Reset               (system.Reset(); Ctrl+R)
   ─────
@@ -240,14 +239,15 @@ rebindable / modifier-guarded if a supported system needs the key.
   scope. When added it belongs in a small `Aemula.UI` settings file, not
   `imgui.ini`.
 
-## Systems without a `Television` (NES, CHIP-8)
+## Every system has a `Television`
 
-`IHasTelevision` is implemented only by `appleii`, `atari2600`, `spaceinvaders`.
-For `nes` the emulation window renders the system's `DisplayBuffer`
-via the existing `ScreenDisplayWindow` upload path (extracted into the shared
-helper) instead of the `Television` path. `SetSystem` picks the path from
-whether the system implements `IHasTelevision`. No new rendering work — both
-paths already exist.
+`Television` is now a concrete property on `EmulatedSystem`, populated for every
+system (`appleii`, `atari2600`, `spaceinvaders`, `nes` — `nes` decodes its
+composite output through `Television` like the rest). The old `IHasTelevision`
+interface and the per-system `DisplayBuffer` fallback render path are gone, so
+the emulation window always uses the `Television` upload path and `SetSystem`
+needs no branching. `ScreenDisplayWindow` / `DisplayBuffer` survive only as a
+debugger-side window some systems still add (Apple II, Space Invaders).
 
 ## Input & focus
 
@@ -265,14 +265,15 @@ paths already exist.
 - Rebindable keys; backtick stays hard-coded.
 - Persisting last system / ROM across runs.
 - Any change to the debugger windows themselves.
-- Removing `ScreenDisplayWindow` (still used as the non-TV render path).
+- Removing `ScreenDisplayWindow` (still added as a debugger window by Apple II
+  and Space Invaders).
 
 ## Implementation steps
 
-1. **Extract the TV/DisplayBuffer upload helper** from `TelevisionWindow` /
-   `ScreenDisplayWindow` into `TelevisionTextureView` (no behaviour change;
-   `TelevisionWindow` still renders identically). Run the two
-   `*TelevisionTests` / relevant UI-adjacent tests.
+1. **Extract the TV upload helper** from `TelevisionWindow` into
+   `TelevisionTextureView` (no behaviour change; `TelevisionWindow` still
+   renders identically). Run the `*TelevisionTests` / relevant UI-adjacent
+   tests.
 2. **`SystemCatalog.cs`** — entries + `RomRequirement` + filters. Point
    `Program.Systems` usages at it.
 3. **`EmulatedSystem` cycle count** (Option B) for the perf readout.
