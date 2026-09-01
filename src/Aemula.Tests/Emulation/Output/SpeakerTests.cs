@@ -18,12 +18,13 @@ public class SpeakerTests
     private const float SettledLevel = (float)Speaker.Amplitude;
 
     [Test]
-    public async Task SingleEdgeProducesBoundedClickThatSettlesToNewLevel()
+    public async Task SingleEdgeProducesABoundedClickThatDecaysBackToRest()
     {
         var speaker = new Speaker(AppleIiTickRate);
 
         // Advance to a known position, then a single rising edge, then run on
-        // well past the kernel so everything the edge touched is finalised.
+        // long enough that the DC blocker (~20 Hz, ~8 ms time constant) has
+        // fully relaxed the held level back toward zero.
         for (var t = 0; t < 20_000; t++)
         {
             speaker.Tick();
@@ -31,9 +32,7 @@ public class SpeakerTests
 
         speaker.Level = true;
 
-        // Long enough afterwards that the settled tail sampled below is many
-        // hundreds of samples clear of the edge.
-        for (var t = 0; t < 400_000; t++)
+        for (var t = 0; t < 1_500_000; t++)
         {
             speaker.Tick();
         }
@@ -45,17 +44,20 @@ public class SpeakerTests
         // comfortably before that window is untouched silence.
         var leadRms = Rms(new ReadOnlySpan<float>(samples, 0, 55));
 
-        // Everything comfortably after it has settled to the new DC level and
-        // stays flat there (no slow drift, no ringing tail).
-        var tailMean = Mean(new ReadOnlySpan<float>(samples, samples.Length - 200, 200));
-        var tailDeviation = 0.0;
-        for (var i = samples.Length - 200; i < samples.Length; i++)
+        // The click itself: a bounded excursion toward +Amplitude right after
+        // the edge, overshooting only a few percent on the short BLEP kernel.
+        var clickPeak = 0.0;
+        for (var i = 60; i < 400; i++)
         {
-            tailDeviation = Math.Max(tailDeviation, Math.Abs(samples[i] - tailMean));
+            clickPeak = Math.Max(clickPeak, samples[i]);
         }
 
-        // Total excursion is bounded: the windowed step overshoots its target
-        // by well under a percent, nothing runs away.
+        // ... which a directly-driven cone does not hold: far past the edge the
+        // DC blocker has bled the level away, leaving no sound and no pedestal.
+        var tail = samples[^500..];
+        var tailRms = Rms(tail);
+        var tailMean = Mean(tail);
+
         var peak = 0.0;
         foreach (var s in samples)
         {
@@ -64,15 +66,12 @@ public class SpeakerTests
 
         await Assert.That(samples.Length).IsGreaterThan(150);
         await Assert.That(leadRms).IsLessThan(0.02);
-        await Assert.That(tailMean).IsGreaterThan(0.5);
-        await Assert.That(tailMean).IsLessThan(0.8);
-        await Assert.That(tailDeviation).IsLessThan(0.01);
+        await Assert.That(clickPeak).IsGreaterThan(0.5);
+        await Assert.That(clickPeak).IsLessThan(SettledLevel * 1.08);
         // A short BLEP kernel rings a few percent past its target on the edge.
-        await Assert.That(peak).IsLessThan(Math.Abs(tailMean) * 1.08);
-
-        // Settled within the kernel width: sample 90 is well past the last tap
-        // (which lands near sample 75).
-        await Assert.That(Math.Abs(samples[90] - tailMean)).IsLessThan(0.02);
+        await Assert.That(peak).IsLessThan(SettledLevel * 1.08);
+        await Assert.That(tailRms).IsLessThan(0.01);
+        await Assert.That(Math.Abs(tailMean)).IsLessThan(0.005);
     }
 
     [Test]
@@ -134,62 +133,80 @@ public class SpeakerTests
     [Test]
     public async Task EdgesInTheSameOutputSampleComposeCorrectly()
     {
-        // Two opposite edges at the same position cancel to almost nothing.
-        var cancelling = new Speaker(AppleIiTickRate);
-        Settle(cancelling, edgeToTrue: true, ticksBefore: 30_000, ticksAfter: 400_000);
-        cancelling.Level = false;
-        cancelling.Level = true; // same tick count -> same output sample
-        for (var t = 0; t < 400_000; t++)
+        // Reference: one full -Amplitude -> +Amplitude transition (a 2*A
+        // step). PrimeToLow leaves the cone settled at -Amplitude with the DC
+        // blocker fully relaxed and all prior output already drained, so the
+        // click captured below is this transition's alone.
+        var single = PrimeToLow(new Speaker(AppleIiTickRate));
+        single.Level = true;
+        var singlePeak = PeakAbs(RunAndDrain(single));
+
+        // Two opposite edges in one output sample from that same primed-low
+        // state: +2A then -2A sum to nothing, so no band-limited step is
+        // spliced at all - the output stays at rest, no click.
+        var cancelling = PrimeToLow(new Speaker(AppleIiTickRate));
+        cancelling.Level = true;
+        cancelling.Level = false; // same tick count -> same output sample
+        var cancellingPeak = PeakAbs(RunAndDrain(cancelling));
+
+        // Three edges in one output sample from the primed-low state
+        // (low->high->low->high): +2A, -2A, +2A sum to a single net +2A step,
+        // so the click matches the single-transition reference - not doubled,
+        // not cancelled to nothing.
+        var tripled = PrimeToLow(new Speaker(AppleIiTickRate));
+        tripled.Level = true;
+        tripled.Level = false;
+        tripled.Level = true;
+        var tripledPeak = PeakAbs(RunAndDrain(tripled));
+
+        await Assert.That(cancellingPeak).IsLessThan(singlePeak * 0.05);
+        await Assert.That(Math.Abs(tripledPeak - singlePeak)).IsLessThan(singlePeak * 0.08);
+    }
+
+    // Long enough for the DC blocker (~381 output samples time constant) to
+    // relax a held level essentially to zero.
+    private const int DecayTicks = 400_000;
+
+    // Toggle once to +Amplitude and back to -Amplitude, letting each step fully
+    // decay, then drain everything produced so far. Leaves the cone's last
+    // settled level at -Amplitude (so _currentLevel is -A, not the fresh-Speaker
+    // 0, and a following transition is a full 2*A swing) with the output ring
+    // flushed and the DC blocker at rest.
+    private static Speaker PrimeToLow(Speaker speaker)
+    {
+        speaker.Level = true;
+        Advance(speaker, DecayTicks);
+        speaker.Level = false;
+        Advance(speaker, DecayTicks);
+        Drain(speaker);
+        return speaker;
+    }
+
+    // Run DecayTicks ticks so the just-set transition's click plays out and
+    // decays, then return everything drained.
+    private static float[] RunAndDrain(Speaker speaker)
+    {
+        Advance(speaker, DecayTicks);
+        return Drain(speaker);
+    }
+
+    private static void Advance(Speaker speaker, int ticks)
+    {
+        for (var t = 0; t < ticks; t++)
         {
-            cancelling.Tick();
+            speaker.Tick();
+        }
+    }
+
+    private static double PeakAbs(float[] samples)
+    {
+        var peak = 0.0;
+        foreach (var s in samples)
+        {
+            peak = Math.Max(peak, Math.Abs(s));
         }
 
-        var cancelled = Drain(cancelling);
-        var cancelledPeakDeviation = 0.0;
-        for (var i = 120; i < cancelled.Length; i++)
-        {
-            cancelledPeakDeviation = Math.Max(cancelledPeakDeviation, Math.Abs(cancelled[i] - SettledLevel));
-        }
-        var cancelledTailMean = Mean(new ReadOnlySpan<float>(cancelled, cancelled.Length - 200, 200));
-
-        // Two same-direction steps at the same position (with the opposite one
-        // between them) add: -level to +level is a full 2*level swing,
-        // delivered as +2A, -2A, +2A into identical slots, and it lands on
-        // +level exactly once - not clipped short, not doubled past it.
-        var adding = new Speaker(AppleIiTickRate);
-        Settle(adding, edgeToTrue: true, ticksBefore: 30_000, ticksAfter: 400_000);
-        adding.Level = false;
-        for (var t = 0; t < 400_000; t++)
-        {
-            adding.Tick();
-        }
-
-        var beforeTriple = Drain(adding);
-        var beforeTripleMean = Mean(new ReadOnlySpan<float>(beforeTriple, beforeTriple.Length - 100, 100));
-
-        adding.Level = true;
-        adding.Level = false;
-        adding.Level = true;
-        for (var t = 0; t < 400_000; t++)
-        {
-            adding.Tick();
-        }
-
-        var afterTriple = Drain(adding);
-        var afterTripleMean = Mean(new ReadOnlySpan<float>(afterTriple, afterTriple.Length - 100, 100));
-        var afterPeak = 0.0;
-        foreach (var s in afterTriple)
-        {
-            afterPeak = Math.Max(afterPeak, Math.Abs(s));
-        }
-
-        await Assert.That(cancelledPeakDeviation).IsLessThan(0.1);
-        await Assert.That(Math.Abs(cancelledTailMean - SettledLevel)).IsLessThan(0.02);
-        await Assert.That(beforeTripleMean).IsLessThan(-0.5);
-        await Assert.That(Math.Abs(afterTripleMean - SettledLevel)).IsLessThan(0.02);
-        // Lands on +level once, bar the short kernel's few-percent edge ring -
-        // not doubled past it.
-        await Assert.That(afterPeak).IsLessThan(SettledLevel * 1.08);
+        return peak;
     }
 
     [Test]

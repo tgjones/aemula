@@ -106,6 +106,11 @@ public sealed partial class AppleIISystem
         _speakerFlipFlop.D1 = _speakerFlipFlop.Qn1;
         _speakerFlipFlop.Clk1 = false;
         _speakerFlipFlop.Clk1 = true;
+
+        // The flip-flop's Q is the pin driving the cone; hand each transition to
+        // Speaker, which turns the edge into a band-limited step. A plain
+        // pin-to-pin wire, same shape as every other signal hop in this file.
+        _speaker.Level = _speakerFlipFlop.Q1;
     }
 
     private void TriggerPaddleTimers()

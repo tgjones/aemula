@@ -27,9 +27,18 @@ namespace Aemula.Emulation.Output;
 // the samples were synthesised. Read therefore pulls through the same
 // near-unity fractional read cursor, nudged by the same SetResampleTrim drift
 // lever AudioOutput exposes - just with linear interpolation, over an output
-// ring that is already at 48 kHz and already band-limited, and none of
-// AudioOutput's DC-blocker / anti-alias FIR / arbitrary-ratio resampler stack
-// on top (BLEP synthesis already did that job at the point each edge went in).
+// ring that is already at 48 kHz and already band-limited (BLEP synthesis did
+// the anti-alias job at the point each edge went in), so none of AudioOutput's
+// anti-alias FIR / arbitrary-ratio resampler stack is needed on top.
+//
+// It does keep a one-pole DC blocker on that output, though. A real cone is a
+// mass on a spring: a held drive level holds it silently off-centre and it
+// relaxes back toward rest over a few milliseconds - a constant displacement
+// is not sound - and every downstream playback path AC-couples anyway. Without
+// this, a machine left idle after an odd number of $C030 clicks (the boot
+// ROM's startup bell is one) would pin the output at +/-Amplitude on every
+// sample forever. A ~20 Hz corner leaves clicks and the lowest beeps intact
+// while bleeding that pedestal away.
 //
 // Single-threaded by design, exactly like AudioOutput: Tick/Level and Read
 // run interleaved on the one emulation thread. No locks, and none are needed.
@@ -39,15 +48,23 @@ public sealed class Speaker : IAudioSource
     // 48 kHz device regardless of which IAudioSource a system hands it.
     public const int OutputSampleRate = 48_000;
 
-    // The settled cone excursion for a held level: Level == true -> +Amplitude,
-    // Level == false -> -Amplitude, i.e. a sustained square-wave toggle sits
-    // symmetrically about zero and needs no DC blocker (the plan's reason for
-    // Speaker not carrying AudioOutput's blocker stage). 0.6 leaves comfortable
-    // headroom in [-1, 1] for the small band-limiting overshoot on each edge.
-    // A fresh Speaker starts from a true rest at 0, not at -Amplitude: a
-    // machine that never touches its speaker must read back as pure silence,
-    // so only the first transition onward does the cone swing the full range.
+    // The cone excursion a fresh transition drives toward: Level == true ->
+    // +Amplitude, Level == false -> -Amplitude. 0.6 leaves comfortable headroom
+    // in [-1, 1] for the small band-limiting overshoot on each edge. A fresh
+    // Speaker starts from a true rest at 0, not at -Amplitude: a machine that
+    // never touches its speaker must read back as pure silence, so only the
+    // first transition onward does the cone swing the full range. The DC
+    // blocker below then relaxes any held level back toward 0, so a sustained
+    // level is silent rather than a permanent pedestal.
     internal const double Amplitude = 0.6;
+
+    // DC blocker corner frequency, in Hz, on the 48 kHz output. Low enough to
+    // pass the lowest Apple II beeps and the body of a click essentially
+    // untouched (a click's energy is well above it), high enough that a held
+    // level decays to inaudible in a few milliseconds. See the type remarks
+    // for why a directly-driven cone needs this even though BLEP output is
+    // already band-limited.
+    private const double DcBlockerCutoffHz = 20.0;
 
     // BLEP kernel geometry. The spliced step is the running integral of a
     // windowed sinc spanning BlepHalfWidth output samples each side of the
@@ -126,6 +143,13 @@ public sealed class Speaker : IAudioSource
     // carried DC part is the remainder of the step residual.
     private double _integrator;
 
+    // One-pole DC blocker on the finalised output, y[n] = x[n] - x[n-1] +
+    // R*y[n-1]. _dcBlockerR is e^(-2*pi*fc/OutputSampleRate), computed once in
+    // the constructor; the two history values are the last input and output.
+    private readonly double _dcBlockerR;
+    private double _dcLastInput;
+    private double _dcLastOutput;
+
     // The last settled level a transition moved to, so the next transition's
     // step height is (newLevel - _currentLevel): +/-Amplitude for the first
     // edge out of rest, +/-2*Amplitude for every toggle after.
@@ -142,6 +166,8 @@ public sealed class Speaker : IAudioSource
 
         TickRate = tickRate;
         _samplesPerTick = OutputSampleRate / tickRate;
+
+        _dcBlockerR = Math.Exp(-2.0 * Math.PI * DcBlockerCutoffHz / OutputSampleRate);
 
         _blepDelta = BuildBlepTable();
 
@@ -217,7 +243,15 @@ public sealed class Speaker : IAudioSource
             _integrator += _deltaRing[slot];
             _deltaRing[slot] = 0f;
 
-            _outRing[_outHead & _outMask] = (float)_integrator;
+            // One-pole DC blocker: the integrator is the raw cone level, which
+            // a held drive would otherwise leave sitting at +/-Amplitude
+            // forever. This relaxes it back toward 0 with a ~20 Hz corner -
+            // clicks and beeps pass, a static level does not.
+            var blocked = _integrator - _dcLastInput + _dcBlockerR * _dcLastOutput;
+            _dcLastInput = _integrator;
+            _dcLastOutput = blocked;
+
+            _outRing[_outHead & _outMask] = (float)blocked;
             _outHead++;
 
             // Backlog cap: drop the oldest, and drag the read cursor up to
@@ -271,7 +305,15 @@ public sealed class Speaker : IAudioSource
             var frac = (float)(_readCursor - i0);
             var a = _outRing[i0 & _outMask];
             var b = _outRing[(i0 + 1) & _outMask];
-            destination[produced] = (a + (b - a) * frac) * volume;
+
+            // Clamp to the nominal range. A held level relaxes to 0 through the
+            // DC blocker, so a later full cone swing out of that relaxed rest
+            // is a step of ~2*Amplitude and its band-limited edge briefly
+            // reaches past +/-1 - exactly the transient a real AC-coupled cone
+            // makes when the drive flips after a long idle, but the sample must
+            // still be in range for the device.
+            var s = a + (b - a) * frac;
+            destination[produced] = Math.Clamp(s, -1f, 1f) * volume;
             _readCursor += step;
         }
 
@@ -312,6 +354,8 @@ public sealed class Speaker : IAudioSource
         Array.Clear(_deltaRing);
         Array.Clear(_outRing);
         _integrator = 0.0;
+        _dcLastInput = 0.0;
+        _dcLastOutput = 0.0;
         _currentLevel = 0.0;
         _level = false;
         _tickCount = 0;

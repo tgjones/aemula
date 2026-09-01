@@ -179,6 +179,11 @@ public sealed partial class AppleIISystem
         }
 
         TickCompositeVideo(phase0RisingEdge);
+
+        // Advance the speaker's free-running position by one master tick, the
+        // same cadence and the same spot as composite video - Speaker only ever
+        // *places* edges against this counter, it never samples the pin.
+        _speaker.Tick();
     }
 
     private void TickClockSequencer()
