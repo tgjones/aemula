@@ -25,6 +25,12 @@ public abstract class EmulatedSystem : IDisposable
 
     public abstract ulong CyclesPerSecond { get; }
 
+    // Total ticks executed via RunForDuration since construction. The
+    // emulation window's free-run path has no Debugger to hang a per-tick
+    // event off (the debugger's own perf readout uses Debugger.Ticked), so
+    // Program diffs this per perf window instead.
+    public ulong TotalCycles { get; private set; }
+
     public virtual void Reset() { }
 
     public abstract void LoadProgram(string filePath);
@@ -36,6 +42,7 @@ public abstract class EmulatedSystem : IDisposable
         for (var i = 0; i < clocks; i++)
         {
             Tick();
+            TotalCycles++;
         }
     }
 

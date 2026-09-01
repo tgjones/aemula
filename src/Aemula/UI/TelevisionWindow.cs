@@ -97,18 +97,9 @@ public sealed class TelevisionWindow : DebuggerWindow
 
     private readonly Television _television;
 
-    private SDLGPUDevicePtr _graphicsDevice;
-    private SDLGPUTransferBufferPtr _transferBuffer;
-    private SDLGPUTexturePtr _texture;
-    private ImTextureRef _textureBinding;
-
-    private uint _textureWidth, _textureHeight;
-
-    // The transfer buffer's own allocated size, tracked separately from
-    // DisplayBuffer's *current* dimensions - see CreateGpuResourcesForCurrentSize's
-    // remarks on why this can't just be recomputed live from DisplayBuffer
-    // each frame the way _textureWidth/_textureHeight can.
-    private uint _transferBufferSizeInBytes;
+    // The plain texture-upload + aspect-correct blit - the part EmulationWindow
+    // shares with this class. This class only adds the overlays on top of it.
+    private readonly TelevisionTextureView _textureView;
 
     // Saleae-style toggle: crop out sync/blanking/color burst entirely and
     // show just the picture, the same view this window always showed before
@@ -144,6 +135,7 @@ public sealed class TelevisionWindow : DebuggerWindow
     public TelevisionWindow(Television television)
     {
         _television = television;
+        _textureView = new TelevisionTextureView(television);
 
         // This window's per-sample hover tooltip is the only consumer of the
         // Sample diagnostic fields (Region/RawSample/CarrierPhaseRadians/
@@ -156,102 +148,22 @@ public sealed class TelevisionWindow : DebuggerWindow
 
     private SampleBuffer SampleBuffer => _television.SampleBuffer;
 
+    // The overlay/tooltip code below maps texture-space (column, row) onto
+    // screen pixels, so it needs the same texture dimensions the shared view
+    // uploaded this frame.
+    private uint TextureWidth => _textureView.TextureWidth;
+    private uint TextureHeight => _textureView.TextureHeight;
+
     public override void CreateGraphicsResources(SDLGPUDevicePtr graphicsDevice)
     {
         base.CreateGraphicsResources(graphicsDevice);
 
-        _graphicsDevice = graphicsDevice;
-
-        CreateGpuResourcesForCurrentSize();
-    }
-
-    // Allocates both the transfer buffer *and* the texture for
-    // SampleBuffer's current dimensions, releasing whatever was there
-    // before. Unlike ScreenDisplayWindow (which only ever recreates its
-    // texture on a size change, and sizes its transfer buffer once, at
-    // construction), this recreates *both* together: Television.Decode
-    // resizes SampleBuffer in place whenever the raster oscillators'
-    // detected line/frame timing changes (see Television.cs) - a normal,
-    // expected occurrence for this decoder, not a rare edge case - and a
-    // transfer buffer allocated for the old (typically smaller, nominal)
-    // size would silently overflow once PrepareOverride below tries to
-    // copy a larger SampleBuffer into it.
-    private void CreateGpuResourcesForCurrentSize()
-    {
-        if (!_transferBuffer.IsNull)
-        {
-            SDL.ReleaseGPUTransferBuffer(_graphicsDevice, _transferBuffer);
-        }
-
-        if (!_texture.IsNull)
-        {
-            SDL.ReleaseGPUTexture(_graphicsDevice, _texture);
-        }
-
-        _textureWidth = SampleBuffer.Width;
-        _textureHeight = SampleBuffer.Height;
-        _transferBufferSizeInBytes = _textureWidth * _textureHeight * RgbaByte.SizeInBytes;
-
-        _transferBuffer = SDL.CreateGPUTransferBuffer(
-            _graphicsDevice,
-            new SDLGPUTransferBufferCreateInfo(
-                SDLGPUTransferBufferUsage.Upload,
-                _transferBufferSizeInBytes));
-
-        _texture = SDL.CreateGPUTexture(
-            _graphicsDevice,
-            new SDLGPUTextureCreateInfo
-            {
-                Type = SDLGPUTextureType.Texturetype2D,
-                Format = SDLGPUTextureFormat.R8G8B8A8Unorm,
-                Usage = (uint)SDLGPUTextureUsageFlags.Sampler,
-                Width = _textureWidth,
-                Height = _textureHeight,
-                NumLevels = 1,
-                SampleCount = SDLGPUSampleCount.Samplecount1,
-                LayerCountOrDepth = 1,
-            });
-
-        unsafe
-        {
-            _textureBinding = new ImTextureRef(null, new ImTextureID(_texture));
-        }
+        _textureView.CreateGraphicsResources(graphicsDevice);
     }
 
     protected override void PrepareOverride(EmulatorTime time, SDLGPUCommandBufferPtr commandBuffer)
     {
-        if (SampleBuffer.Width != _textureWidth || SampleBuffer.Height != _textureHeight)
-        {
-            CreateGpuResourcesForCurrentSize();
-        }
-
-        // A plain memcpy (what this did back when Television exposed a
-        // DisplayBuffer of RgbaByte, one per pixel, laid out identically to
-        // the GPU texture) no longer works now that each raster position is
-        // a whole Sample (Color plus Region, and room to grow - see that
-        // struct) - only Color is what the texture wants, so this copies
-        // just that field out, one sample at a time.
-        unsafe
-        {
-            var mapped = (RgbaByte*)SDL.MapGPUTransferBuffer(_graphicsDevice, _transferBuffer, false);
-            var samples = SampleBuffer.Data;
-            for (var i = 0; i < samples.Length; i++)
-            {
-                mapped[i] = samples[i].Color;
-            }
-        }
-
-        SDL.UnmapGPUTransferBuffer(_graphicsDevice, _transferBuffer);
-
-        var copyPass = SDL.BeginGPUCopyPass(commandBuffer);
-
-        SDL.UploadToGPUTexture(
-            copyPass,
-            new SDLGPUTextureTransferInfo(_transferBuffer, pixelsPerRow: _textureWidth, rowsPerLayer: _textureHeight),
-            new SDLGPUTextureRegion(_texture, w: _textureWidth, h: _textureHeight, d: 1),
-            false);
-
-        SDL.EndGPUCopyPass(copyPass);
+        _textureView.Prepare(commandBuffer);
     }
 
     // Fixed sidebar width (controls + status readout + legend), scaled by
@@ -280,52 +192,19 @@ public sealed class TelevisionWindow : DebuggerWindow
 
     private void DrawImageAndOverlays()
     {
-        // The vertical active-line range needed both for "Active video
-        // only"'s crop below and for ComputeVerticalStretchFactor's aspect-
-        // ratio math (needed unconditionally, crop or not) - computed once
-        // per frame and reused for both, rather than scanning SampleBuffer
-        // twice. See Television.ComputeActiveVideoRowRange's own remarks.
-        var (verticalActiveStart, verticalActiveCount) = _television.ComputeActiveVideoRowRange();
-
-        // "Active video only" shows exactly what this window always showed
-        // before the region overlays were added: just the picture, cropped
-        // out of the full raster via ImGui.Image's
-        // own uv0/uv1 (a plain texture-sampling crop - SampleBuffer's actual
-        // data is untouched either way). Unchecked instead shows the
-        // *whole* raster - sync, blanking, color burst, and vertical
-        // blanking/VSYNC lines included.
-        Vector2 uv0, uv1;
-        float displayedWidthSamples;
-        float displayedHeightSamples;
-        if (_activeVideoOnly)
-        {
-            var activeStart = _television.ActiveVideoStartSamples;
-            var activeEnd = activeStart + _television.ActiveVideoLengthSamples;
-            uv0 = new Vector2(activeStart / _textureWidth, (float)verticalActiveStart / _textureHeight);
-            uv1 = new Vector2(activeEnd / _textureWidth, (float)(verticalActiveStart + verticalActiveCount) / _textureHeight);
-            displayedWidthSamples = _television.ActiveVideoLengthSamples;
-            displayedHeightSamples = verticalActiveCount;
-        }
-        else
-        {
-            uv0 = Vector2.Zero;
-            uv1 = Vector2.One;
-            displayedWidthSamples = _textureWidth;
-            displayedHeightSamples = _textureHeight;
-        }
-
-        var availableSize = ImGui.GetContentRegionAvail();
-        var finalSize = CalculateSizeFittingAspectRatio(
-            new Vector2(displayedWidthSamples, displayedHeightSamples * _television.ComputeVerticalStretchFactor(verticalActiveCount)),
-            availableSize);
-
-        ImGui.Image(_textureBinding, finalSize, uv0, uv1);
-
-        // ImGui.Image is the item CalculateSizeFittingAspectRatio just sized -
-        // its on-screen rect is what every overlay below needs to convert a
-        // texture-space (column, row) into a screen-space pixel.
-        var imageMin = ImGui.GetItemRectMin();
-        var imageMax = ImGui.GetItemRectMax();
+        // The picture itself, aspect-corrected and (with _activeVideoOnly)
+        // cropped to just the active raster - the part shared with
+        // EmulationWindow. "Active video only" shows exactly what this window
+        // always showed before the region overlays were added; unchecked
+        // shows the *whole* raster - sync, blanking, color burst, and
+        // vertical blanking/VSYNC lines included. The returned placement is
+        // what every overlay below needs to convert a texture-space
+        // (column, row) into a screen-space pixel.
+        var placement = _textureView.DrawImage(_activeVideoOnly);
+        var imageMin = placement.ImageMin;
+        var imageMax = placement.ImageMax;
+        var uv0 = placement.Uv0;
+        var uv1 = placement.Uv1;
         var drawList = ImGui.GetWindowDrawList();
 
         // Independent of the crop above (see _showRegionOverlay's remarks) -
@@ -364,10 +243,10 @@ public sealed class TelevisionWindow : DebuggerWindow
         var u = uv0.X + (mousePos.X - imageMin.X) / (imageMax.X - imageMin.X) * (uv1.X - uv0.X);
         var v = uv0.Y + (mousePos.Y - imageMin.Y) / (imageMax.Y - imageMin.Y) * (uv1.Y - uv0.Y);
 
-        var column = (int)(u * _textureWidth);
-        var row = (int)(v * _textureHeight);
+        var column = (int)(u * TextureWidth);
+        var row = (int)(v * TextureHeight);
 
-        if (column < 0 || column >= _textureWidth || row < 0 || row >= _textureHeight)
+        if (column < 0 || column >= TextureWidth || row < 0 || row >= TextureHeight)
         {
             return;
         }
@@ -384,12 +263,12 @@ public sealed class TelevisionWindow : DebuggerWindow
         // every frame - see its own remarks) - simplest correct response is
         // just to skip this frame's read and let the next one pick it back
         // up once they're back in sync, rather than reading past the end.
-        if (samples.Length != (int)_textureWidth * (int)_textureHeight)
+        if (samples.Length != (int)TextureWidth * (int)TextureHeight)
         {
             return;
         }
 
-        var index = row * (int)_textureWidth + column;
+        var index = row * (int)TextureWidth + column;
         var sample = samples[index];
 
         ImGui.BeginTooltip();
@@ -755,8 +634,8 @@ public sealed class TelevisionWindow : DebuggerWindow
     // miss a real pulse regardless of where it landed.
     private void DrawRegionOverlays(ImDrawListPtr drawList, Vector2 imageMin, Vector2 imageMax, Vector2 uv0, Vector2 uv1)
     {
-        var width = (int)_textureWidth;
-        var height = (int)_textureHeight;
+        var width = (int)TextureWidth;
+        var height = (int)TextureHeight;
         if (width <= 0 || height <= 0)
         {
             return;
@@ -827,8 +706,8 @@ public sealed class TelevisionWindow : DebuggerWindow
     // live every UI frame.
     private void DrawDotPositionMarker(ImDrawListPtr drawList, Vector2 imageMin, Vector2 imageMax, Vector2 uv0, Vector2 uv1)
     {
-        var u = _television.CurrentColumn / (float)_textureWidth;
-        var v = _television.CurrentRow / (float)_textureHeight;
+        var u = _television.CurrentColumn / (float)TextureWidth;
+        var v = _television.CurrentRow / (float)TextureHeight;
 
         // The current position only has somewhere to draw if it falls within
         // whatever's currently on screen - e.g. while "Active video only" is
@@ -850,25 +729,10 @@ public sealed class TelevisionWindow : DebuggerWindow
         drawList.AddCircle(new Vector2(screenX, screenY), Radius, color, 0, 1.5f);
     }
 
-    private static Vector2 CalculateSizeFittingAspectRatio(
-        in Vector2 boundsSize,
-        in Vector2 viewportSize)
-    {
-        // Figure out the ratio.
-        var ratioX = viewportSize.X / boundsSize.X;
-        var ratioY = viewportSize.Y / boundsSize.Y;
-
-        // Use whichever multiplier is smaller.
-        var ratio = ratioX < ratioY ? ratioX : ratioY;
-
-        return boundsSize * ratio;
-    }
-
     public override void Dispose()
     {
         base.Dispose();
 
-        SDL.ReleaseGPUTexture(_graphicsDevice, _texture);
-        SDL.ReleaseGPUTransferBuffer(_graphicsDevice, _transferBuffer);
+        _textureView.Dispose();
     }
 }
