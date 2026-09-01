@@ -3,6 +3,7 @@ using System.IO;
 using Aemula.Debugging;
 using Aemula.Emulation.Chips.Mos6532;
 using Aemula.Emulation.Chips.Tia;
+using Aemula.Emulation.Output;
 using Aemula.Emulation.Systems.Atari2600.Debugging;
 using Aemula.UI;
 using Aemula.UI.LogicAnalyzer;
@@ -32,6 +33,12 @@ public sealed partial class Atari2600System : EmulatedSystem
         _cpu = new Mos6507();
         _riot = new Mos6532Chip();
         _tia = new TiaChip();
+
+        // TIA sums its two audio channels onto one pin, sampled on the chip's
+        // real audio clock - see Atari2600System.Audio.cs. AudioOutput's
+        // input rate is that clock's mean rate, OSC / 114.
+        _audio = new AudioOutput(CyclesPerSecond / 114.0);
+        _tia.AudioClocked += WriteAudioSample;
 
         // Console switches (SWCHB, read via RIOT's PB pin - see
         // Mos6532Chip.ReadIORegister): bit 3 is the TV Type switch,

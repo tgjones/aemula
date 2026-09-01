@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Aemula.Emulation.Chips.Tia.UI;
 using static Aemula.BitUtility;
@@ -116,6 +117,26 @@ public sealed class TiaChip
     /// Audio output 1.
     /// </summary>
     public bool Aud1 { get; private set; }
+
+    // The volume-scaled per-channel audio value (0..15: AUDV while the
+    // channel's waveform bit is high, else 0), as TiaAudioChannel.Sample -
+    // exposed for the system-level mixer that sums both channels back onto
+    // TIA's single RF audio pin, exactly as that field's own doc comment
+    // anticipates. The Aud0/Aud1 pins stay the raw 1-bit waveform.
+    internal byte Audio0Sample => _audio0.Sample;
+    internal byte Audio1Sample => _audio1.Sample;
+
+    /// <summary>
+    /// Fires on TIA's real audio clock - twice per scanline, from
+    /// <see cref="TickAudioChannels"/> at the "RESET" and "Center"
+    /// horizontal-counter states, i.e. a mean rate of OSC / 114 (~31.4 kHz
+    /// on NTSC). The system-level stage that sums the two channels onto
+    /// TIA's single audio pin samples off this event so it runs at the true
+    /// hardware audio rate rather than re-deriving the twice-a-line cadence
+    /// for itself - the audio counterpart of
+    /// <c>Atari2600System.CompositeVideo.cs</c>'s <c>CompositeVideoSampled</c>.
+    /// </summary>
+    internal event Action? AudioClocked;
 
     // TODO: May need to split these into separate pins.
     private byte _i;
@@ -1080,8 +1101,7 @@ public sealed class TiaChip
                 // its audio twice a scanline - once near HBLANK start, once
                 // near centre (Andrew Towers' TIA_HW_Notes) - which is
                 // 2 x 15.7 kHz ~= 31.4 kHz on NTSC.
-                _audio0.Tick();
-                _audio1.Tick();
+                TickAudioChannels();
                 break;
 
             // End of the 160-pixel visible region. Re-assert horizontal blank
@@ -1098,8 +1118,7 @@ public sealed class TiaChip
                 // region ends and horizontal blank re-asserts; the second is
                 // at the "Center" state above. Two ticks per scanline is the
                 // real TIA's audio rate (~31.4 kHz on NTSC).
-                _audio0.Tick();
-                _audio1.Tick();
+                TickAudioChannels();
                 break;
 
             default:
@@ -1109,6 +1128,19 @@ public sealed class TiaChip
 
         Aud0 = _audio0.Output;
         Aud1 = _audio1.Output;
+    }
+
+    // One TIA audio clock: tick both channels, then announce it. Called from
+    // the two horizontal-counter states ("RESET" and "Center") that make up
+    // TIA's real twice-per-scanline audio clock - the single call site keeps
+    // those two identical, and <see cref="AudioClocked"/> lets the
+    // system-level channel-summing stage sample exactly on the hardware
+    // clock rather than re-deriving its cadence.
+    private void TickAudioChannels()
+    {
+        _audio0.Tick();
+        _audio1.Tick();
+        AudioClocked?.Invoke();
     }
 
     /// <summary>
