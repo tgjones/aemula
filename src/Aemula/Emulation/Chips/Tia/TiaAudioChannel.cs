@@ -65,8 +65,9 @@ internal struct TiaAudioChannel
 
     /// <summary>
     /// The volume-scaled numeric sample (<see cref="Audv"/> when the waveform
-    /// bit is set, otherwise 0), for a future mixer that sums both channels.
-    /// The pin itself stays the 1-bit <see cref="Output"/> signal.
+    /// bit is set, otherwise 0). <c>Atari2600System.Audio.cs</c> reads this
+    /// from both channels and sums them onto TIA's single audio line; the pin
+    /// itself stays the 1-bit <see cref="Output"/> signal.
     /// </summary>
     public readonly byte Sample => Output ? Audv : (byte)0;
 

@@ -52,10 +52,10 @@ public sealed partial class AppleIISystem
     // on-time at position 0 (t = 1.1 * 100 * 0.022uF ~= 2.4us ~= 34 ticks).
     private const uint PaddleOneShotFloorTicks = 34;
 
-    // Q of the speaker flip-flop, flipped on every $C03X access. A host
-    // audio backend would band-limit and resample this; no audio path is
-    // wired up yet (as with Television before it), so for now it's an
-    // observable signal only.
+    // Q of the speaker flip-flop, flipped on every $C03X access. The audio
+    // path takes this straight from ToggleSpeaker (Q -> Speaker.Level, which
+    // band-limits each edge - see AppleIISystem.Audio.cs); this property is
+    // just an observable copy of the same bit for tests and the debugger.
     public bool SpeakerBit => _speakerFlipFlop.Q1;
 
     // The four annunciator outputs (AN0-AN3), latched by $C058-$C05F in the
