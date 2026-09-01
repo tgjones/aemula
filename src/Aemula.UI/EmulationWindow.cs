@@ -8,7 +8,9 @@ namespace Aemula.UI;
 // The default window: a full-bleed Television render with a menu bar, owning
 // keyboard/gamepad input to the emulated system. No region overlays, no
 // crosshair, no sidebar, no hover tooltip - deliberately just the picture.
-// Audio output will live here later (see the note in RenderFrame).
+// It also owns the audio path: an SDL playback device stream, opened per
+// system in SetSystem exactly like the video texture view, topped up each
+// frame from EmulatedSystem.Audio (see PumpAudio) and torn down in Dispose.
 public sealed class EmulationWindow : IDisposable
 {
     // What the menu bar needs from Program. Program owns the system lifecycle
@@ -30,6 +32,27 @@ public sealed class EmulationWindow : IDisposable
     private EmulatedSystem? _system;
     private TelevisionTextureView? _textureView;
 
+    // The fixed rate every IAudioSource resamples to - AudioOutput and Speaker
+    // both expose it as OutputSampleRate = 48_000. Kept as a bare constant
+    // here rather than referencing either of those types, so the window
+    // depends only on the IAudioSource abstraction.
+    private const int AudioSampleRate = 48_000;
+
+    // SDL doesn't surface its SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK macro through
+    // this binding; its value is the all-ones SDL_AudioDeviceID.
+    private const uint AudioDeviceDefaultPlayback = 0xFFFFFFFF;
+
+    // Null (default-constructed) until SetSystem opens one; guarded with
+    // IsNull the same way the SDL pointer handles elsewhere are.
+    private SDLAudioStreamPtr _audioStream;
+
+    // Reused across frames for the IAudioSource.Read into PutAudioStreamData
+    // hand-off; grown on demand, never shrunk.
+    private float[] _audioScratch = [];
+
+    private bool _muted;
+    private float _volume = 1f;
+
     public EmulationWindow(SDLGPUDevicePtr gpuDevice, ImGuiWindowContext context, Callbacks callbacks)
     {
         _gpuDevice = gpuDevice;
@@ -39,8 +62,9 @@ public sealed class EmulationWindow : IDisposable
 
     public ImGuiWindowContext Context => _context;
 
-    // Every system exposes EmulatedSystem.Television (concrete on the base
-    // class), so this just grabs system.Television - no per-system branching.
+    // Every system exposes EmulatedSystem.Television and EmulatedSystem.Audio
+    // (both concrete on the base class - Audio falls back to a silent
+    // singleton), so this just grabs them - no per-system branching.
     public void SetSystem(EmulatedSystem system)
     {
         _system = system;
@@ -48,6 +72,36 @@ public sealed class EmulationWindow : IDisposable
         _textureView?.Dispose();
         _textureView = new TelevisionTextureView(system.Television);
         _textureView.CreateGraphicsResources(_gpuDevice);
+
+        // Drop any samples the previous system left buffered so nothing stale
+        // crosses the discontinuity as an audible pop.
+        system.Audio.Reset();
+
+        if (!_audioStream.IsNull)
+        {
+            SDL.DestroyAudioStream(_audioStream);
+            _audioStream = default;
+        }
+
+        var spec = new SDLAudioSpec
+        {
+            Format = SDLAudioFormat.F32Le,
+            Channels = 1,
+            Freq = AudioSampleRate,
+        };
+
+        // Push model: no callback, PumpAudio feeds the stream each frame.
+        _audioStream = SDL.OpenAudioDeviceStream(
+            AudioDeviceDefaultPlayback, in spec, default(SDLAudioStreamCallback), nint.Zero);
+        if (_audioStream.IsNull)
+        {
+            // Non-fatal: the app runs on silently without a playback device.
+            Console.WriteLine($"Warning: SDL_OpenAudioDeviceStream(): {SDL.GetErrorS()}");
+        }
+        else
+        {
+            SDL.ResumeAudioStreamDevice(_audioStream);
+        }
     }
 
     // Forwards to the system unconditionally - the only ImGui interactables
@@ -68,12 +122,63 @@ public sealed class EmulationWindow : IDisposable
         DrawMenuBar();
         DrawPicture();
 
-        // Audio: a future SDL_OpenAudioDeviceStream is opened here and fed
-        // from the same system tick that produces the samples. Not
-        // implemented yet - this is the hook point.
+        // Feed the playback device from the samples this frame's emulation
+        // tick just produced. A silent system's NullAudioSource hands back
+        // zeros, which is exactly what should be queued.
+        PumpAudio();
 
         ImGui.Render();
         _context.Render(commandBuffer, clearColor);
+    }
+
+    // Once per rendered frame: keep roughly TargetLatencySamples of audio
+    // queued on the device, drawing the shortfall from whatever IAudioSource
+    // the current system exposes, then run the drift-trim feedback loop and
+    // apply mute / volume. Robust to Program's coarse frame-time clamp - the
+    // queued buffer absorbs the jitter and the trim corrects the slow drift.
+    private unsafe void PumpAudio()
+    {
+        if (_audioStream.IsNull || _system == null)
+        {
+            return;
+        }
+
+        // ~60 ms at 48 kHz: deep enough to ride out frame-time jitter and
+        // Program's 17 ms delta clamp without a latency a player would notice.
+        const int targetLatencySamples = 2880;
+
+        var audio = _system.Audio;
+
+        var queued = SDL.GetAudioStreamQueued(_audioStream) / sizeof(float);
+        var need = targetLatencySamples - queued;
+        if (need > 0)
+        {
+            if (_audioScratch.Length < need)
+            {
+                _audioScratch = new float[need];
+            }
+
+            // Read zero-fills its own tail on underrun, so the whole 'need'
+            // span is always valid to queue (the unwritten tail is silence).
+            audio.Read(_audioScratch.AsSpan(0, need));
+            fixed (float* p = _audioScratch)
+            {
+                SDL.PutAudioStreamData(_audioStream, p, need * sizeof(float));
+            }
+        }
+
+        // Proportional control on the same queued figure: buffer running long
+        // -> ask the source for slightly fewer output samples per second, and
+        // vice versa. Gain is deliberately small and the result is clamped
+        // well inside the IAudioSource contract's +/-0.02; tune later.
+        const double trimGain = 0.05;
+        var trim = Math.Clamp(
+            trimGain * (queued - targetLatencySamples) / targetLatencySamples,
+            -0.02,
+            0.02);
+        audio.SetResampleTrim(trim);
+
+        SDL.SetAudioStreamGain(_audioStream, _muted ? 0f : _volume);
     }
 
     private unsafe void DrawMenuBar()
@@ -128,6 +233,15 @@ public sealed class EmulationWindow : IDisposable
                 _callbacks.ToggleDebugger();
             }
 
+            ImGui.Separator();
+
+            if (ImGui.MenuItem("Mute"u8, ""u8, _muted, true))
+            {
+                _muted = !_muted;
+            }
+
+            ImGui.SliderFloat("Volume"u8, ref _volume, 0f, 1f);
+
             ImGui.EndMenu();
         }
 
@@ -170,6 +284,12 @@ public sealed class EmulationWindow : IDisposable
 
     public void Dispose()
     {
+        if (!_audioStream.IsNull)
+        {
+            SDL.DestroyAudioStream(_audioStream);
+            _audioStream = default;
+        }
+
         _textureView?.Dispose();
     }
 }

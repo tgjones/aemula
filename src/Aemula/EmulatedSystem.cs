@@ -18,6 +18,15 @@ public abstract class EmulatedSystem : IDisposable
     // generically, without switching on concrete system type.
     public Television Television { get; } = new();
 
+    // The same uniform-consumption story as Television, on the audio side: a
+    // system with real sound overrides this to return its own AudioOutput /
+    // Speaker field - a plain overridden property backed by a field, never a
+    // factory call reached from this base constructor, so there is no
+    // virtual-call-before-derived-construction hazard. Every soundless system
+    // falls through to the shared silent singleton, so nothing in the UI ever
+    // has to branch on "does this system have audio?".
+    public virtual IAudioSource Audio => NullAudioSource.Instance;
+
     protected void RaiseProgramLoaded()
     {
         ProgramLoaded?.Invoke(this, EventArgs.Empty);

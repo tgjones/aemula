@@ -28,7 +28,10 @@ public static unsafe class Program
 
     public static void Main(string[] args)
     {
-        if (!SDL.Init((uint)(SDLInitFlags.Video | SDLInitFlags.Gamepad)))
+        // Audio is here for the playback device the emulation window opens per
+        // system - without SDLInitFlags.Audio the SDL audio subsystem is not
+        // brought up and SDL_OpenAudioDeviceStream fails.
+        if (!SDL.Init((uint)(SDLInitFlags.Video | SDLInitFlags.Gamepad | SDLInitFlags.Audio)))
         {
             Console.WriteLine($"Error: SDL_Init(): {SDL.GetErrorS()}");
             return;
