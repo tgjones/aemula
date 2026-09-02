@@ -26,6 +26,7 @@ public sealed partial class Atari2600System : EmulatedSystem
 
     internal Mos6507 Cpu => _cpu;
     internal TiaChip Tia => _tia;
+    internal Mos6532Chip Riot => _riot;
     //internal VideoOutput VideoOutput => _videoOutput;
 
     public Atari2600System()
@@ -40,14 +41,13 @@ public sealed partial class Atari2600System : EmulatedSystem
         _audio = new AudioOutput(CyclesPerSecond / 114.0);
         _tia.AudioClocked += WriteAudioSample;
 
-        // Console switches (SWCHB, read via RIOT's PB pin - see
-        // Mos6532Chip.ReadIORegister): bit 3 is the TV Type switch,
-        // 1 = Color. Real hardware wires this (and the other switches)
-        // straight into RIOT's PB pins - there's no CPU/TIA involvement,
-        // so setting it once here at construction, rather than every
-        // tick, matches how a physical switch that isn't being touched
-        // actually behaves.
-        _riot.PB = 0b1000;
+        // Bring the input pins up at their power-on levels. The console panel
+        // (SWCHB on RIOT port B) and the joystick/button pins (RIOT port A,
+        // TIA I4/I5) both just hold their state directly on the chip pins from
+        // here on, driven by ConsoleControls and OnKeyEvent respectively - see
+        // Atari2600System.ConsoleSwitches.cs and Atari2600System.Input.cs.
+        InitializeConsoleSwitches();
+        InitializeInput();
     }
 
     public override void Reset()
