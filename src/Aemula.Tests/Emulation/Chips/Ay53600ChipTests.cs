@@ -145,6 +145,39 @@ public class Ay53600ChipTests
     }
 
     [Test]
+    public async Task ShiftGivesTheDigitRowItsAsr33Symbol()
+    {
+        var chip = new Ay53600Chip { Shift = true };
+        chip.SetPressedKey(4, 1); // The "2" key.
+
+        TickN(chip, DebounceTicks + 9);
+
+        await Assert.That(chip.Data).IsEqualTo((byte)'"');
+    }
+
+    [Test]
+    public async Task ShiftGivesPItsAtSign()
+    {
+        var chip = new Ay53600Chip { Shift = true };
+        chip.SetPressedKey(1, 9); // The "P" key.
+
+        TickN(chip, DebounceTicks + 9);
+
+        await Assert.That(chip.Data).IsEqualTo((byte)'@');
+    }
+
+    [Test]
+    public async Task ShiftLeavesZeroUnchanged()
+    {
+        var chip = new Ay53600Chip { Shift = true };
+        chip.SetPressedKey(0, 7); // The "0" key.
+
+        TickN(chip, DebounceTicks + 9);
+
+        await Assert.That(chip.Data).IsEqualTo((byte)'0');
+    }
+
+    [Test]
     public async Task ReturnProducesAFixedCodeRegardlessOfModifiers()
     {
         var chip = new Ay53600Chip { Shift = true, Control = true };

@@ -17,6 +17,11 @@ namespace Aemula.Emulation.Chips;
 /// internals - unlike the character-generator ROM (a separate, swappable
 /// board part, modelled as external data), the AY-5-3600's encoding table is
 /// mask-programmed into the die itself.
+///
+/// The II+ keyboard has no lowercase, so Shift only matters for the keys
+/// that carry a second legend: the punctuation keys, the digit row (the
+/// ASR-33-style ! " # $ % &amp; ' ( ) on 1-9; 0 has none), and the three
+/// letter keys P/N/M (@ ^ ]).
 /// </summary>
 public sealed class Ay53600Chip
 {
@@ -126,9 +131,10 @@ public sealed class Ay53600Chip
     /// the II+), and Control produces the standard Ctrl-code (value &amp;
     /// 0x1F) for any key. RETURN/ESC/SPACE/the arrow keys are fixed codes
     /// regardless of modifiers, matching Jim Sather's "Understanding the
-    /// Apple II" Table 7.2. Shifted symbols for the punctuation keys follow
-    /// the physical keycap legends (e.g. the ":"/"*" key); plain digit keys
-    /// have no shifted symbol on this keyboard and repeat unshifted.
+    /// Apple II" Table 7.2. Shifted symbols follow the physical keycap
+    /// legends: the ASR-33-style ! " # $ % &amp; ' ( ) on the 1-9 keys (0 has
+    /// none), "*" and "+" on the ":" and ";" keys, "=" on the "-" key, and
+    /// @ ^ ] on P/N/M.
     /// </summary>
     private static byte Lookup(int x, int y, bool shift, bool control)
     {
@@ -138,18 +144,18 @@ public sealed class Ay53600Chip
         return (x, y) switch
         {
             // X0: digit/punctuation row.
-            (0, 0) => Punct('3', '3'),
-            (0, 1) => Punct('4', '4'),
-            (0, 2) => Punct('5', '5'),
-            (0, 3) => Punct('6', '6'),
-            (0, 4) => Punct('7', '7'),
-            (0, 5) => Punct('8', '8'),
-            (0, 6) => Punct('9', '9'),
-            (0, 7) => Punct('0', '0'),
+            (0, 0) => Punct('3', '#'),
+            (0, 1) => Punct('4', '$'),
+            (0, 2) => Punct('5', '%'),
+            (0, 3) => Punct('6', '&'),
+            (0, 4) => Punct('7', '\''),
+            (0, 5) => Punct('8', '('),
+            (0, 6) => Punct('9', ')'),
+            (0, 7) => Punct('0', '0'), // 0 is the one digit with no shifted symbol.
             (0, 8) => Punct(':', '*'),
             (0, 9) => Punct('-', '='),
 
-            // X1: QWERTYUIOP.
+            // X1: QWERTYUIOP - Shift-P is @ on the II+.
             (1, 0) => Letter('Q'),
             (1, 1) => Letter('W'),
             (1, 2) => Letter('E'),
@@ -159,7 +165,7 @@ public sealed class Ay53600Chip
             (1, 6) => Letter('U'),
             (1, 7) => Letter('I'),
             (1, 8) => Letter('O'),
-            (1, 9) => Letter('P'),
+            (1, 9) => Punct('P', '@'),
 
             // X2: DFGHJKL;+ and the two arrow keys.
             (2, 0) => Letter('D'),
@@ -173,22 +179,22 @@ public sealed class Ay53600Chip
             (2, 8) => 0x08, // Left arrow: fixed, equivalent to Ctrl-H.
             (2, 9) => 0x15, // Right arrow: fixed, equivalent to Ctrl-U.
 
-            // X3: ZXCVBNM,./.
+            // X3: ZXCVBNM,./ - Shift-N is ^ and Shift-M is ] on the II+.
             (3, 0) => Letter('Z'),
             (3, 1) => Letter('X'),
             (3, 2) => Letter('C'),
             (3, 3) => Letter('V'),
             (3, 4) => Letter('B'),
-            (3, 5) => Letter('N'),
-            (3, 6) => Letter('M'),
+            (3, 5) => Punct('N', '^'),
+            (3, 6) => Punct('M', ']'),
             (3, 7) => Punct(',', '<'),
             (3, 8) => Punct('.', '>'),
             (3, 9) => Punct('/', '?'),
 
             // X4: S21 ESC A SPACE ... RETURN.
             (4, 0) => Letter('S'),
-            (4, 1) => Punct('2', '2'),
-            (4, 2) => Punct('1', '1'),
+            (4, 1) => Punct('2', '"'),
+            (4, 2) => Punct('1', '!'),
             (4, 3) => 0x1B, // Escape: fixed.
             (4, 4) => Letter('A'),
             (4, 5) => 0x20, // Space: fixed.
