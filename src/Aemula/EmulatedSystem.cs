@@ -1,6 +1,8 @@
 ﻿using System;
+using System.Collections.Generic;
 using Aemula.Debugging;
 using Aemula.Emulation.Output;
+using Aemula.Emulation.Systems;
 using Hexa.NET.SDL3;
 
 namespace Aemula;
@@ -58,6 +60,13 @@ public abstract class EmulatedSystem : IDisposable
     public abstract void Tick();
 
     public virtual void OnKeyEvent(SDLKeyboardEvent keyEvent) { }
+
+    // The switches and buttons on this system's physical console housing (the
+    // Atari 2600's RESET / SELECT / difficulty / colour switches, and the
+    // like) - hand-operated hardware with no wiring to the emulated keyboard
+    // or joystick ports, which the UI surfaces as a status-bar control row.
+    // Empty for a system that has no such controls.
+    public virtual IReadOnlyList<ConsoleControl> ConsoleControls => [];
 
     public virtual Debugger? CreateDebugger() => null;
 

@@ -1,5 +1,6 @@
 using System;
 using System.Numerics;
+using Aemula.Emulation.Systems;
 using Hexa.NET.ImGui;
 using Hexa.NET.SDL3;
 
@@ -121,6 +122,7 @@ public sealed class EmulationWindow : IDisposable
 
         DrawMenuBar();
         DrawPicture();
+        DrawStatusBar();
 
         // Feed the playback device from the samples this frame's emulation
         // tick just produced. A silent system's NullAudioSource hands back
@@ -248,6 +250,19 @@ public sealed class EmulationWindow : IDisposable
         ImGui.EndMainMenuBar();
     }
 
+    // Height of the console-control status bar, or 0 when the current system
+    // has no such controls. Depends on the live ImGui style, so it's only
+    // valid to call inside a frame.
+    private float MeasureStatusBarHeight()
+    {
+        if (_system is not { ConsoleControls.Count: > 0 })
+        {
+            return 0f;
+        }
+
+        return ImGui.GetFrameHeight() + ImGui.GetStyle().WindowPadding.Y * 2f;
+    }
+
     private void DrawPicture()
     {
         if (_textureView == null)
@@ -256,10 +271,11 @@ public sealed class EmulationWindow : IDisposable
         }
 
         // WorkPos/WorkSize already exclude the main menu bar, so a window
-        // filling the work area sits neatly below it.
+        // filling the work area sits neatly below it - minus the strip the
+        // status bar reserves along the bottom.
         var viewport = ImGui.GetMainViewport();
         ImGui.SetNextWindowPos(viewport.WorkPos);
-        ImGui.SetNextWindowSize(viewport.WorkSize);
+        ImGui.SetNextWindowSize(viewport.WorkSize - new Vector2(0f, MeasureStatusBarHeight()));
 
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
         ImGui.PushStyleColor(ImGuiCol.WindowBg, new Vector4(0f, 0f, 0f, 1f));
@@ -280,6 +296,90 @@ public sealed class EmulationWindow : IDisposable
 
         ImGui.PopStyleColor();
         ImGui.PopStyleVar();
+    }
+
+    // A single-row bar pinned to the bottom of the work area, one group of
+    // widgets per ConsoleControl the current system exposes: a push button for
+    // a momentary control (held closed only while the mouse is down on it) and
+    // a labelled pair of radio buttons for a latching one.
+    private void DrawStatusBar()
+    {
+        if (_system is not { ConsoleControls.Count: > 0 } system)
+        {
+            return;
+        }
+
+        var controls = system.ConsoleControls;
+        var viewport = ImGui.GetMainViewport();
+        var height = MeasureStatusBarHeight();
+
+        ImGui.SetNextWindowPos(new Vector2(
+            viewport.WorkPos.X,
+            viewport.WorkPos.Y + viewport.WorkSize.Y - height));
+        ImGui.SetNextWindowSize(new Vector2(viewport.WorkSize.X, height));
+
+        const ImGuiWindowFlags flags =
+            ImGuiWindowFlags.NoDecoration
+            | ImGuiWindowFlags.NoMove
+            | ImGuiWindowFlags.NoSavedSettings
+            | ImGuiWindowFlags.NoBringToFrontOnFocus
+            | ImGuiWindowFlags.NoNavFocus
+            | ImGuiWindowFlags.NoScrollbar
+            | ImGuiWindowFlags.NoScrollWithMouse;
+
+        if (ImGui.Begin("##console-controls"u8, flags))
+        {
+            for (var i = 0; i < controls.Count; i++)
+            {
+                if (i > 0)
+                {
+                    // A wide gap between controls so each group of radio
+                    // buttons reads as one unit rather than running together.
+                    ImGui.SameLine(0f, ImGui.GetStyle().ItemSpacing.X * 5f);
+                }
+
+                DrawConsoleControl(controls[i]);
+            }
+        }
+
+        ImGui.End();
+    }
+
+    private static void DrawConsoleControl(ConsoleControl control)
+    {
+        switch (control.Kind)
+        {
+            case ConsoleControl.ControlKind.Momentary:
+                ImGui.Button(control.Label);
+                // Closed for exactly as long as the mouse is held on it, so a
+                // game polling the switch sees a real, releasable press.
+                control.Value = ImGui.IsItemActive();
+                break;
+
+            case ConsoleControl.ControlKind.Toggle:
+                var value = control.Value;
+                // Nudge the bare label down onto the radio buttons' text
+                // baseline; without this the first control's label rides high
+                // (later ones inherit the offset from the widget they follow).
+                ImGui.AlignTextToFramePadding();
+                ImGui.TextUnformatted($"{control.Label}:");
+
+                // Both positions are always shown; the filled one is current.
+                // '###' scopes each button's id to this control so two toggles
+                // that share a caption (e.g. "B" difficulty) don't collide.
+                ImGui.SameLine();
+                if (ImGui.RadioButton($"{control.OffLabel}###{control.Label}-off", !value))
+                {
+                    control.Value = false;
+                }
+
+                ImGui.SameLine();
+                if (ImGui.RadioButton($"{control.OnLabel}###{control.Label}-on", value))
+                {
+                    control.Value = true;
+                }
+                break;
+        }
     }
 
     public void Dispose()
