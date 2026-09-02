@@ -55,6 +55,8 @@ public sealed partial class SpaceInvadersSystem : EmulatedSystem
         _videoShiftRegister = new Ttl74166Chip();
 
         Display = new DisplayBuffer(256, 256);
+
+        InitializeConsoleControls();
     }
 
     /// <summary>
@@ -200,7 +202,7 @@ public sealed partial class SpaceInvadersSystem : EmulatedSystem
                 _cpu.Data = (_cpu.Address & 0xFF) switch
                 {
                     1 => GetIOPort1Value(),
-                    2 => 0, // TODO: Player inputs
+                    2 => GetIOPort2Value(),
                     3 => _shifter.GetResult(),
                     _ => throw new InvalidOperationException(),
                 };
@@ -268,7 +270,11 @@ public sealed partial class SpaceInvadersSystem : EmulatedSystem
         {
             result |= 0x01;
         }
-        if (_keyStart)
+        if (_key2PStart)
+        {
+            result |= 0x02;
+        }
+        if (_key1PStart)
         {
             result |= 0x04;
         }
@@ -287,8 +293,41 @@ public sealed partial class SpaceInvadersSystem : EmulatedSystem
         return result;
     }
 
-    private bool _keyCoin;
-    private bool _keyStart;
+    private byte GetIOPort2Value()
+    {
+        // BIT 0   \ DIP: ship count (left at 00 = 3 ships)
+        //     1   /
+        //     2   tilt
+        //     3   DIP: bonus-life score (left at 0 = 1500)
+        //     4   P2 shoot button
+        //     5   P2 joystick left
+        //     6   P2 joystick right
+        //     7   DIP: coin info shown on the demo screen (0 = shown)
+
+        // The upright cabinet wires both players' controls to one shared
+        // joystick and fire button, and play alternates a life at a time, so
+        // P2's shoot/left/right just re-read the same keys P1 uses rather than
+        // getting their own bindings.
+        var result = (byte)0;
+        if (_keyShoot)
+        {
+            result |= 0x10;
+        }
+        if (_keyLeft)
+        {
+            result |= 0x20;
+        }
+        if (_keyRight)
+        {
+            result |= 0x40;
+        }
+        if (!_coinInfoDisplayed)
+        {
+            result |= 0x80;
+        }
+        return result;
+    }
+
     private bool _keyShoot;
     private bool _keyLeft;
     private bool _keyRight;
@@ -325,15 +364,9 @@ public sealed partial class SpaceInvadersSystem : EmulatedSystem
     {
         var isKeyDown = keyEvent.Type == SDLEventType.KeyDown;
 
-        if (keyEvent.Key == '0') // SDLK_0
-        {
-            _keyCoin = isKeyDown;
-        }
-        if (keyEvent.Key == '1') // SDLK_1
-        {
-            _keyStart = isKeyDown;
-        }
-        if (keyEvent.Key == 0x400000cdu) // SDLK_KP_SPACE
+        // Coin and the two start buttons are console-panel controls (see
+        // SpaceInvadersSystem.ConsoleControls.cs), not keyboard input.
+        if (keyEvent.Key == ' ') // SDLK_SPACE
         {
             _keyShoot = isKeyDown;
         }
