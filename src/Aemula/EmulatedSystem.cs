@@ -78,6 +78,18 @@ public abstract class EmulatedSystem : IDisposable
     // Empty for a system that has no such controls.
     public virtual IReadOnlyList<ConsoleControl> ConsoleControls => [];
 
+    // How this system's cabinet mounted its monitor. EmulationWindow rotates
+    // the finished picture by this before showing it; the debugger's
+    // TelevisionWindow ignores it and shows the raw raster. None for a system
+    // whose display was already upright.
+    public virtual ScreenRotation ScreenRotation => ScreenRotation.None;
+
+    // Coloured gels overlaid on the picture (see ScreenOverlay), in the order
+    // they should be drawn. Empty for a system with a genuinely colour (or
+    // plain monochrome) display - only the black-and-white-tube-plus-cellophane
+    // games need these.
+    public virtual IReadOnlyList<ScreenOverlay> ScreenOverlays => [];
+
     public virtual Debugger? CreateDebugger() => null;
 
     public void Dispose()

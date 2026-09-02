@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using Aemula.Emulation.Output;
+using Aemula.Emulation.Systems;
 using Hexa.NET.ImGui;
 using Hexa.NET.SDL3;
 
@@ -147,15 +149,18 @@ public sealed class TelevisionTextureView : IDisposable
         SDL.EndGPUCopyPass(copyPass);
     }
 
-    // Draws the picture as an aspect-corrected ImGui.Image into the current
-    // window's content region, and returns where it landed. With
-    // activeVideoOnly the sync/blanking/color-burst raster is cropped out via
-    // the image's own uv0/uv1 (a plain texture-sampling crop - SampleBuffer's
-    // data is untouched either way), leaving just the picture; without it the
-    // whole raster is shown. Either way the result is scaled to 4:3 using
-    // Television.ComputeVerticalStretchFactor, since SampleBuffer is one raw
-    // sample per column and one scanline per row - very much not square.
-    public ImagePlacement DrawImage(bool activeVideoOnly)
+    // The active-video UV window and the 4:3-corrected on-screen size the
+    // picture wants in its native (unrotated) orientation - the part
+    // DrawImage and DrawImageRotated share. With activeVideoOnly the sync/
+    // blanking/color-burst raster is cropped out via uv0/uv1 (a plain
+    // texture-sampling crop - SampleBuffer's data is untouched either way),
+    // leaving just the picture; without it the whole raster is described.
+    // ContentSize is scaled to 4:3 using Television.ComputeVerticalStretchFactor,
+    // since SampleBuffer is one raw sample per column and one scanline per
+    // row - very much not square.
+    private readonly record struct ActivePlacement(Vector2 Uv0, Vector2 Uv1, Vector2 ContentSize);
+
+    private ActivePlacement ComputeActivePlacement(bool activeVideoOnly)
     {
         // Needed both for the crop below and (crop or not) for the vertical-
         // stretch aspect math - computed once and reused. See
@@ -182,10 +187,21 @@ public sealed class TelevisionTextureView : IDisposable
             displayedHeightSamples = _textureHeight;
         }
 
+        var contentSize = new Vector2(
+            displayedWidthSamples,
+            displayedHeightSamples * _television.ComputeVerticalStretchFactor(verticalActiveCount));
+
+        return new ActivePlacement(uv0, uv1, contentSize);
+    }
+
+    // Draws the picture as an aspect-corrected ImGui.Image into the current
+    // window's content region, and returns where it landed.
+    public ImagePlacement DrawImage(bool activeVideoOnly)
+    {
+        var placement = ComputeActivePlacement(activeVideoOnly);
+
         var availableSize = ImGui.GetContentRegionAvail();
-        var finalSize = CalculateSizeFittingAspectRatio(
-            new Vector2(displayedWidthSamples, displayedHeightSamples * _television.ComputeVerticalStretchFactor(verticalActiveCount)),
-            availableSize);
+        var finalSize = CalculateSizeFittingAspectRatio(placement.ContentSize, availableSize);
 
         // Center the picture in the window if there's extra space, rather than leaving it
         // in the top-left corner.
@@ -194,9 +210,141 @@ public sealed class TelevisionTextureView : IDisposable
             cursor.X + MathF.Max(0f, (availableSize.X - finalSize.X) * 0.5f),
             cursor.Y + MathF.Max(0f, (availableSize.Y - finalSize.Y) * 0.5f)));
 
-        ImGui.Image(_textureBinding, finalSize, uv0, uv1);
+        ImGui.Image(_textureBinding, finalSize, placement.Uv0, placement.Uv1);
 
-        return new ImagePlacement(ImGui.GetItemRectMin(), ImGui.GetItemRectMax(), uv0, uv1);
+        return new ImagePlacement(ImGui.GetItemRectMin(), ImGui.GetItemRectMax(), placement.Uv0, placement.Uv1);
+    }
+
+    // EmulationWindow's draw path: the active picture turned to the system's
+    // cabinet orientation (rotation) with its colour gels (overlays)
+    // multiplied over the monochrome pixels - a lit pixel takes the gel's
+    // colour, an unlit one stays black, matching a transparent strip over an
+    // emissive tube. The debugger's TelevisionWindow deliberately never calls
+    // this: it wants the raw, unrotated, ungelled raster from DrawImage.
+    //
+    // Everything goes onto the window draw list as textured quads (rather
+    // than ImGui.Image, which can't rotate) - the base picture once with the
+    // active-video UVs mapped onto screen corners per the rotation, then each
+    // gel as a re-blit of the same texture clipped to its screen sub-rect
+    // with the gel colour as a multiply tint. A quarter-turn is axis-aligned
+    // in both spaces, so every quad stays a rectangle and the tint math is
+    // exact.
+    public void DrawImageRotated(
+        bool activeVideoOnly,
+        ScreenRotation rotation,
+        IReadOnlyList<ScreenOverlay> overlays)
+    {
+        var placement = ComputeActivePlacement(activeVideoOnly);
+
+        // A quarter-turn swaps which content axis lands on screen width vs.
+        // height; a half-turn or none leaves it be.
+        var quarterTurned = rotation is ScreenRotation.Clockwise90 or ScreenRotation.Clockwise270;
+        var boundsSize = quarterTurned
+            ? new Vector2(placement.ContentSize.Y, placement.ContentSize.X)
+            : placement.ContentSize;
+
+        var availableSize = ImGui.GetContentRegionAvail();
+        var finalSize = CalculateSizeFittingAspectRatio(boundsSize, availableSize);
+
+        // Center it in the content region, same as DrawImage.
+        var cursor = ImGui.GetCursorPos();
+        ImGui.SetCursorPos(new Vector2(
+            cursor.X + MathF.Max(0f, (availableSize.X - finalSize.X) * 0.5f),
+            cursor.Y + MathF.Max(0f, (availableSize.Y - finalSize.Y) * 0.5f)));
+
+        var origin = ImGui.GetCursorScreenPos();
+        var drawList = ImGui.GetWindowDrawList();
+        var uv0 = placement.Uv0;
+        var uv1 = placement.Uv1;
+
+        // The base picture: the whole player-facing rect, so its four screen
+        // corners are (0,0)..(1,1) in display space, each mapped back through
+        // the rotation to a texture UV. No tint.
+        DrawTexturedRegion(drawList, origin, finalSize, rotation, uv0, uv1, 0f, 0f, 1f, 1f, 0xFFFFFFFFu);
+
+        if (overlays != null)
+        {
+            foreach (var overlay in overlays)
+            {
+                var x0 = Math.Clamp(overlay.X, 0f, 1f);
+                var y0 = Math.Clamp(overlay.Y, 0f, 1f);
+                var x1 = Math.Clamp(overlay.X + overlay.Width, 0f, 1f);
+                var y1 = Math.Clamp(overlay.Y + overlay.Height, 0f, 1f);
+                if (x1 <= x0 || y1 <= y0)
+                {
+                    continue;
+                }
+
+                DrawTexturedRegion(drawList, origin, finalSize, rotation, uv0, uv1, x0, y0, x1, y1, GelTint(overlay.Color));
+            }
+        }
+
+        // AddImageQuad advances no layout cursor - reserve the space so the
+        // window sizes/centers around the picture the way it does for DrawImage.
+        ImGui.Dummy(finalSize);
+    }
+
+    // Blits the sub-rect [x0,y0]-[x1,y1] of the player-facing picture (all in
+    // 0..1 display space) as one textured quad: screen corners are that
+    // rect's corners inside origin/finalSize, UV corners are those same
+    // display points mapped back through the rotation into the active-video
+    // UV window. col is the multiply tint.
+    private void DrawTexturedRegion(
+        ImDrawListPtr drawList,
+        Vector2 origin,
+        Vector2 finalSize,
+        ScreenRotation rotation,
+        Vector2 uv0,
+        Vector2 uv1,
+        float x0,
+        float y0,
+        float x1,
+        float y1,
+        uint col)
+    {
+        var pTL = origin + new Vector2(finalSize.X * x0, finalSize.Y * y0);
+        var pTR = origin + new Vector2(finalSize.X * x1, finalSize.Y * y0);
+        var pBR = origin + new Vector2(finalSize.X * x1, finalSize.Y * y1);
+        var pBL = origin + new Vector2(finalSize.X * x0, finalSize.Y * y1);
+
+        var uvTL = DisplayNormToUv(rotation, new Vector2(x0, y0), uv0, uv1);
+        var uvTR = DisplayNormToUv(rotation, new Vector2(x1, y0), uv0, uv1);
+        var uvBR = DisplayNormToUv(rotation, new Vector2(x1, y1), uv0, uv1);
+        var uvBL = DisplayNormToUv(rotation, new Vector2(x0, y1), uv0, uv1);
+
+        drawList.AddImageQuad(_textureBinding, pTL, pTR, pBR, pBL, uvTL, uvTR, uvBR, uvBL, col);
+    }
+
+    // Inverse of rotating the active-video region clockwise by `rotation` for
+    // display: takes a point in player-facing 0..1 space (x right, y down)
+    // and returns where it samples from inside the [uv0,uv1] window. (a, b)
+    // is the position within that window, a across and b down.
+    private static Vector2 DisplayNormToUv(ScreenRotation rotation, Vector2 d, Vector2 uv0, Vector2 uv1)
+    {
+        var (a, b) = rotation switch
+        {
+            ScreenRotation.Clockwise90 => (d.Y, 1f - d.X),
+            ScreenRotation.Clockwise180 => (1f - d.X, 1f - d.Y),
+            ScreenRotation.Clockwise270 => (1f - d.Y, d.X),
+            _ => (d.X, d.Y),
+        };
+
+        return new Vector2(
+            float.Lerp(uv0.X, uv1.X, a),
+            float.Lerp(uv0.Y, uv1.Y, b));
+    }
+
+    // A colour gel as an ImGui multiply tint: white texel -> gel colour,
+    // black texel -> black. Color.A scales the gel between "no tint" (0) and
+    // "full colour" (255) by pulling each channel back toward 1.0.
+    private static uint GelTint(RgbaByte color)
+    {
+        var strength = color.A / 255f;
+        return ImGui.GetColorU32(new Vector4(
+            1f + (color.R / 255f - 1f) * strength,
+            1f + (color.G / 255f - 1f) * strength,
+            1f + (color.B / 255f - 1f) * strength,
+            1f));
     }
 
     private static Vector2 CalculateSizeFittingAspectRatio(

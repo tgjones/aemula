@@ -7,8 +7,13 @@ using Hexa.NET.SDL3;
 namespace Aemula.UI;
 
 // The default window: a full-bleed Television render with a menu bar, owning
-// keyboard/gamepad input to the emulated system. No region overlays, no
-// crosshair, no sidebar, no hover tooltip - deliberately just the picture.
+// keyboard/gamepad input to the emulated system. No diagnostic region
+// overlays, no crosshair, no sidebar, no hover tooltip - deliberately just
+// the picture, but turned to the system's cabinet orientation
+// (EmulatedSystem.ScreenRotation) with its colour gels
+// (EmulatedSystem.ScreenOverlays) applied, so Space Invaders and the like
+// look the way they did on the machine rather than the way the raw raster
+// scans out.
 // It also owns the audio path: an SDL playback device stream, opened per
 // system in SetSystem exactly like the video texture view, topped up each
 // frame from EmulatedSystem.Audio (see PumpAudio) and torn down in Dispose.
@@ -289,7 +294,10 @@ public sealed class EmulationWindow : IDisposable
 
         if (ImGui.Begin("##emulation"u8, flags))
         {
-            _textureView.DrawImage(activeVideoOnly: true);
+            _textureView.DrawImageRotated(
+                activeVideoOnly: true,
+                _system?.ScreenRotation ?? ScreenRotation.None,
+                _system?.ScreenOverlays ?? []);
         }
 
         ImGui.End();
