@@ -284,7 +284,7 @@ public sealed class EmulationWindow : IDisposable
             ImGuiWindowFlags.NoDecoration
             | ImGuiWindowFlags.NoMove
             | ImGuiWindowFlags.NoBringToFrontOnFocus
-            | ImGuiWindowFlags.NoNavFocus
+            | ImGuiWindowFlags.NoNav
             | ImGuiWindowFlags.NoScrollWithMouse;
 
         if (ImGui.Begin("##emulation"u8, flags))
@@ -318,12 +318,16 @@ public sealed class EmulationWindow : IDisposable
             viewport.WorkPos.Y + viewport.WorkSize.Y - height));
         ImGui.SetNextWindowSize(new Vector2(viewport.WorkSize.X, height));
 
+        // NoNav (inputs + focus): this bar is mouse-only. Without it, clicking a
+        // control leaves the keyboard-nav cursor parked on it - so a later Space
+        // activates that widget instead of reaching the emulated system as a
+        // joystick fire, and an arrow key re-summons the nav highlight here.
         const ImGuiWindowFlags flags =
             ImGuiWindowFlags.NoDecoration
             | ImGuiWindowFlags.NoMove
             | ImGuiWindowFlags.NoSavedSettings
             | ImGuiWindowFlags.NoBringToFrontOnFocus
-            | ImGuiWindowFlags.NoNavFocus
+            | ImGuiWindowFlags.NoNav
             | ImGuiWindowFlags.NoScrollbar
             | ImGuiWindowFlags.NoScrollWithMouse;
 
