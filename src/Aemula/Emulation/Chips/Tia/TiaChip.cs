@@ -371,73 +371,78 @@ public sealed class TiaChip
                 // Read registers.
                 //console.log(`TIA read register. Address = ${toHexString(pins.address, 2)}`);
 
-                // Collision reads. Address is already masked to 6 bits by the
-                // system, and the canonical CX registers sit at 0x30-0x37;
-                // each returns one pair latch on D7 and (all but CXBLPF) a
-                // second on D6, driven out through Data67 (bit 0 -> D6,
-                // bit 1 -> D7). The system merges Data67 << 6 back onto the
-                // CPU bus and supplies D0-D5 from the bus itself.
+                // Collision reads. A TIA read only decodes A0-A3 (Stella's
+                // TIAConstants: peek masks address & 0x0F), so the 14 read
+                // registers at 0x0-0xD mirror every 0x10 across TIA's read
+                // space - vcs.h's canonical CXM0P..INPT5 names are the 0x30
+                // copy, but Pitfall! (and others) read the trigger through
+                // the low mirror `LDA $0C`. Mask to A0-A3 here so both land.
                 //
-                // The eight CX registers plus the six 0x38-0x3D input ports
-                // are driven here. Everything else is true open bus, so
-                // Data67 - a persistent property - is deliberately left
-                // untouched for those rather than being forced to a value.
+                // Each CX register returns one pair latch on D7 and (all but
+                // CXBLPF) a second on D6, driven out through Data67 (bit 0 ->
+                // D6, bit 1 -> D7). The system merges Data67 << 6 back onto
+                // the CPU bus and supplies D0-D5 from the bus itself.
+                //
+                // The eight CX registers plus the six 0x8-0xD input ports are
+                // driven here. Everything else is true open bus, so Data67 - a
+                // persistent property - is deliberately left untouched for
+                // those rather than being forced to a value.
                 //
                 // The input ports drive D7 only; D6 is undefined on them and
                 // reads back 0, the same way CXBLPF's unused D6 does.
-                switch (Address)
+                switch (Address & 0x0F)
                 {
                     // CXM0P
-                    case 0x30:
+                    case 0x00:
                         Data67 = PackData67(
                             d7: Collisions.IsSet(CollisionLatches.M0P1),
                             d6: Collisions.IsSet(CollisionLatches.M0P0));
                         break;
 
                     // CXM1P
-                    case 0x31:
+                    case 0x01:
                         Data67 = PackData67(
                             d7: Collisions.IsSet(CollisionLatches.M1P0),
                             d6: Collisions.IsSet(CollisionLatches.M1P1));
                         break;
 
                     // CXP0FB
-                    case 0x32:
+                    case 0x02:
                         Data67 = PackData67(
                             d7: Collisions.IsSet(CollisionLatches.P0PF),
                             d6: Collisions.IsSet(CollisionLatches.P0BL));
                         break;
 
                     // CXP1FB
-                    case 0x33:
+                    case 0x03:
                         Data67 = PackData67(
                             d7: Collisions.IsSet(CollisionLatches.P1PF),
                             d6: Collisions.IsSet(CollisionLatches.P1BL));
                         break;
 
                     // CXM0FB
-                    case 0x34:
+                    case 0x04:
                         Data67 = PackData67(
                             d7: Collisions.IsSet(CollisionLatches.M0PF),
                             d6: Collisions.IsSet(CollisionLatches.M0BL));
                         break;
 
                     // CXM1FB
-                    case 0x35:
+                    case 0x05:
                         Data67 = PackData67(
                             d7: Collisions.IsSet(CollisionLatches.M1PF),
                             d6: Collisions.IsSet(CollisionLatches.M1BL));
                         break;
 
                     // CXBLPF - D6 is unused and always reads 0.
-                    case 0x36:
+                    case 0x06:
                         Data67 = PackData67(
                             d7: Collisions.IsSet(CollisionLatches.BLPF),
                             d6: false);
                         break;
 
                     // CXPPMM
-                    case 0x37:
+                    case 0x07:
                         Data67 = PackData67(
                             d7: Collisions.IsSet(CollisionLatches.P0P1),
                             d6: Collisions.IsSet(CollisionLatches.M0M1));
@@ -447,19 +452,19 @@ public sealed class TiaChip
                     // paddle RC model, so a set I bit stands in for "cap
                     // charged" (D7 = 1). VBLANK D7 dumps the caps to ground,
                     // forcing D7 = 0 regardless of the pin.
-                    case 0x38:
+                    case 0x08:
                         Data67 = PackData67(d7: !_i03DumpToGround && GetBitAsBoolean(_i, 0), d6: false);
                         break;
 
-                    case 0x39:
+                    case 0x09:
                         Data67 = PackData67(d7: !_i03DumpToGround && GetBitAsBoolean(_i, 1), d6: false);
                         break;
 
-                    case 0x3A:
+                    case 0x0A:
                         Data67 = PackData67(d7: !_i03DumpToGround && GetBitAsBoolean(_i, 2), d6: false);
                         break;
 
-                    case 0x3B:
+                    case 0x0B:
                         Data67 = PackData67(d7: !_i03DumpToGround && GetBitAsBoolean(_i, 3), d6: false);
                         break;
 
@@ -468,11 +473,11 @@ public sealed class TiaChip
                     // it enabled an SR latch (updated on every pin change and
                     // on the VBLANK write) holds D7 low once the pin has been
                     // seen low.
-                    case 0x3C:
+                    case 0x0C:
                         Data67 = PackData67(d7: GetBitAsBoolean(_i, 4) && !_inpt4LatchedLow, d6: false);
                         break;
 
-                    case 0x3D:
+                    case 0x0D:
                         Data67 = PackData67(d7: GetBitAsBoolean(_i, 5) && !_inpt5LatchedLow, d6: false);
                         break;
 

@@ -189,9 +189,29 @@ public class TiaInputPortTests
     {
         var tia = NewTia();
 
+        // Only A0-A3 are decoded on a read, and 0xE/0xF select no register.
         tia.Data67 = 0b11;
         await Assert.That(ReadData67(tia, 0x3E)).IsEqualTo((byte)0b11);
         await Assert.That(ReadData67(tia, 0x3F)).IsEqualTo((byte)0b11);
-        await Assert.That(ReadData67(tia, 0x00)).IsEqualTo((byte)0b11);
+        await Assert.That(ReadData67(tia, 0x0E)).IsEqualTo((byte)0b11);
+    }
+
+    [Test]
+    public async Task InputPortsMirrorEverySixteenBytesAcrossTheReadSpace()
+    {
+        var tia = NewTia();
+        tia.I = 0b0011_0000; // Triggers idle high.
+
+        // A TIA read decodes A0-A3 only, so INPT4 answers at 0x0C/0x1C/0x2C
+        // as well as the canonical 0x3C - Pitfall! reads the trigger as
+        // `LDA $0C`.
+        foreach (var address in new byte[] { 0x0C, 0x1C, 0x2C, 0x3C })
+        {
+            tia.I = 0b0011_0000;
+            await Assert.That(ReadData67(tia, address)).IsEqualTo(D7);
+
+            tia.I = 0b0010_0000; // I4 low.
+            await Assert.That(ReadData67(tia, address)).IsEqualTo(NoDrive);
+        }
     }
 }

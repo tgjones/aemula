@@ -32,10 +32,10 @@ public class Atari2600SystemInputTests
     }
 
     [Test]
-    [Arguments(SdlkUp, 0b1000_0000)]
-    [Arguments(SdlkDown, 0b0100_0000)]
-    [Arguments(SdlkLeft, 0b0010_0000)]
-    [Arguments(SdlkRight, 0b0001_0000)]
+    [Arguments(SdlkUp, 0b0001_0000)]
+    [Arguments(SdlkDown, 0b0010_0000)]
+    [Arguments(SdlkLeft, 0b0100_0000)]
+    [Arguments(SdlkRight, 0b1000_0000)]
     public async Task ArrowKeyPullsItsSwchaBitLowThenReleasesIt(int key, int bit)
     {
         var system = new Atari2600System();
@@ -57,11 +57,11 @@ public class Atari2600SystemInputTests
         KeyDown(system, SdlkUp);
         KeyDown(system, SdlkLeft);
 
-        // Up + Left low, Down + Right still high.
-        await Assert.That(system.Riot.PA & 0xF0).IsEqualTo(0b0101_0000);
+        // Up (bit 4) + Left (bit 6) low, Down + Right still high.
+        await Assert.That(system.Riot.PA & 0xF0).IsEqualTo(0b1010_0000);
 
         KeyUp(system, SdlkUp);
-        await Assert.That(system.Riot.PA & 0xF0).IsEqualTo(0b1101_0000);
+        await Assert.That(system.Riot.PA & 0xF0).IsEqualTo(0b1011_0000);
     }
 
     [Test]

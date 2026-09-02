@@ -10,13 +10,15 @@ namespace Aemula.Emulation.Systems.Atari2600;
 // hardware, so "not pressed" is a 1 and a press pulls the bit to 0.
 public sealed partial class Atari2600System
 {
-    // SWCHA bit for each player 0 direction (Stella Programmer's Guide, the
-    // SWCHA read). The low nibble is player 1's stick, which nothing here
-    // drives.
-    private const byte Joystick0Up = 0b1000_0000;
-    private const byte Joystick0Down = 0b0100_0000;
-    private const byte Joystick0Left = 0b0010_0000;
-    private const byte Joystick0Right = 0b0001_0000;
+    // SWCHA bit for each player 0 direction. The top nibble is player 0's
+    // stick, ordered right/left/down/up from bit 7 down (Stella's M6532
+    // assembles it as port0 pin one/two/three/four -> 0x10/0x20/0x40/0x80,
+    // i.e. up/down/left/right); the low nibble is player 1's stick, which
+    // nothing here drives.
+    private const byte Joystick0Right = 0b1000_0000;
+    private const byte Joystick0Left = 0b0100_0000;
+    private const byte Joystick0Down = 0b0010_0000;
+    private const byte Joystick0Up = 0b0001_0000;
 
     // TIA I-pin 4 is player 0's trigger; bit 7 of an INPT4 read follows it.
     private const byte Joystick0Fire = 0b0001_0000;
