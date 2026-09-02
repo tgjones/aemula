@@ -99,7 +99,40 @@ public sealed partial class NesSystem : EmulatedSystem
                 Cpu.Data = ppuPins.CpuData;
                 break;
 
-            // $4000-$401F is mapped internally on 2A03 chip.
+            // $4000-$401F is mapped internally on the 2A03, except the two
+            // controller ports: OUT0..OUT2 and the serial /IN0 /IN1 lines are
+            // 2A03 pins, but the pad's shift register and the mainboard logic
+            // that latches and clocks it are off-chip (see NesController).
+            case 0b010: // $4000-$5FFF.
+                switch (address)
+                {
+                    case 0x4016:
+                        if (Cpu.RW)
+                        {
+                            // /IN0 -> data bit 0; bits 1..7 are open bus.
+                            Cpu.Data = (byte)((Cpu.Data & 0xFE) | (_controller1.SerialData ? 1 : 0));
+                            PulseControllerClock(_controller1);
+                        }
+                        else
+                        {
+                            // OUT0 drives the P/S (latch) line of both pads.
+                            var latch = (Cpu.Data & 1) != 0;
+                            _controller1.Latch = latch;
+                            _controller2.Latch = latch;
+                        }
+                        break;
+
+                    case 0x4017:
+                        // Read: controller 2's /IN1 line. A write here is the
+                        // APU frame counter, handled on the 2A03 (TODO).
+                        if (Cpu.RW)
+                        {
+                            Cpu.Data = (byte)((Cpu.Data & 0xFE) | (_controller2.SerialData ? 1 : 0));
+                            PulseControllerClock(_controller2);
+                        }
+                        break;
+                }
+                break;
 
             case 0b100: // ROMSEL. Only address pins A0..A14 are connected.
             case 0b101:
