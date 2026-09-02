@@ -25,6 +25,7 @@ public sealed class ConsoleControl
 
     public ConsoleControl(
         string label,
+        string mnemonic,
         ControlKind kind,
         Func<bool> get,
         Action<bool> set,
@@ -32,6 +33,7 @@ public sealed class ConsoleControl
         string? onLabel = null)
     {
         Label = label;
+        Mnemonic = mnemonic;
         Kind = kind;
         _get = get;
         _set = set;
@@ -40,6 +42,12 @@ public sealed class ConsoleControl
     }
 
     public string Label { get; }
+
+    // A short, lower-case, hyphenated name for this control ("reset",
+    // "left-diff") - stable and terminal-friendly, for scripting the panel
+    // from outside the UI (the headless runner's --input). The display Label
+    // is free to change wording; this is the identifier.
+    public string Mnemonic { get; }
 
     public ControlKind Kind { get; }
 

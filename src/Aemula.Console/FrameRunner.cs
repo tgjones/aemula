@@ -16,13 +16,14 @@ public static class FrameRunner
     // periodic screenshots) - keeping it a plain callback means this loop stays
     // ignorant of screenshots/file paths entirely, the same separation Television
     // itself keeps from any particular consumer of its output.
-    public static FrameRunResult Run(EmulatedSystem system, int requestedFrames, Action<int>? onFrameCompleted = null)
+    public static FrameRunResult Run(EmulatedSystem system, int requestedFrames, Action<int, ulong>? onFrameCompleted = null)
     {
         var television = system.Television;
 
         var previousRow = television.CurrentRow;
         var framesCompleted = 0;
         var cycles = 0UL;
+        var cyclesAtPreviousFrame = 0UL;
 
         // Safety cap: if a system's signal never locks to a frame boundary, this
         // stops a runaway infinite loop instead of hanging forever - 10x the nominal
@@ -43,7 +44,8 @@ public static class FrameRunner
             if (currentRow < previousRow)
             {
                 framesCompleted++;
-                onFrameCompleted?.Invoke(framesCompleted);
+                onFrameCompleted?.Invoke(framesCompleted, cycles - cyclesAtPreviousFrame);
+                cyclesAtPreviousFrame = cycles;
             }
             previousRow = currentRow;
 

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Hexa.NET.SDL3;
 
 namespace Aemula.Emulation.Systems.Atari2600;
@@ -28,6 +29,17 @@ public sealed partial class Atari2600System
     private const int SdlkDown = 0x40000051;
     private const int SdlkUp = 0x40000052;
     private const int SdlkSpace = 0x20;
+
+    // The generic InputScript tokens this system's OnKeyEvent understands,
+    // each mapped to the SDL keycode it matches on below.
+    public override IReadOnlyDictionary<string, int> InputKeyBindings { get; } = new Dictionary<string, int>
+    {
+        ["up"] = SdlkUp,
+        ["down"] = SdlkDown,
+        ["left"] = SdlkLeft,
+        ["right"] = SdlkRight,
+        ["fire"] = SdlkSpace,
+    };
 
     // Release every input line at power-on. Both ports and both triggers idle
     // high; without this the pins sit at their 0 default, which a game polling

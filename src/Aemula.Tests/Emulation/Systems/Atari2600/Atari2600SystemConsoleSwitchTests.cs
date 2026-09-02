@@ -42,6 +42,18 @@ public class Atari2600SystemConsoleSwitchTests
     }
 
     [Test]
+    public async Task EachPanelControlHasAScriptMnemonic()
+    {
+        var system = new Atari2600System();
+
+        var mnemonics = system.ConsoleControls.Select(c => c.Mnemonic).ToArray();
+
+        // Terminal-friendly names the headless runner's --input matches on.
+        await Assert.That(mnemonics).IsEquivalentTo(
+            ["tv-type", "left-diff", "right-diff", "select", "reset"]);
+    }
+
+    [Test]
     [Arguments("Reset", Reset)]
     [Arguments("Select", Select)]
     public async Task MomentaryButtonPullsItsBitLowWhileHeldOnly(string label, int bit)

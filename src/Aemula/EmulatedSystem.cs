@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using Aemula.Debugging;
 using Aemula.Emulation.Output;
 using Aemula.Emulation.Systems;
@@ -60,6 +61,15 @@ public abstract class EmulatedSystem : IDisposable
     public abstract void Tick();
 
     public virtual void OnKeyEvent(SDLKeyboardEvent keyEvent) { }
+
+    // InputScript (the headless --input runner) drives a system through the
+    // same SDL key events EmulationWindow sends. This maps that script's
+    // generic control tokens ("up", "down", "left", "right", "fire", ...) to
+    // the SDL keycodes this system's OnKeyEvent matches on; a system with
+    // keyboard- or joystick-driven input overrides it. Console-panel buttons
+    // aren't here - those are scripted through each ConsoleControls entry's
+    // Mnemonic.
+    public virtual IReadOnlyDictionary<string, int> InputKeyBindings => ReadOnlyDictionary<string, int>.Empty;
 
     // The switches and buttons on this system's physical console housing (the
     // Atari 2600's RESET / SELECT / difficulty / colour switches, and the

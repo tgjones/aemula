@@ -29,7 +29,7 @@ public static class Program
 
     private static void Run(string[] args)
     {
-        var (systemName, framesRequested, romPath, screenshotPath, screenshotEvery) = ParseArgs(args);
+        var (systemName, framesRequested, romPath, screenshotPath, screenshotEvery, inputSpec, traceTiming) = ParseArgs(args);
 
         if (!SystemRegistry.Systems.TryGetValue(systemName, out var createSystem))
         {
@@ -38,6 +38,10 @@ public static class Program
 
         var system = createSystem();
         var television = system.Television;
+
+        // Parsed after the system exists so the script's control tokens can be
+        // validated against that system's InputKeyBindings.
+        var inputScript = inputSpec != null ? InputScript.Parse(inputSpec, system) : null;
 
         // ScreenshotWriter reads Sample.Region (via ComputeActiveVideoRowRange)
         // and Sample.Color out of SampleBuffer; Region is only populated when
@@ -65,10 +69,34 @@ public static class Program
             }
         }
 
+        // --trace-timing prints, per detected frame, the emulated tick count
+        // for that frame alongside the decoder's own detected line/sample
+        // geometry - to stderr, so stdout stays a single clean JSON line.
+        // Meant for chasing frame-timing drift (a game whose tick/frame should
+        // be constant but isn't).
+        void OnFrameCompleted(int framesCompleted, ulong ticksThisFrame)
+        {
+            inputScript?.ApplyForFrame(system, framesCompleted);
+            WritePeriodicScreenshot(framesCompleted);
+
+            if (traceTiming)
+            {
+                SystemConsole.Error.WriteLine(
+                    $"frame {framesCompleted,4}: ticks={ticksThisFrame,6} " +
+                    $"lines/frame={television.DetectedLinesPerFrame:F2} " +
+                    $"samples/line={television.DetectedSamplesPerLine:F2} " +
+                    $"buf={television.SampleBuffer.Width}x{television.SampleBuffer.Height}");
+            }
+        }
+
         var stopwatch = Stopwatch.StartNew();
 
         system.LoadProgram(romPath);
-        var result = FrameRunner.Run(system, framesRequested, WritePeriodicScreenshot);
+
+        // Frame 0 fires before the run so "0:reset+" and friends take effect
+        // from the very first emulated frame.
+        inputScript?.ApplyForFrame(system, 0);
+        var result = FrameRunner.Run(system, framesRequested, OnFrameCompleted);
 
         stopwatch.Stop();
 
@@ -111,13 +139,15 @@ public static class Program
         return string.IsNullOrEmpty(directory) ? numberedFileName : Path.Combine(directory, numberedFileName);
     }
 
-    private static (string SystemName, int FramesRequested, string RomPath, string? ScreenshotPath, int? ScreenshotEvery) ParseArgs(string[] args)
+    private static (string SystemName, int FramesRequested, string RomPath, string? ScreenshotPath, int? ScreenshotEvery, string? InputSpec, bool TraceTiming) ParseArgs(string[] args)
     {
         string? systemName = null;
         int? framesRequested = null;
         var romPath = "";
         string? screenshotPath = null;
         int? screenshotEvery = null;
+        string? inputSpec = null;
+        var traceTiming = false;
 
         var i = 0;
         while (i < args.Length)
@@ -169,6 +199,20 @@ public static class Program
                     i += 2;
                     break;
 
+                case "--input":
+                    if (i + 1 >= args.Length)
+                    {
+                        throw new ArgumentException("--input requires a value.");
+                    }
+                    inputSpec = args[i + 1];
+                    i += 2;
+                    break;
+
+                case "--trace-timing":
+                    traceTiming = true;
+                    i++;
+                    break;
+
                 default:
                     if (systemName != null)
                     {
@@ -182,7 +226,10 @@ public static class Program
 
         if (systemName == null)
         {
-            throw new ArgumentException("Usage: aemula-console <system> --frames <n> [--rom <path>]");
+            throw new ArgumentException(
+                "Usage: aemula-console <system> --frames <n> [--rom <path>] " +
+                "[--screenshot <path>] [--screenshot-every <n>] " +
+                "[--input \"<frame>:<token>,...\"] [--trace-timing]");
         }
 
         if (framesRequested == null)
@@ -195,6 +242,6 @@ public static class Program
             throw new ArgumentException("--screenshot-every requires --screenshot.");
         }
 
-        return (systemName, framesRequested.Value, romPath, screenshotPath, screenshotEvery);
+        return (systemName, framesRequested.Value, romPath, screenshotPath, screenshotEvery, inputSpec, traceTiming);
     }
 }

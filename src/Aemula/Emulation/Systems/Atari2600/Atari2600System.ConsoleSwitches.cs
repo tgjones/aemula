@@ -37,6 +37,7 @@ public sealed partial class Atari2600System
         [
             new ConsoleControl(
                 "TV Type",
+                "tv-type",
                 ConsoleControl.ControlKind.Toggle,
                 () => GetSwchb(SwchbColor),
                 on => SetSwchb(SwchbColor, on),
@@ -45,6 +46,7 @@ public sealed partial class Atari2600System
 
             new ConsoleControl(
                 "Left Diff.",
+                "left-diff",
                 ConsoleControl.ControlKind.Toggle,
                 () => GetSwchb(SwchbLeftDifficulty),
                 on => SetSwchb(SwchbLeftDifficulty, on),
@@ -53,6 +55,7 @@ public sealed partial class Atari2600System
 
             new ConsoleControl(
                 "Right Diff.",
+                "right-diff",
                 ConsoleControl.ControlKind.Toggle,
                 () => GetSwchb(SwchbRightDifficulty),
                 on => SetSwchb(SwchbRightDifficulty, on),
@@ -61,12 +64,14 @@ public sealed partial class Atari2600System
 
             new ConsoleControl(
                 "Select",
+                "select",
                 ConsoleControl.ControlKind.Momentary,
                 () => !GetSwchb(SwchbSelect),
                 held => SetSwchb(SwchbSelect, !held)),
 
             new ConsoleControl(
                 "Reset",
+                "reset",
                 ConsoleControl.ControlKind.Momentary,
                 () => !GetSwchb(SwchbReset),
                 held => SetSwchb(SwchbReset, !held)),
