@@ -35,9 +35,24 @@ internal sealed class Timer
 
     public void Reset(byte value, ushort interval)
     {
-        Value = (byte)(value - 1);
+        // The written value lands in INTIM as-is; the first timer clock (one
+        // cycle after the write) takes it to value - 1, and from there it
+        // steps down once per `interval` cycles. A write of 0 therefore
+        // underflows on that very next cycle. `_cyclesRemaining = 0` makes the
+        // next Tick fall straight through to the decrement. Matches the 6532
+        // as modelled by Stella (setTimerRegister + updateEmulation).
+        Value = value;
         _interval = interval;
-        _cyclesRemaining = (ushort)(interval - 1);
+        _cyclesRemaining = 0;
+
+        // Writing the timer register restarts interval counting from scratch.
+        // Without this, a timer that had underflowed even once stayed latched
+        // in its post-underflow "decrement Value every cycle" mode forever -
+        // every later write then ignored the prescaler and expired ~interval
+        // times too fast. (The power-on timer underflows during any game that
+        // doesn't touch it for the first few frames, so this hit e.g. Pitfall
+        // the moment its kernel first wrote TIM64T.)
+        Expired = false;
     }
 
     public void Tick()
