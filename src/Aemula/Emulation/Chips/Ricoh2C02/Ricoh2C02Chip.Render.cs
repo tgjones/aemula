@@ -98,7 +98,7 @@ partial class Ricoh2C02Chip
         if (reloadDot && CurrentDot % 8 == 1)
         {
             // The previous group's pattern-table high byte is on the data bus this dot.
-            _bgPatternHi = Pins.PpuAddressData.Data;
+            _bgPatternHi = _adBus.Data;
 
             _bgShifterPatternLo = (ushort)((_bgShifterPatternLo & 0xFF00) | _bgPatternLo);
             _bgShifterPatternHi = (ushort)((_bgShifterPatternHi & 0xFF00) | _bgPatternHi);
@@ -130,7 +130,7 @@ partial class Ricoh2C02Chip
                 break;
 
             case 2: // Attribute byte - address.
-                _bgTileId = Pins.PpuAddressData.Data;
+                _bgTileId = _adBus.Data;
                 BeginVramFetch((ushort)(
                     0x23C0 | (_v & 0x0C00) | ((_v >> 4) & 0x38) | ((_v >> 2) & 0x07)));
                 break;
@@ -141,7 +141,7 @@ partial class Ricoh2C02Chip
 
             case 4: // Pattern-table low byte - address.
             {
-                var attribute = Pins.PpuAddressData.Data;
+                var attribute = _adBus.Data;
                 if ((_v & 0x0040) != 0) // coarse Y bit 1 -> bottom half of the 32x32 block
                 {
                     attribute >>= 4;
@@ -165,7 +165,7 @@ partial class Ricoh2C02Chip
                 break;
 
             case 6: // Pattern-table high byte - address.
-                _bgPatternLo = Pins.PpuAddressData.Data;
+                _bgPatternLo = _adBus.Data;
                 BeginVramFetch((ushort)(_bgPatternBaseAddress + 8));
                 break;
 
@@ -213,17 +213,17 @@ partial class Ricoh2C02Chip
 
     private void BeginVramFetch(ushort address)
     {
-        Pins.PpuAddressData.Address = address;
-        Pins.PpuAle = true;
-        Pins.PpuRD = true;
-        Pins.PpuWR = true;
+        _adBus.Address = address;
+        _ppuAle = true;
+        _ppuRd = true;
+        _ppuWr = true;
     }
 
     private void EndVramFetch()
     {
-        Pins.PpuAle = false;
-        Pins.PpuRD = false;
-        Pins.PpuWR = true;
+        _ppuAle = false;
+        _ppuRd = false;
+        _ppuWr = true;
     }
 
     private void IncrementScrollHorizontal()

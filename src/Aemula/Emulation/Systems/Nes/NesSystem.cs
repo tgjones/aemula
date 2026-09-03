@@ -18,6 +18,9 @@ public sealed partial class NesSystem : EmulatedSystem
 
     private bool _lastCpuPhi2;
 
+    private bool _lastPpuRd;
+    private bool _lastPpuWr;
+
     public readonly Ricoh2A03Chip Cpu;
 
     public readonly Ricoh2C02Chip Ppu;
@@ -48,7 +51,7 @@ public sealed partial class NesSystem : EmulatedSystem
 
         TickCompositeVideo();
 
-        Cpu.Nmi = Ppu.Pins.Nmi;
+        Cpu.Nmi = Ppu.Nmi;
     }
 
     private void DoCpuCycle()
@@ -71,8 +74,6 @@ public sealed partial class NesSystem : EmulatedSystem
             return;
         }
 
-        ref var ppuPins = ref Ppu.Pins;
-
         var address = Cpu.Address;
 
         // The 3 high bits dictate which chips are selected.
@@ -92,11 +93,12 @@ public sealed partial class NesSystem : EmulatedSystem
                 break;
 
             case 0b001: // PPU ports. Only address pins A0..A2 are connected.
-                ppuPins.CpuRW = Cpu.RW;
-                ppuPins.CpuAddress = (byte)(address & 0x7);
-                ppuPins.CpuData = Cpu.Data;
-                Ppu.CpuCycle();
-                Cpu.Data = ppuPins.CpuData;
+                Ppu.CpuRw = Cpu.RW;
+                Ppu.CpuAddress = (byte)(address & 0x7);
+                Ppu.CpuData = Cpu.Data;
+                Ppu.Dbe = false;   // select - runs the register access
+                Ppu.Dbe = true;    // deselect
+                Cpu.Data = Ppu.CpuData;
                 break;
 
             // $4000-$401F is mapped internally on the 2A03, except the two
@@ -151,41 +153,53 @@ public sealed partial class NesSystem : EmulatedSystem
 
     private void DoPpuCycle()
     {
-        // Feed the PPU the master clock. It only runs a dot on every fourth
-        // tick; the external address/data bus is serviced only on those ticks.
-        if (!Ppu.Tick())
+        // Feed the PPU the master clock. Its internal divide-by-four runs a dot
+        // on every fourth tick; ALE / /RD / /WR only move on those dot
+        // boundaries, so the external address/data bus is serviced off the /RD
+        // and /WR falling edges the dot produces (mirroring the phi2-rising gate
+        // in DoCpuCycle) rather than every master tick.
+        Ppu.Clk = false;
+        Ppu.Clk = true;
+
+        if (Ppu.PpuAle)
+        {
+            _vramLowAddressLatch = (byte)Ppu.PpuAddressBus;
+        }
+
+        var ppuRd = Ppu.PpuRd;
+        var ppuWr = Ppu.PpuWr;
+        var ppuRdFalling = !ppuRd && _lastPpuRd;
+        var ppuWrFalling = !ppuWr && _lastPpuWr;
+        _lastPpuRd = ppuRd;
+        _lastPpuWr = ppuWr;
+
+        if (!ppuRdFalling && !ppuWrFalling)
         {
             return;
         }
 
-        ref var ppuPins = ref Ppu.Pins;
+        var addressBus = Ppu.PpuAddressBus;
+        var pa13 = addressBus >> 13 & 1;
+        var ppuAddress = (addressBus & 0xFF00) | _vramLowAddressLatch;
 
-        if (ppuPins.PpuAle)
-        {
-            _vramLowAddressLatch = ppuPins.PpuAddressData.Data;
-        }
-
-        var pa13 = ppuPins.PpuAddressData.Address >> 13 & 1;
-        var ppuAddress = ppuPins.PpuAddressData.AddressHi << 8 | _vramLowAddressLatch;
-
-        if (!ppuPins.PpuRD)
+        if (ppuRdFalling)
         {
             if (pa13 == 1)
             {
-                ppuPins.PpuAddressData.Data = _vram[ppuAddress & 0x7FF];
+                Ppu.PpuData = _vram[ppuAddress & 0x7FF];
             }
             else
             {
                 // TODO: Use mapper.
-                ppuPins.PpuAddressData.Data = _cartridge?.ChrRom[ppuAddress] ?? 0;
+                Ppu.PpuData = _cartridge?.ChrRom[ppuAddress] ?? 0;
             }
         }
 
-        if (!ppuPins.PpuWR)
+        if (ppuWrFalling)
         {
             if (pa13 == 1)
             {
-                _vram[ppuAddress & 0x7FF] = ppuPins.PpuAddressData.Data;
+                _vram[ppuAddress & 0x7FF] = Ppu.PpuData;
             }
             else
             {

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using Aemula.Emulation.Chips.Ricoh2C02.UI;
 using Aemula.UI;
 
@@ -50,41 +51,62 @@ public sealed partial class Ricoh2C02Chip
     internal ulong CurrentScanline;
     internal ulong CurrentDot;
 
-    // Master-clock divider. The 2C02's master-clock input drives an internal
-    // divide-by-four counter whose output is the ~5.37 MHz dot clock; one dot
-    // (CycleDot) runs on every fourth Tick(). Starts at 0 so the first Tick()
-    // after construction runs a dot.
-    private int _dotClockDivider;
+    // Master-clock input state and its divide-by-four counter. The system drives
+    // Clk low/high once per master period (2 transitions); the counter tracks
+    // those half-periods and runs one dot (CycleDot) every 8 of them. It starts
+    // at 7 so the very first genuine transition after construction completes a
+    // dot - the same phase the old Tick() had, where _dotClockDivider started at
+    // 0 and ran a dot on the first call.
+    private bool _clk;
+    private int _clkDivideCounter = 7;
 
-    public Ricoh2C02Pins Pins;
+    // Chip select / data-bus enable (D̄B̄Ē), active low. Idle high; a falling edge
+    // performs one CPU-register access (see OnDbeActive).
+    private bool _dbe = true;
 
     // Pin values. Every hardware pin is a property whose direction matches the
-    // real chip; for now each one just forwards to the corresponding Pins field
-    // so the refactor can proceed in small diffs.
+    // real chip. Inputs are set-only, outputs get-only, the two buses both.
+
+    private bool _cpuRw;
+    private byte _cpuAddress;
+    private byte _cpuData;
+
+    /// <summary>
+    /// To save pins the PPU multiplexes the low eight VRAM address pins, also
+    /// using them as the VRAM data pins. The overlap is modelled by
+    /// <see cref="MultiplexedAddressData"/>; only <see cref="PpuAddressBus"/> and
+    /// <see cref="PpuData"/> are exposed.
+    /// </summary>
+    private MultiplexedAddressData _adBus;
+
+    private bool _ppuAle;
+    private bool _ppuRd;
+    private bool _ppuWr;
+    private bool _nmi;
 
     /// <summary>R/W̄ - CPU-bus read/write select (input).</summary>
     public bool CpuRw
     {
-        set => Pins.CpuRW = value;
+        set => _cpuRw = value;
     }
 
     /// <summary>RS0-RS2 - CPU-bus register select (input).</summary>
     public byte CpuAddress
     {
-        set => Pins.CpuAddress = value;
+        set => _cpuAddress = value;
     }
 
     /// <summary>D0-D7 - CPU data bus (bidirectional).</summary>
     public byte CpuData
     {
-        get => Pins.CpuData;
-        set => Pins.CpuData = value;
+        get => _cpuData;
+        set => _cpuData = value;
     }
 
     /// <summary>
     /// AD0-AD7 / A8-A13 - the 14-bit VRAM address the PPU is driving (output).
     /// </summary>
-    public ushort PpuAddressBus => Pins.PpuAddressData.Address;
+    public ushort PpuAddressBus => _adBus.Address;
 
     /// <summary>
     /// AD0-AD7 - the multiplexed low-byte data bus: the byte the PPU drives on a
@@ -92,21 +114,63 @@ public sealed partial class Ricoh2C02Chip
     /// </summary>
     public byte PpuData
     {
-        get => Pins.PpuAddressData.Data;
-        set => Pins.PpuAddressData.Data = value;
+        get => _adBus.Data;
+        set => _adBus.Data = value;
     }
 
     /// <summary>ALE - address latch enable (output).</summary>
-    public bool PpuAle => Pins.PpuAle;
+    public bool PpuAle => _ppuAle;
 
     /// <summary>R̄D̄ - VRAM read strobe, active low (output).</summary>
-    public bool PpuRd => Pins.PpuRD;
+    public bool PpuRd => _ppuRd;
 
     /// <summary>W̄R̄ - VRAM write strobe, active low (output).</summary>
-    public bool PpuWr => Pins.PpuWR;
+    public bool PpuWr => _ppuWr;
 
     /// <summary>I̅N̅T̅ - connected to the CPU's N̅M̅I̅ pin, active low (output).</summary>
-    public bool Nmi => Pins.Nmi;
+    public bool Nmi => _nmi;
+
+    /// <summary>
+    /// D̄B̄Ē - data-bus enable / chip select, active low (input). Idle high; the
+    /// system pulses it low then high once per CPU access to the PPU's $2000-$2007
+    /// ports, and the falling edge runs that register read/write - the same shape
+    /// as the 2A03 running its bus service off an M2 edge.
+    /// </summary>
+    public bool Dbe
+    {
+        set
+        {
+            if (_dbe == value)
+            {
+                return;
+            }
+
+            _dbe = value;
+
+            if (!value)
+            {
+                OnDbeActive();
+            }
+        }
+    }
+
+    /// <summary>
+    /// The AD0-AD7 multiplex: the low VRAM address byte and the VRAM data byte
+    /// share pins, so <see cref="Data"/> overlays the low byte of
+    /// <see cref="Address"/>.
+    /// </summary>
+    [StructLayout(LayoutKind.Explicit)]
+    private struct MultiplexedAddressData
+    {
+        [FieldOffset(0)]
+        public ushort Address;
+
+        [FieldOffset(1)]
+        public byte AddressHi;
+
+        [FieldOffset(0)]
+        public byte Data;
+    }
 
     public Ricoh2C02Chip()
     {
@@ -187,23 +251,31 @@ public sealed partial class Ricoh2C02Chip
     }
 
     /// <summary>
-    /// Master-clock entry point, called once per NES master clock cycle
-    /// (~21.48 MHz). Advances the internal divide-by-four dot-clock counter and
-    /// runs one PPU dot (<see cref="CycleDot"/>) on every fourth call. Returns
-    /// <c>true</c> on the ticks where a dot actually ran, so the containing
-    /// system knows when to service the PPU's external address/data bus.
+    /// CLK - the ~21.48 MHz master-clock input. The setter is the divide-by-four
+    /// dot-clock engine: no-change writes are ignored, every genuine transition
+    /// advances the half-period counter, and one PPU dot (<see cref="CycleDot"/>)
+    /// runs whenever 8 half-periods (one dot = 4 master periods) have elapsed.
+    /// The system services the PPU's external address/data bus off the /RD and
+    /// /WR pins the dot moves, so there is no per-dot return value any more.
     /// </summary>
-    public bool Tick()
+    public bool Clk
     {
-        if (_dotClockDivider == 0)
+        get => _clk; // TODO: Shouldn't be accessible
+        set
         {
-            _dotClockDivider = 3;
-            CycleDot();
-            return true;
-        }
+            if (_clk == value)
+            {
+                return;
+            }
 
-        _dotClockDivider--;
-        return false;
+            _clk = value;
+
+            if (++_clkDivideCounter == 8)
+            {
+                _clkDivideCounter = 0;
+                CycleDot();
+            }
+        }
     }
 
     private void CycleDot()
@@ -233,7 +305,7 @@ public sealed partial class Ricoh2C02Chip
                 if ((_vramRequestAddress >> 8) == 0x3F)
                 {
                     // PPU /WR pin is not active for palette addresses.
-                    Pins.PpuWR = true;
+                    _ppuWr = true;
                 }
                 _vramRequestState = VramRequestState.None;
                 break;
@@ -287,20 +359,19 @@ public sealed partial class Ricoh2C02Chip
             }
         }
 
-        Pins.Nmi = !(StatusRegister.VBlankStarted && CtrlRegister.EnableNmi);
+        _nmi = !(StatusRegister.VBlankStarted && CtrlRegister.EnableNmi);
 
         Cycles++;
     }
 
-    public void CpuCycle()
+    // Runs one CPU-register read/write, off the falling edge of the /DBE pin.
+    private void OnDbeActive()
     {
-        ref var pins = ref Pins;
-
-        if (pins.CpuRW) // Read
+        if (_cpuRw) // Read
         {
             var result = _currentLatchData;
 
-            switch (pins.CpuAddress)
+            switch (_cpuAddress)
             {
                 case PpuCtrlAddress: // Write-only
                     break;
@@ -339,35 +410,35 @@ public sealed partial class Ricoh2C02Chip
 
             _currentLatchData = result;
 
-            pins.CpuData = result;
+            _cpuData = result;
         }
         else // Write
         {
-            _currentLatchData = pins.CpuData;
+            _currentLatchData = _cpuData;
 
-            switch (Pins.CpuAddress)
+            switch (_cpuAddress)
             {
                 case PpuCtrlAddress:
-                    CtrlRegister.Data.Value = pins.CpuData;
+                    CtrlRegister.Data.Value = _cpuData;
                     // t: ...GH.. ........ <- d: ......GH
                     // Nametable select (t bits 10-11) = data bits 0-1.
-                    _t = (ushort)((_t & 0xF3FF) | ((pins.CpuData & 0x03) << 10));
+                    _t = (ushort)((_t & 0xF3FF) | ((_cpuData & 0x03) << 10));
                     // TODO: If we're in vblank, and _ppuStatusRegister.VBlankStarted is set, changing NMI flag from 0 to 1 should trigger NMI.
                     break;
 
                 case PpuMaskAddress:
-                    MaskRegister.Data.Value = pins.CpuData;
+                    MaskRegister.Data.Value = _cpuData;
                     break;
 
                 case PpuStatusAddress: // Read-only
                     break;
 
                 case OamAddrAddress:
-                    _oamAddress = pins.CpuData;
+                    _oamAddress = _cpuData;
                     break;
 
                 case OamDataAddress:
-                    _objectAttributeMemory[_oamAddress] = pins.CpuData;
+                    _objectAttributeMemory[_oamAddress] = _cpuData;
                     _oamAddress++;
                     break;
 
@@ -377,8 +448,8 @@ public sealed partial class Ricoh2C02Chip
                         // First write.
                         // t: ....... ...ABCDE <- d: ABCDE...
                         // x:              FGH <- d: .....FGH
-                        _t = (ushort)((_t & 0xFFE0) | (pins.CpuData >> 3));
-                        _x = (byte)(pins.CpuData & 0x07);
+                        _t = (ushort)((_t & 0xFFE0) | (_cpuData >> 3));
+                        _x = (byte)(_cpuData & 0x07);
                         _w = true;
                     }
                     else
@@ -386,8 +457,8 @@ public sealed partial class Ricoh2C02Chip
                         // Second write.
                         // t: FGH..AB CDE..... <- d: ABCDEFGH
                         _t = (ushort)((_t & 0x0C1F)
-                            | ((pins.CpuData & 0xF8) << 2)
-                            | ((pins.CpuData & 0x07) << 12));
+                            | ((_cpuData & 0xF8) << 2)
+                            | ((_cpuData & 0x07) << 12));
                         _w = false;
                     }
                     break;
@@ -399,7 +470,7 @@ public sealed partial class Ricoh2C02Chip
                         // t: .CDEFGH ........ <- d: ..CDEFGH
                         //        <unused>     <- d: AB......
                         // t: Z...... ........ <- 0 (bit 14 cleared)
-                        _t = (ushort)((_t & 0x00FF) | ((pins.CpuData & 0x3F) << 8));
+                        _t = (ushort)((_t & 0x00FF) | ((_cpuData & 0x3F) << 8));
                         _w = true;
                     }
                     else
@@ -407,14 +478,14 @@ public sealed partial class Ricoh2C02Chip
                         // Second write.
                         // t: ....... ABCDEFGH <- d: ABCDEFGH
                         // v: <...all bits...> <- t: <...all bits...>
-                        _t = (ushort)((_t & 0xFF00) | pins.CpuData);
+                        _t = (ushort)((_t & 0xFF00) | _cpuData);
                         _v = _t;
                         _w = false;
                     }
                     break;
 
                 case PpuDataAddress:
-                    PpuWrite(pins.CpuData);
+                    PpuWrite(_cpuData);
                     IncrementPpuAddress();
                     break;
 
@@ -442,27 +513,27 @@ public sealed partial class Ricoh2C02Chip
 
     private void SetupVramRequest(ushort address)
     {
-        Pins.PpuAddressData.Address = address;
-        Pins.PpuAle = true;
-        Pins.PpuRD = true;
-        Pins.PpuWR = true;
+        _adBus.Address = address;
+        _ppuAle = true;
+        _ppuRd = true;
+        _ppuWr = true;
     }
 
     private void SetupVramRequestRead(VramReadTarget target)
     {
-        Pins.PpuAle = false;
-        Pins.PpuRD = false;
-        Pins.PpuWR = true;
+        _ppuAle = false;
+        _ppuRd = false;
+        _ppuWr = true;
 
         _vramReadTarget = target;
     }
 
     private void SetupVramRequestWrite(byte data)
     {
-        Pins.PpuAddressData.Data = data;
-        Pins.PpuAle = false;
-        Pins.PpuRD = true;
-        Pins.PpuWR = false;
+        _adBus.Data = data;
+        _ppuAle = false;
+        _ppuRd = true;
+        _ppuWr = false;
     }
 
     private enum VramReadTarget
@@ -481,7 +552,6 @@ public sealed partial class Ricoh2C02Chip
 
     private byte PpuRead()
     {
-        ref var pins = ref Pins;
         var result = _ppuReadBuffer;
 
         _vramRequestState = VramRequestState.SetupAddressForRead;

@@ -234,7 +234,8 @@ partial class Ricoh2C02Chip
     {
         CurrentScanline = scanline;
         CurrentDot = dot;
-        _dotClockDivider = 0;
+        _clk = false;
+        _clkDivideCounter = 7;
         _chromaPhase = ((chromaPhase % 12) + 12) % 12;
     }
 
