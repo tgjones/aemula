@@ -15,11 +15,12 @@ namespace Aemula.Tests.Emulation.Systems.Nes;
 // active-video luma/chroma and the vertical-blank pulses.
 //
 // Clock alignment: Flawless2C02's clk0 is the master clock; one clk0 edge = one
-// 12x-f_SC cell. One behavioural Ricoh2C02Chip.Tick() = one master period = two
-// cells; a PPU dot = 8 cells. The behavioural region set by UpdateVideoSignal
-// for dot D lines up with Flawless cells [hpos D, pclk1 half .. hpos D+1, pclk0
-// half] - so every video-region edge lands on the mid-dot (pclk0 -> pclk1)
-// boundary, and the lockstep starts on that boundary of hpos 1.
+// 12x-f_SC cell. One behavioural Ricoh2C02Chip master-clock pulse (Clk low then
+// high) = one master period = two cells; a PPU dot = 8 cells. The behavioural
+// region set by UpdateVideoSignal for dot D lines up with Flawless cells
+// [hpos D, pclk1 half .. hpos D+1, pclk0 half] - so every video-region edge
+// lands on the mid-dot (pclk0 -> pclk1) boundary, and the lockstep starts on
+// that boundary of hpos 1.
 internal class Ricoh2C02Tests
 {
     // Cells to discard after SetState() to reach the mid-dot boundary of hpos 1
@@ -47,6 +48,14 @@ internal class Ricoh2C02Tests
         bool Luma2H, bool Luma2L,
         bool Luma3H, bool Luma3L,
         ushort HPos, ushort VPos);
+
+    // One behavioural master-clock period: Clk low then high, two 12x-f_SC cells.
+    // Replaces the old chip.Tick() entry point.
+    private static void Master(Ricoh2C02Chip c)
+    {
+        c.Clk = false;
+        c.Clk = true;
+    }
 
     private static Taps ReadFlawless(Flawless2C02 f) => new(
         SyncH: f.IsHigh(vid_sync_h), SyncL: f.IsHigh(vid_sync_l),
@@ -120,7 +129,7 @@ internal class Ricoh2C02Tests
         var chip = new Ricoh2C02Chip();
         chip.SetPaletteMemory(0x00, palette0);
         // Capture began on hpos 1; the behavioural region for that dot is set on
-        // the Tick() that opens the lockstep, so seed the dot counter to 1.
+        // the master-clock pulse that opens the lockstep, so seed the dot counter to 1.
         chip.SeedVideoState(startScanline, dot: 1, chromaPhase: chromaSeed);
 
         var prevColumn = -1;
@@ -130,7 +139,7 @@ internal class Ricoh2C02Tests
         {
             if (i % 2 == 0)
             {
-                chip.Tick();
+                Master(chip);
             }
 
             chip.NextVideoCell();
@@ -214,7 +223,7 @@ internal class Ricoh2C02Tests
             {
                 if (i % 2 == 0)
                 {
-                    chip.Tick();
+                    Master(chip);
                 }
                 chip.NextVideoCell();
                 var t = chip.SampleVideoTaps();
