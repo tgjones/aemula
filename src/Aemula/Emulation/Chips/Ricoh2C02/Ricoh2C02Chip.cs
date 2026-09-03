@@ -39,7 +39,17 @@ public sealed partial class Ricoh2C02Chip
     private ushort _vramRequestAddress;
     private byte _vramRequestData;
 
-    private byte _currentLatchData;
+    // PPU open-bus "decay register" (ppu_open_bus test). Eight independent bits,
+    // each driven on any register write (all 8) or on a register read that
+    // defines it (a per-register mask). A bit last driven to 1 more than
+    // OpenBusDecayCycles PPU cycles ago has decayed back to 0. Reads of
+    // write-only registers and of unimplemented bits return whatever is left.
+    private byte _openBus;
+    private readonly ulong[] _openBusSetCycle = new ulong[8];
+
+    // ~600 ms at the 5.37 MHz dot clock: inside the ppu_open_bus "decayed within
+    // one second" window and far past every refresh-then-check sequence.
+    private const ulong OpenBusDecayCycles = 3_221_591;
 
     // Registers
     internal PpuCtrlRegister CtrlRegister;
@@ -297,6 +307,15 @@ public sealed partial class Ricoh2C02Chip
 
             case VramRequestState.ReadData:
                 SetupVramRequestRead(VramReadTarget.VramRead);
+                _vramRequestState = VramRequestState.LatchReadData;
+                break;
+
+            case VramRequestState.LatchReadData:
+                // NesSystem drove the fetched byte back onto AD0-7 in response
+                // to the /RD asserted on the previous dot; latch it as the new
+                // $2007 read buffer (vram_access items 3-7).
+                _ppuReadBuffer = _adBus.Data;
+                _ppuRd = true;
                 _vramRequestState = VramRequestState.None;
                 break;
 
@@ -369,38 +388,54 @@ public sealed partial class Ricoh2C02Chip
     {
         if (_cpuRw) // Read
         {
-            var result = _currentLatchData;
+            // Where a register (or a bit of one) is not driven by the PPU it
+            // reads back from the open-bus decay register. Start from the
+            // decayed value; each case overlays and refreshes only its own bits.
+            var openBus = ReadOpenBus();
+            var result = openBus;
 
             switch (_cpuAddress)
             {
-                case PpuCtrlAddress: // Write-only
+                case PpuCtrlAddress:   // $2000 - write-only, wholly open bus
+                case PpuMaskAddress:   // $2001 - write-only
+                case OamAddrAddress:   // $2003 - write-only
+                case PpuScrollAddress: // $2005 - write-only
+                case PpuAddrAddress:   // $2006 - write-only
                     break;
 
-                case PpuMaskAddress: // Write-only
-                    break;
-
-                case PpuStatusAddress:
-                    StatusRegister.Unused = _currentLatchData;
+                case PpuStatusAddress: // $2002 - bits 7-5 defined, 4-0 open bus
+                    StatusRegister.Unused = openBus;
                     result = StatusRegister.Data.Value;
+                    RefreshOpenBus(result, 0xE0);
                     StatusRegister.VBlankStarted = false;
                     _w = false;
                     break;
 
-                case OamAddrAddress: // Write-only
-                    break;
-
-                case OamDataAddress:
+                case OamDataAddress: // $2004 - all 8 bits defined, refreshes all
                     result = _objectAttributeMemory[_oamAddress];
+                    if ((_oamAddress & 0x03) == 0x02)
+                    {
+                        // Sprite attribute byte: bits 2-4 are unimplemented in
+                        // OAM and always read back 0 (oam_read, ppu_open_bus 10).
+                        result &= 0xE3;
+                    }
+                    RefreshOpenBus(result, 0xFF);
                     break;
 
-                case PpuScrollAddress: // Write-only
-                    break;
-
-                case PpuAddrAddress: // Write-only
-                    break;
-
-                case PpuDataAddress:
+                case PpuDataAddress: // $2007
                     result = PpuRead();
+                    if ((_v >> 8) == 0x3F)
+                    {
+                        // Palette read: bits 5-0 come from palette RAM and
+                        // refresh the decay register; bits 7-6 are not driven
+                        // and read back as open bus (ppu_open_bus 8).
+                        result = (byte)((result & 0x3F) | (openBus & 0xC0));
+                        RefreshOpenBus(result, 0x3F);
+                    }
+                    else
+                    {
+                        RefreshOpenBus(result, 0xFF);
+                    }
                     IncrementPpuAddress();
                     break;
 
@@ -408,13 +443,13 @@ public sealed partial class Ricoh2C02Chip
                     throw new ArgumentOutOfRangeException();
             }
 
-            _currentLatchData = result;
-
             _cpuData = result;
         }
         else // Write
         {
-            _currentLatchData = _cpuData;
+            // Any PPU-register write drives all 8 open-bus bits to the written
+            // value (ppu_open_bus 2), the read-only $2002 included.
+            RefreshOpenBus(_cpuData, 0xFF);
 
             switch (_cpuAddress)
             {
@@ -495,6 +530,35 @@ public sealed partial class Ricoh2C02Chip
         }
     }
 
+    // The open-bus value as it reads right now: any bit whose last drive-to-1
+    // has aged past the decay window is forced back to 0 first.
+    private byte ReadOpenBus()
+    {
+        for (var bit = 0; bit < 8; bit++)
+        {
+            if ((_openBus & (1 << bit)) != 0 &&
+                Cycles - _openBusSetCycle[bit] >= OpenBusDecayCycles)
+            {
+                _openBus &= (byte)~(1 << bit);
+            }
+        }
+        return _openBus;
+    }
+
+    // Drive the masked bits of the open-bus register to <paramref name="value"/>;
+    // every masked bit driven to 1 restarts that bit's decay timer.
+    private void RefreshOpenBus(byte value, byte mask)
+    {
+        _openBus = (byte)((_openBus & ~mask) | (value & mask));
+        for (var bit = 0; bit < 8; bit++)
+        {
+            if ((mask & value & (1 << bit)) != 0)
+            {
+                _openBusSetCycle[bit] = Cycles;
+            }
+        }
+    }
+
     private void IncrementPpuAddress()
     {
         _v += (CtrlRegister.VRamAddressIncrementMode == VRamAddressIncrementMode.Add32)
@@ -547,22 +611,27 @@ public sealed partial class Ricoh2C02Chip
         SetupAddressForRead,
         SetupAddressForWrite,
         ReadData,
+        LatchReadData,
         WriteData,
     }
 
     private byte PpuRead()
     {
-        var result = _ppuReadBuffer;
-
+        // Kick off the real read on the PPU bus. Even for a palette address the
+        // bus reads the nametable byte "underneath" (the $2Fxx mirror), and that
+        // is what ends up in the read buffer - see vram_access items 6-7.
         _vramRequestState = VramRequestState.SetupAddressForRead;
         _vramRequestAddress = _v;
 
         if ((_v >> 8) == 0x3F)
         {
-            result = _ppuReadBuffer = ReadPaletteMemory(_v);
+            // Palette reads are not delayed through the buffer.
+            return ReadPaletteMemory(_v);
         }
 
-        return result;
+        // Non-palette reads return the previous buffer contents; the fetch above
+        // refills the buffer one PPU fetch later (VramRequestState.LatchReadData).
+        return _ppuReadBuffer;
     }
 
     private void PpuWrite(byte data)

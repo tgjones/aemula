@@ -300,7 +300,13 @@ current crude VBL timing; `vram_access` (1) reports a real `$2007`-buffer bug
   "underneath"; grayscale/emphasis do not corrupt the shadow read).
 - Palette: re-verify `GetPaletteAddress` mirroring covers `$3F04/$3F08/$3F0C`
   read-back and the `$3F1x` writes.
-**Green:** 1, 2, 3, 16, 17.
+**Green:** 1, 2, 16, 17. **3 (`sprite_ram`)**: PPU-side subtests (2-5:
+`$2003`/`$2004` r/w, no-increment-on-read, increment-on-write, `$E3` mask) all
+pass; subtest 6 onward needs `$4014` OAM DMA, which is a pre-existing
+`Ricoh2A03Chip` bug (the DMA unit never leaves `Pending` because its start
+condition — `_cpuCore.RW && _cpuCore.Rdy` in `OnM2Rising` — is never met while
+the core is RDY-stalled, so the CPU hangs at the `STA $4014`). Its own fix; the
+test is `[Skip]`-marked with this note.
 
 ### Phase 2 — VBL / NMI timing
 - Model VBL set at `(241,1)` and clear at `(261,1)` as the reference points, then
