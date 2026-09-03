@@ -58,6 +58,56 @@ public sealed partial class Ricoh2C02Chip
 
     public Ricoh2C02Pins Pins;
 
+    // Pin values. Every hardware pin is a property whose direction matches the
+    // real chip; for now each one just forwards to the corresponding Pins field
+    // so the refactor can proceed in small diffs.
+
+    /// <summary>R/W̄ - CPU-bus read/write select (input).</summary>
+    public bool CpuRw
+    {
+        set => Pins.CpuRW = value;
+    }
+
+    /// <summary>RS0-RS2 - CPU-bus register select (input).</summary>
+    public byte CpuAddress
+    {
+        set => Pins.CpuAddress = value;
+    }
+
+    /// <summary>D0-D7 - CPU data bus (bidirectional).</summary>
+    public byte CpuData
+    {
+        get => Pins.CpuData;
+        set => Pins.CpuData = value;
+    }
+
+    /// <summary>
+    /// AD0-AD7 / A8-A13 - the 14-bit VRAM address the PPU is driving (output).
+    /// </summary>
+    public ushort PpuAddressBus => Pins.PpuAddressData.Address;
+
+    /// <summary>
+    /// AD0-AD7 - the multiplexed low-byte data bus: the byte the PPU drives on a
+    /// write, or where a read byte is delivered back (bidirectional).
+    /// </summary>
+    public byte PpuData
+    {
+        get => Pins.PpuAddressData.Data;
+        set => Pins.PpuAddressData.Data = value;
+    }
+
+    /// <summary>ALE - address latch enable (output).</summary>
+    public bool PpuAle => Pins.PpuAle;
+
+    /// <summary>R̄D̄ - VRAM read strobe, active low (output).</summary>
+    public bool PpuRd => Pins.PpuRD;
+
+    /// <summary>W̄R̄ - VRAM write strobe, active low (output).</summary>
+    public bool PpuWr => Pins.PpuWR;
+
+    /// <summary>I̅N̅T̅ - connected to the CPU's N̅M̅I̅ pin, active low (output).</summary>
+    public bool Nmi => Pins.Nmi;
+
     public Ricoh2C02Chip()
     {
         _objectAttributeMemory = new byte[256];
