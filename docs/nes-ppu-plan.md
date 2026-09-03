@@ -164,15 +164,26 @@ branch ever:
    `_vram[addr & 0x7FF]`); else the cart drove `PpuAd` itself.
 4. `Cpu.Irq = apuIrq & Cartridge.Irq` (active-low wire-AND).
 
-**`Mapper` strategy surface** (consulted by `Cartridge`, no pins of its own):
-- `int MapPrg(ushort addr)` / `int MapChr(ushort addr)` → offset into the
-  PRG / CHR array (or −1 = not decoded).
-- `bool CpuWriteRegister(ushort addr, byte data)` → mapper-register writes
-  (bank latches, MMC1 shift register, …); `true` if it consumed the write.
-- `bool ChrIsRam { get; }`, WRAM presence + `byte[] Wram`.
-- `bool CiramA10(ushort ppuAddr)` / `bool CiramCe(ushort ppuAddr)` — the two
+**`Mapper` strategy surface** (consulted by `Cartridge`, no pins of its own).
+The mapper owns *all* cartridge memory — PRG ROM, CHR ROM-or-RAM, WRAM, bank
+registers — and exposes only behaviour; where those bytes live, how big they
+are and whether a region is enabled never leak to the connector:
+- `byte? CpuRead(ushort addr)` / `void CpuWrite(ushort addr, byte data)` — the
+  whole cartridge CPU space ($4020–$FFFF). `null` from a read ⇒ not driving
+  (open bus). `CpuWrite` covers WRAM and register writes both.
+- `byte ChrRead(ushort addr)` / `void ChrWrite(ushort addr, byte data)` — the
+  pattern tables ($0000–$1FFF); `ChrWrite` is a no-op on a CHR-ROM board.
+- `bool CiramCe(ushort ppuAddr)` / `bool CiramA10(ushort ppuAddr)` — the two
   mirroring pins, so runtime-selectable mirroring is just a mapper register.
-- `bool Irq { get; }` (+ a per-PPU-cycle / per-M2 tick hook for counters).
+- `byte PeekCpu` / `void PokeCpu` / `byte PeekChr` — side-effect-free debug
+  access (`PokeCpu` writes RAM only, never a register).
+- `NametableMirroring Mirroring { get; }` — current wiring, for a debugger view.
+- later: `bool Irq { get; }` (+ a per-PPU-cycle / per-M2 tick hook for counters).
+
+A `protected abstract BankedMapper : Mapper` holds the flat-image plumbing the
+discrete-logic boards share (one PRG array + size mask, one CHR array + RAM
+flag, optional 8 KB WRAM); its fields are `private`, and subclasses only
+override `PrgOffset` / `ChrOffset` / `WriteRegister`.
 
 #### B. `Mapper000` (NROM)
 
@@ -273,9 +284,10 @@ No `Ricoh2C02Chip` behaviour changes (debug peeks only). Checkpoint: `Mos6502`
 / `Ricoh2A03` and the existing NES tests (`NesSystemTelevisionTests`,
 `Ricoh2C02Tests`, `NesControllerTests`) still green with the cartridge bus
 logic moved out of `NesSystem` and onto the connector pins.
-**Green after this:** none of the PPU ROMs yet, but ROMs 1-3, 16 should get
-*close* (they mostly exercise register plumbing) and every ROM at least boots
-far enough to report through its oracle.
+**Green after this:** every ROM boots far enough to report through its oracle.
+In practice `oam_read` (16) and `01-vbl_basics` (5) already report code 0 on the
+current crude VBL timing; `vram_access` (1) reports a real `$2007`-buffer bug
+(`$03`) for Phase 1. Everything else is deferred to its phase.
 
 ### Phase 1 — register & VRAM correctness
 - `$2004` read `$E3` mask on byte 2; confirm no-increment on read, increment on write.

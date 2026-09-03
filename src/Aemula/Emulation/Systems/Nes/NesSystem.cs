@@ -10,11 +10,16 @@ public sealed partial class NesSystem : EmulatedSystem
     public override ulong CyclesPerSecond => 21477272;
 
     private readonly byte[] _ram;
-    private readonly byte[] _vram;
+
+    // The console's own 2 KB name-table SRAM (CIRAM). Not on the cartridge - the
+    // cart only drives its CIRAM A10 / CIRAM /CE pins (see Cartridge).
+    private readonly byte[] _ciram;
 
     private Cartridge? _cartridge;
 
-    private byte _vramLowAddressLatch;
+    // The mainboard's address latch (74LS373) demuxing PPU AD0-7, feeding the
+    // CIRAM lookup below.
+    private byte _ciramAddressLatch;
 
     private bool _lastCpuPhi2;
 
@@ -32,12 +37,19 @@ public sealed partial class NesSystem : EmulatedSystem
         Ppu = new Ricoh2C02Chip();
 
         _ram = new byte[0x0800];
-        _vram = new byte[0x0800];
+        _ciram = new byte[0x0800];
 
         // Reset CPU.
         Cpu.Res = false;
         Cpu.Res = true;
     }
+
+    /// <summary>
+    /// When false, <see cref="Tick"/> skips the composite-video decode. The NTSC
+    /// decode FIR is the measured hot cost and headless test-ROM runs read their
+    /// result out of memory, never off the Television. Defaults to true.
+    /// </summary>
+    public bool DecodeVideo { get; set; } = true;
 
     public override void Tick()
     {
@@ -49,7 +61,10 @@ public sealed partial class NesSystem : EmulatedSystem
 
         DoPpuCycle();
 
-        TickCompositeVideo();
+        if (DecodeVideo)
+        {
+            TickCompositeVideo();
+        }
 
         Cpu.Nmi = Ppu.Nmi;
     }
@@ -136,18 +151,38 @@ public sealed partial class NesSystem : EmulatedSystem
                 }
                 break;
 
-            case 0b100: // ROMSEL. Only address pins A0..A14 are connected.
+            case 0b011: // $6000-$7FFF - cartridge WRAM window, decoded on the cart.
+            case 0b100: // $8000-$FFFF - /ROMSEL. Only address pins A0..A14 connect.
             case 0b101:
             case 0b110:
             case 0b111:
-                // This is ROM - can't write to it.
+            {
+                if (_cartridge is null)
+                {
+                    break;
+                }
+
+                // Drive the cartridge's CPU connector pins. /ROMSEL is the
+                // mainboard's !(A15 & M2); the external bus is serviced on
+                // phi2-high, so M2 is asserted here.
+                var romSel = (address & 0x8000) != 0;
+                _cartridge.SetCpuBus((ushort)(address & 0x7FFF), Cpu.RW, romSel);
+
                 if (Cpu.RW)
                 {
-                    // TODO: Mapper implementations.
-                    // What follows is NROM-128, mapper 0.
-                    Cpu.Data = _cartridge?.PrgRom[address & 0x3FFF] ?? 0;
+                    if (_cartridge.CpuData is byte cartData)
+                    {
+                        Cpu.Data = cartData;
+                    }
+                    // else: cartridge isn't driving the bus - open bus, so the
+                    // last value on Cpu.Data stays.
+                }
+                else
+                {
+                    _cartridge.CpuWrite(Cpu.Data);
                 }
                 break;
+            }
         }
     }
 
@@ -161,9 +196,18 @@ public sealed partial class NesSystem : EmulatedSystem
         Ppu.Clk = false;
         Ppu.Clk = true;
 
+        // Drive the cartridge's PPU connector pins: the multiplexed AD0-7, the
+        // separate A8-A13, and ALE. The cartridge latches AD0-7 on ALE itself
+        // (its own 74LS373), so it never sees a pre-demuxed address.
+        _cartridge?.SetPpuBus(
+            (byte)Ppu.PpuAddressBus,
+            (byte)((Ppu.PpuAddressBus >> 8) & 0x3F),
+            Ppu.PpuAle);
+
         if (Ppu.PpuAle)
         {
-            _vramLowAddressLatch = (byte)Ppu.PpuAddressBus;
+            // The mainboard's own address latch, feeding the CIRAM lookup below.
+            _ciramAddressLatch = (byte)Ppu.PpuAddressBus;
         }
 
         var ppuRd = Ppu.PpuRd;
@@ -178,32 +222,36 @@ public sealed partial class NesSystem : EmulatedSystem
             return;
         }
 
-        var addressBus = Ppu.PpuAddressBus;
-        var pa13 = addressBus >> 13 & 1;
-        var ppuAddress = (addressBus & 0xFF00) | _vramLowAddressLatch;
+        var ppuAddress = (ushort)((Ppu.PpuAddressBus & 0x3F00) | _ciramAddressLatch);
 
-        if (ppuRdFalling)
+        // CIRAM /CE: the console name-table SRAM answers for $2000-$3FFF unless
+        // the cartridge holds its /CE off (4-screen &c.). Below $2000 (pattern
+        // tables) the cartridge drives CHR.
+        var ciramSelected = _cartridge?.CiramCe ?? ((ppuAddress & 0x2000) != 0);
+
+        if (ciramSelected)
         {
-            if (pa13 == 1)
+            var offset = _cartridge?.CiramOffset(ppuAddress)
+                ?? (((ppuAddress & 0x0400) != 0 ? 0x400 : 0) | (ppuAddress & 0x03FF));
+
+            if (ppuRdFalling)
             {
-                Ppu.PpuData = _vram[ppuAddress & 0x7FF];
+                Ppu.PpuData = _ciram[offset];
             }
             else
             {
-                // TODO: Use mapper.
-                Ppu.PpuData = _cartridge?.ChrRom[ppuAddress] ?? 0;
+                _ciram[offset] = Ppu.PpuData;
             }
         }
-
-        if (ppuWrFalling)
+        else if (_cartridge is not null)
         {
-            if (pa13 == 1)
+            if (ppuRdFalling)
             {
-                _vram[ppuAddress & 0x7FF] = Ppu.PpuData;
+                Ppu.PpuData = _cartridge.PpuRead();
             }
             else
             {
-                // Can't write to CHR ROM, maybe?
+                _cartridge.PpuWrite(Ppu.PpuData);
             }
         }
     }
@@ -218,9 +266,9 @@ public sealed partial class NesSystem : EmulatedSystem
             // Internal RAM. Only address pins A0..A10 are connected.
             0b000 => _ram[address & 0x7FF],
 
-            // ROMSEL. Only address pins A0..A14 are connected.
-            // TODO: Mapper implementations. What follows is NROM-128, mapper 0.
-            0b100 or 0b101 or 0b110 or 0b111 => _cartridge?.PrgRom[address & 0x3FFF] ?? 0,
+            // $6000-$7FFF cartridge WRAM, and $8000-$FFFF PRG - the cartridge
+            // decodes both (side-effect-free peek).
+            0b011 or 0b100 or 0b101 or 0b110 or 0b111 => _cartridge?.PeekCpu(address) ?? 0,
 
             // TODO: Read from PPU registers etc.
             _ => 0,
@@ -229,7 +277,31 @@ public sealed partial class NesSystem : EmulatedSystem
 
     internal void WriteByteDebug(ushort address, byte value)
     {
-        // TODO
+        switch (address >> 13)
+        {
+            case 0b000:
+                _ram[address & 0x7FF] = value;
+                break;
+
+            case 0b011:
+            case 0b100:
+            case 0b101:
+            case 0b110:
+            case 0b111:
+                _cartridge?.PokeCpu(address, value);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Side-effect-free read of the console name-table SRAM for a raw
+    /// $2000-$3FFF PPU address, resolved through the cartridge's mirroring.
+    /// </summary>
+    internal byte PeekCiram(ushort address)
+    {
+        var offset = _cartridge?.CiramOffset(address)
+            ?? (((address & 0x0400) != 0 ? 0x400 : 0) | (address & 0x03FF));
+        return _ciram[offset];
     }
 
     public override void LoadProgram(string filePath)
@@ -255,8 +327,7 @@ public sealed partial class NesSystem : EmulatedSystem
 
     internal byte ReadChrRom(ushort address)
     {
-        // TODO: Use mapper.
-        return _cartridge?.ChrRom[address] ?? 0;
+        return _cartridge?.PeekPpu(address) ?? 0;
     }
 
     public override Debugger CreateDebugger()

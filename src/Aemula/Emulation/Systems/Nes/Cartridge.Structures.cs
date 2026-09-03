@@ -1,4 +1,6 @@
-﻿namespace Aemula.Emulation.Systems.Nes;
+﻿using Aemula.Emulation.Systems.Nes.Mappers;
+
+namespace Aemula.Emulation.Systems.Nes;
 
 partial class Cartridge
 {
@@ -47,12 +49,6 @@ partial class Cartridge
         public bool IgnoreMirroringControl => Data.Get(3, 1) == 1;
 
         public byte MapperLo => Data.Get(4, 4);
-    }
-
-    private enum NametableMirroring
-    {
-        Horizontal,
-        Vertical,
     }
 
     private struct Flags7
