@@ -119,7 +119,10 @@ public partial class Mos6502Chip
                 // read/write nature in general. Every field involved in an
                 // opcode fetch (_ir, _tr, PC, _address, _rw, _data) is left
                 // untouched below, so the exact same fetch simply repeats
-                // every cycle until Rdy deasserts.
+                // every cycle until Rdy deasserts. PC has already been
+                // incremented for that fetch by then - it happens within the
+                // fetch cycle, before the stall - which is the state a real
+                // core freezes in too.
                 if (_rdy && _sync)
                 {
                     return;
@@ -137,35 +140,15 @@ public partial class Mos6502Chip
                 {
                     _sync = false;
 
-                    _ir = _data;
+                    // An interrupt hijacked this fetch: the byte the core read
+                    // is thrown away and BRK runs in its place. The decision
+                    // (and the matching PC increment) was made at the start of
+                    // the fetch cycle, at the bottom of this method.
+                    _ir = _brkFlags != BrkFlags.None
+                        ? (byte)0
+                        : _data;
+
                     _tr = 0;
-
-                    // For IRQ to be triggered, the IRQ pin must have been low in the cycle _before_ SYNC.
-                    // We're currently in the cycle _after_ SYNC, so we check if the 3rd bit is set.
-                    if ((_irqCounter & 0b100) != 0)
-                    {
-                        _brkFlags |= BrkFlags.Irq;
-                        _irqCounter = 0;
-                    }
-
-                    // For NMI to be triggered, the NMI pin must have been set low at any cycle before SYNC.
-                    if ((_nmiCounter & 0xFFFC) != 0)
-                    {
-                        _brkFlags = BrkFlags.Nmi;
-                        _nmiCounter = 0;
-                    }
-
-                    // Only keep lower 2 bits of IRQ counter.
-                    _irqCounter &= 0b11;
-
-                    if (_brkFlags != BrkFlags.None)
-                    {
-                        _ir = 0;
-                    }
-                    else
-                    {
-                        PC++;
-                    }
                 }
 
                 if (_brkFlags == BrkFlags.Reset)
@@ -197,6 +180,46 @@ public partial class Mos6502Chip
 
                 // Increment timing register.
                 _tr++;
+
+                if (_sync)
+                {
+                    // ExecuteInstruction has just put PC on the address bus for
+                    // an opcode fetch, so that fetch cycle starts here. The real
+                    // core increments PC within the fetch cycle and only latches
+                    // the opcode into IR at the end of it, so the increment
+                    // belongs here rather than with the latch above - that is
+                    // the state an RDY halt freezes the core in, and RDY can
+                    // hold it there for 500-odd cycles during an OAM DMA.
+                    //
+                    // Interrupts are resolved on the same side of the cycle, for
+                    // the same reason: the core knows whether the fetch is
+                    // hijacked before it decides whether to increment. The
+                    // counters have been shifted one time less here than at the
+                    // end of the fetch, hence the masks.
+
+                    // For IRQ to be triggered, the IRQ pin must have been low in
+                    // the cycle _before_ SYNC, which is the 2nd bit here.
+                    if ((_irqCounter & 0b10) != 0)
+                    {
+                        _brkFlags |= BrkFlags.Irq;
+                        _irqCounter = 0;
+                    }
+
+                    // For NMI to be triggered, the NMI pin must have been set low at any cycle before SYNC.
+                    if ((_nmiCounter & 0xFFFE) != 0)
+                    {
+                        _brkFlags = BrkFlags.Nmi;
+                        _nmiCounter = 0;
+                    }
+
+                    // Only keep the bottom bit of the IRQ counter.
+                    _irqCounter &= 0b1;
+
+                    if (_brkFlags == BrkFlags.None)
+                    {
+                        PC++;
+                    }
+                }
 
                 // Increment interrupt counters.
                 _irqCounter <<= 1;

@@ -32,7 +32,9 @@ public class Mos6502ChipTests
 
         await testHelper.Startup();
 
-        while (testHelper.PC != 0x45C2)
+        // Run until the CPU fetches the opcode of the suite's "theend" trap, a
+        // JMP to itself at $45C0.
+        while (!testHelper.Sync || testHelper.Address != 0x45C0)
         {
             await testHelper.Tick();
         }
@@ -59,12 +61,15 @@ public class Mos6502ChipTests
 
         await testHelper.Startup();
 
-        while (testHelper.PC != 0x3399 && testHelper.PC != 0xD0FE)
+        // $3399 is the success trap, $D0FE a failure trap; both are a JMP to
+        // themselves, so watch for the CPU fetching the opcode at either.
+        while (!testHelper.Sync ||
+               (testHelper.Address != 0x3399 && testHelper.Address != 0xD0FE))
         {
             await testHelper.Tick();
         }
 
-        await Assert.That(testHelper.PC).IsEqualTo((ushort)0x3399);
+        await Assert.That(testHelper.Address).IsEqualTo((ushort)0x3399);
     }
 
     [Test]
@@ -88,12 +93,12 @@ public class Mos6502ChipTests
 
         await testHelper.Startup();
 
-        while (testHelper.PC != 0x024b)
+        while (!testHelper.Sync || testHelper.Address != 0x024b)
         {
             await testHelper.Tick();
         }
 
-        await Assert.That(testHelper.PC).IsEqualTo((ushort)0x024b);
+        await Assert.That(testHelper.Address).IsEqualTo((ushort)0x024b);
         await Assert.That(ram[0x000B]).IsEqualTo((byte)0);
     }
 
@@ -112,8 +117,6 @@ public class Mos6502ChipTests
         var testHelper = new Mos6502ChipTestHelper(
             address => ram[address],
             (address, data) => ram[address] = data,
-            // This test does pass the reference comparison, but...
-            // it takes several hours to complete on my machine.
             doReferenceComparison: true);
 
         await testHelper.Startup();
@@ -121,7 +124,7 @@ public class Mos6502ChipTests
         const ushort irqSignalAddress = 0xBFFC;
         ram[irqSignalAddress] = 0x00;
 
-        var lastPC = 0;
+        var lastFetchAddress = -1;
 
         while (true)
         {
@@ -145,20 +148,23 @@ public class Mos6502ChipTests
 
             if (testHelper.Sync)
             {
-                if (lastPC == testHelper.PC)
+                // The test reports its verdict by trapping in a JMP to itself,
+                // which shows up as the same opcode address being fetched on two
+                // instructions running.
+                if (lastFetchAddress == testHelper.Address)
                 {
                     break;
                 }
 
-                lastPC = testHelper.PC;
+                lastFetchAddress = testHelper.Address;
             }
         }
 
-        const ushort expectedPC = 0x06F8;
-        if (testHelper.PC != expectedPC)
+        const ushort expectedTrapAddress = 0x06F8;
+        if (testHelper.Address != expectedTrapAddress)
         {
             testHelper.DumpToConsole();
-            await Assert.That(testHelper.PC).IsEqualTo(expectedPC);
+            await Assert.That(testHelper.Address).IsEqualTo(expectedTrapAddress);
         }
     }
 

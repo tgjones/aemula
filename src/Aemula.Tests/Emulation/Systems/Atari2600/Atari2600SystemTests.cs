@@ -92,11 +92,11 @@ public class Atari2600SystemTests
             }
 
             // Confirms the CPU actually settled into the cartridge's tiny
-            // JMP-to-self loop (PC cycles through $1000/$1001/$1002 as it
-            // fetches the 3-byte JMP instruction, landing back on $1000
-            // every 3rd cycle) rather than, say, chasing garbage off into
-            // unmapped address space - not just "didn't throw".
-            await Assert.That(system.Cpu.PC).IsBetween((ushort)0x1000, (ushort)0x1002);
+            // JMP-to-self loop (the address bus cycles through
+            // $1000/$1001/$1002 as it fetches the 3-byte JMP instruction,
+            // landing back on $1000 every 3rd cycle) rather than, say, chasing
+            // garbage off into unmapped address space - not just "didn't throw".
+            await Assert.That(system.Cpu.Address).IsBetween((ushort)0x1000, (ushort)0x1002);
         }
         finally
         {
@@ -121,7 +121,7 @@ public class Atari2600SystemTests
             {
                 system.Tick();
 
-                if (system.Cpu.PC == 0x1000)
+                if (system.Cpu.Sync && system.Cpu.Address == 0x1000)
                 {
                     reachedLoop = true;
                     break;
@@ -182,7 +182,7 @@ public class Atari2600SystemTests
             // Confirms the CPU made it all the way through the RAM-clear
             // loop and the JSR/RTS, settling into the tail JMP-to-self loop -
             // not stuck mid-subroutine or off in unmapped address space.
-            await Assert.That(system.Cpu.PC).IsBetween((ushort)0x100F, (ushort)0x1011);
+            await Assert.That(system.Cpu.Address).IsBetween((ushort)0x100F, (ushort)0x1011);
         }
         finally
         {

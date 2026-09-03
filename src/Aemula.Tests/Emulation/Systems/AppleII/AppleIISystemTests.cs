@@ -25,7 +25,7 @@ public class AppleIISystemTests
         {
             system.Tick();
 
-            if (system.Cpu.PC == resetVector)
+            if (system.Cpu.Sync && system.Cpu.Address == resetVector)
             {
                 reachedResetVector = true;
                 break;
@@ -175,7 +175,7 @@ public class AppleIISystemTests
             }
 
             // The CPU took the overlaid reset vector and is executing the slide.
-            await Assert.That(system.Cpu.PC).IsGreaterThanOrEqualTo((ushort)0xF800);
+            await Assert.That(system.Cpu.Address).IsGreaterThanOrEqualTo((ushort)0xF800);
         }
         finally
         {

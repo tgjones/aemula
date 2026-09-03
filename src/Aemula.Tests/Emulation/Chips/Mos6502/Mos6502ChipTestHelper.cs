@@ -24,8 +24,14 @@ internal sealed class Mos6502ChipTestHelper
     private bool _nmiAsserted;
     private bool _irqAsserted;
 
-    public ushort PC => _chip.PC;
     public bool Sync => _chip.Sync;
+
+    /// <summary>
+    /// The address on the pins. Watch this rather than the PC register to spot
+    /// a test program reaching a given instruction: during a fetch cycle PC has
+    /// already moved past the opcode, exactly as it does on real hardware.
+    /// </summary>
+    public ushort Address => _chip.Address;
 
     public Mos6502ChipTestHelper(
         Func<ushort, byte> readMemory,

@@ -7,6 +7,7 @@ namespace Aemula.Emulation.Chips.Ricoh2A03;
 public sealed partial class Ricoh2A03Chip
 {
     private const ushort OamDmaAddress = 0x4014;
+    private const ushort OamDataAddress = 0x2004;
 
     private readonly Mos6502Chip _cpuCore;
     private readonly DmaUnit _dmaUnit;
@@ -72,15 +73,21 @@ public sealed partial class Ricoh2A03Chip
 
                 _phi0 = !_phi0;
 
-                if (_dmaUnit.DmaState == DmaState.Inactive)
-                {
-                    // TODO: Is this right?
-                    _cpuCore.Phi0 = _phi0;
-                }
+                // The core is clocked whether or not a DMA transfer is running.
+                // A transfer halts it through RDY - it sits repeating the opcode
+                // fetch it was on - and the DMA unit overrides the address and
+                // R/W pins for the cycles it takes the bus.
+                _cpuCore.Phi0 = _phi0;
 
-                // Phi2 falls at the same time as the CPU's Phi0.
-                if (!_phi0)
+                if (_phi0)
                 {
+                    OnPhi2Rising();
+                }
+                else
+                {
+                    OnPhi0Falling();
+
+                    // Phi2 falls at the same time as the CPU's Phi0.
                     _m2 = false;
                 }
             }
@@ -135,55 +142,57 @@ public sealed partial class Ricoh2A03Chip
 
     private void OnPhi0Falling()
     {
-
+        // A new CPU cycle starts here: the core has just put this cycle's
+        // address on its pins, so this is where the DMA unit decides whether to
+        // take the bus off it.
+        _dmaUnit.Cycle(this);
     }
 
     private void OnM2Rising()
     {
         // TODO: APU stuff.
+    }
 
-        // TODO: When to do this?
-        _dmaUnit.Cycle(this);
+    private void OnPhi2Rising()
+    {
+        // The internal $4000-$401F registers are decoded here rather than at M2
+        // rising, even though M2 gives the rest of the board a head start: the
+        // core only drives a write value onto the data pins when Phi2 goes high,
+        // so at M2 time the bus still holds the previous cycle's byte.
+        //
+        // The decode is off the pins rather than the core: a DMA transfer
+        // sourced from page $40 puts $4000-$40FF on the bus, and these
+        // registers answer that just as they would a CPU access.
+        var address = Address;
 
-        var address = _cpuCore.Address;
-
-        if (address >= 0x4000 && address <= 0x401F)
+        if (address < 0x4000 || address > 0x401F)
         {
-            if (_cpuCore.RW)
-            {
-                _cpuCore.Data = address switch
-                {
-                    // Write-only
-                    OamDmaAddress => 0,
-
-                    // TODO: sound generation and joystick.
-                    _ => 0
-                };
-            }
-            else
-            {
-                switch (address)
-                {
-                    case OamDmaAddress:
-                        _dmaUnit.SetHiByte(_cpuCore.Data);
-
-                        // Tell CPU we want to pause it at the next read cycle.
-                        _cpuCore.Rdy = true;
-
-                        break;
-
-                    default:
-                        // TODO: sound generation and joystick.
-                        break;
-                }
-            }
+            return;
         }
 
-        // Did CPU become paused on this cycle? If so it means we previously requested it
-        // to pause so that we can start a DMA transfer.
-        if (_cpuCore.RW && _cpuCore.Rdy)
+        if (RW)
         {
-            _dmaUnit.DmaState = DmaState.Pending;
+            _cpuCore.Data = address switch
+            {
+                // Write-only
+                OamDmaAddress => 0,
+
+                // TODO: sound generation and joystick.
+                _ => 0
+            };
+        }
+        else
+        {
+            switch (address)
+            {
+                case OamDmaAddress:
+                    _dmaUnit.Request(this, Data);
+                    break;
+
+                default:
+                    // TODO: sound generation and joystick.
+                    break;
+            }
         }
     }
 

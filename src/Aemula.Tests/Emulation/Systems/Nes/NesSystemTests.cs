@@ -96,10 +96,8 @@ public class NesSystemTests
     }
 
     [Test]
-    [Skip("sprite_ram subtests 2-5 (the PPU-side $2003/$2004 access + $E3 mask) " +
-          "pass, but subtest 6 needs $4014 OAM DMA, which is a pre-existing " +
-          "Ricoh2A03Chip gap - the core halts at the DMA trigger and never " +
-          "resumes. Tracked as its own fix.")]
     public Task SpriteRam_Rom3_Access() =>
+        // $2003/$2004 access, no increment on read, increment on write, the $E3
+        // attribute mask, and a full $4014 OAM DMA.
         AssertBlargg2005Passes("blargg_ppu_tests_2005.09.15b/sprite_ram.nes");
 }
