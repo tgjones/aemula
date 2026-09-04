@@ -23,6 +23,13 @@ public sealed partial class NesSystem : EmulatedSystem
 
     private bool _lastCpuPhi2;
 
+    // Last-seen state of the three PPU output pins the cartridge connector
+    // observes. ALE, /RD and /WR are the only signals a change to anything the
+    // cart cares about (the latched CHR address, the CIRAM decode, the data
+    // phase) rides in on, and the 2C02 only moves them inside CycleDot - one
+    // master tick in four - so DoPpuCycle services the connector only when one
+    // of them has an edge, the same way DoCpuCycle gates on phi2 rising.
+    private bool _lastPpuAle;
     private bool _lastPpuRd;
     private bool _lastPpuWr;
 
@@ -186,13 +193,27 @@ public sealed partial class NesSystem : EmulatedSystem
 
     private void DoPpuCycle()
     {
-        // Feed the PPU the master clock. Its internal divide-by-four runs a dot
-        // on every fourth tick; ALE / /RD / /WR only move on those dot
-        // boundaries, so the external address/data bus is serviced off the /RD
-        // and /WR falling edges the dot produces (mirroring the phi2-rising gate
-        // in DoCpuCycle) rather than every master tick.
+        // Feed the PPU the master clock; its internal divide-by-four runs a dot
+        // (CycleDot) on every fourth tick.
         Ppu.Clk = false;
         Ppu.Clk = true;
+
+        // The cartridge connector only needs re-evaluating when one of the PPU
+        // output pins it actually observes has an edge: ALE (the AD0-7 address
+        // latch strobe), /RD (cart drives CHR data back) and /WR (cart captures
+        // it). Every change to the latched CHR address, the CIRAM decode or the
+        // data phase rides in on one of the three, and the 2C02 only moves them
+        // inside CycleDot, so on the ~3 master ticks in 4 with no dot they are
+        // all static. This is the same edge-gated bus servicing DoCpuCycle does
+        // off phi2 rising.
+        var ppuAle = Ppu.PpuAle;
+        var ppuRd = Ppu.PpuRd;
+        var ppuWr = Ppu.PpuWr;
+
+        if (ppuAle == _lastPpuAle && ppuRd == _lastPpuRd && ppuWr == _lastPpuWr)
+        {
+            return;
+        }
 
         // Drive the cartridge's PPU connector pins: the multiplexed AD0-7, the
         // separate A8-A13, and ALE. The cartridge latches AD0-7 on ALE itself
@@ -200,18 +221,17 @@ public sealed partial class NesSystem : EmulatedSystem
         _cartridge?.SetPpuBus(
             (byte)Ppu.PpuAddressBus,
             (byte)((Ppu.PpuAddressBus >> 8) & 0x3F),
-            Ppu.PpuAle);
+            ppuAle);
 
-        if (Ppu.PpuAle)
+        if (ppuAle)
         {
             // The mainboard's own address latch, feeding the CIRAM lookup below.
             _ciramAddressLatch = (byte)Ppu.PpuAddressBus;
         }
 
-        var ppuRd = Ppu.PpuRd;
-        var ppuWr = Ppu.PpuWr;
         var ppuRdFalling = !ppuRd && _lastPpuRd;
         var ppuWrFalling = !ppuWr && _lastPpuWr;
+        _lastPpuAle = ppuAle;
         _lastPpuRd = ppuRd;
         _lastPpuWr = ppuWr;
 

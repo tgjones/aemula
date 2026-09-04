@@ -1,4 +1,7 @@
 using System;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics;
 using Aemula.Emulation.Chips.Ricoh2C02;
 using Aemula.Emulation.Output;
 using Aemula.Emulation.Output.Ntsc;
@@ -188,6 +191,21 @@ public sealed partial class NesSystem
     private const int LowPassTapCount = 15;
     private static readonly float[] LowPassTaps = BuildLowPassTaps();
 
+    // The taps zero-padded to 16 so the FIR dot-product runs as four
+    // Vector128<float> fused-multiply-adds (see TickCompositeVideo). The 16th
+    // lane multiplies the one delay-line slot just past the live window - always
+    // in bounds, never read otherwise - by a zero tap, so it contributes
+    // nothing. Vector128<float> is a fixed 4 lanes on every target (unlike
+    // System.Numerics.Vector<float>); same choice NtscYiqDecoder makes.
+    private static readonly float[] LowPassTapsPadded = BuildPaddedTaps();
+
+    private static float[] BuildPaddedTaps()
+    {
+        var padded = new float[16];
+        Array.Copy(LowPassTaps, padded, LowPassTapCount);
+        return padded;
+    }
+
     private static float[] BuildLowPassTaps()
     {
         const double cutoff = 0.14583333; // cycles per 12x-f_SC cell == 1.75 x f_SC
@@ -217,13 +235,23 @@ public sealed partial class NesSystem
         return taps;
     }
 
-    // Delay line of the most recent LowPassTapCount mapped bytes, oldest at
-    // _delayLineHead. Fed two cells per Tick(); every third cell the FIR
-    // dot-product is taken and decoded (12x-f_SC -> 4x-f_SC). The line is never
-    // reset on dot or line boundaries - cell boundaries do not align to dots
-    // (8 cells/dot is not divisible by 3) - so the resample runs continuously.
-    private readonly float[] _delayLine = new float[LowPassTapCount];
-    private int _delayLineHead;
+    // Sliding window of the most recent LowPassTapCount mapped bytes, laid out
+    // linearly rather than as a ring so the FIR reads a contiguous, SIMD-loadable
+    // span with no per-tap index wrap. Fed two cells per Tick(); every third cell
+    // the FIR is evaluated and the result decoded (12x-f_SC -> 4x-f_SC). Cell
+    // boundaries never align to dot or line boundaries (8 cells/dot is not
+    // divisible by 3), so the window slides continuously and is never cleared.
+    // _delayLineCursor is the next write index; the live window is
+    // [cursor - LowPassTapCount .. cursor - 1]. When the cursor reaches
+    // DelayLineCapacity the trailing LowPassTapCount samples are copied back to
+    // the front (once per DelayLineCapacity - LowPassTapCount emits) and the
+    // cursor rewinds. The array carries an extra 16-float tail past
+    // DelayLineCapacity so the FIR's 16-wide load off the last window (window
+    // start up to DelayLineCapacity - LowPassTapCount) stays in bounds; those
+    // tail lanes are only ever multiplied by the zero padding tap.
+    private const int DelayLineCapacity = 256;
+    private readonly float[] _delayLine = new float[DelayLineCapacity + 16];
+    private int _delayLineCursor = LowPassTapCount;
     private int _decimatePhase; // 0..2
 
     // Most recently emitted composite-video sample, for parity with the other
@@ -237,26 +265,42 @@ public sealed partial class NesSystem
         // One master tick is two 12x-f_SC cells (12 x f_SC = 2 x master clock).
         for (var i = 0; i < 2; i++)
         {
-            _delayLine[_delayLineHead] = DacCodeToByte[Ppu.NextVideoCell()];
-            _delayLineHead = _delayLineHead + 1 == LowPassTapCount ? 0 : _delayLineHead + 1;
+            _delayLine[_delayLineCursor++] = DacCodeToByte[Ppu.NextVideoCell()];
 
             if (++_decimatePhase == 3)
             {
                 _decimatePhase = 0;
 
-                // Hann-windowed taps are symmetric, so the walk direction over
-                // the ring does not matter; start at the oldest sample.
-                double acc = 0;
-                var idx = _delayLineHead;
-                for (var k = 0; k < LowPassTapCount; k++)
+                // FIR dot product over the LowPassTapCount-sample window ending
+                // just before the cursor, as four Vector128<float> FMAs against
+                // the zero-padded taps. LoadUnsafe off the array data reference:
+                // w is in [1, DelayLineCapacity - LowPassTapCount] here, and the
+                // array's 16-float tail keeps the top load in bounds, so no
+                // per-tap bounds check is needed.
+                ref var line0 = ref MemoryMarshal.GetArrayDataReference(_delayLine);
+                ref var taps0 = ref MemoryMarshal.GetArrayDataReference(LowPassTapsPadded);
+                var w = (nint)(_delayLineCursor - LowPassTapCount);
+
+                var acc = Vector128<float>.Zero;
+                for (nint k = 0; k < 16; k += 4)
                 {
-                    acc += LowPassTaps[k] * _delayLine[idx];
-                    idx = idx + 1 == LowPassTapCount ? 0 : idx + 1;
+                    acc = Vector128.FusedMultiplyAdd(
+                        Vector128.LoadUnsafe(ref Unsafe.Add(ref line0, w + k)),
+                        Vector128.LoadUnsafe(ref Unsafe.Add(ref taps0, k)),
+                        acc);
                 }
 
-                var sample = (byte)Math.Clamp((int)Math.Round(acc), 0, 255);
+                var sample = (byte)Math.Clamp((int)MathF.Round(Vector128.Sum(acc)), 0, 255);
                 Television.Decode(sample);
                 CurrentCompositeVideoSample = sample;
+            }
+
+            if (_delayLineCursor == DelayLineCapacity)
+            {
+                Array.Copy(
+                    _delayLine, DelayLineCapacity - LowPassTapCount,
+                    _delayLine, 0, LowPassTapCount);
+                _delayLineCursor = LowPassTapCount;
             }
         }
     }
