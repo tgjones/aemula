@@ -135,14 +135,17 @@ internal static class NesTestRom
     }
 
     // Runs until the CPU parks in a tight loop (the blargg "forever") or the cap
-    // is hit, then reads name-table 0 back as text.
+    // is hit, then reads name-table 0 back as text. The park has to hold for the
+    // whole sample window: the sprite-hit suites run dozens of sub-tests, each
+    // ending in a short $2002 poll loop, and a handful of those samples in a row
+    // is not the end of the ROM - only the final "forever" jmp stays put.
     public static ScrapeRun RunAndScrape(
         string relativeRomPath, int maxFrames = 600, int minFrames = 45)
     {
         var nes = Load(relativeRomPath);
         var startFrame = nes.Ppu.Frames;
 
-        Span<ushort> recentPc = stackalloc ushort[8];
+        Span<ushort> recentPc = stackalloc ushort[32];
         var pcIndex = 0;
         var pcFilled = 0;
         var wentIdle = false;

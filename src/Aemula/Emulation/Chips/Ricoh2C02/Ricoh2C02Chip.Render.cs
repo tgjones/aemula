@@ -1,7 +1,8 @@
 namespace Aemula.Emulation.Chips.Ricoh2C02;
 
-// Background-only render path (no sprites, no mid-frame scroll). Follows
+// Background render path (no mid-frame scroll yet). Follows
 // https://www.nesdev.org/wiki/PPU_rendering and https://www.nesdev.org/wiki/PPU_scrolling.
+// The sprite pipeline that runs alongside it lives in Ricoh2C02Chip.Sprites.cs.
 partial class Ricoh2C02Chip
 {
     // Two 16-bit pattern-table shift registers.
@@ -24,11 +25,12 @@ partial class Ricoh2C02Chip
     private ushort _bgPatternBaseAddress;
 
     /// <summary>
-    /// The 6-bit NES palette colour ($00-$3F) selected for the current dot's background
-    /// pixel. Holds the pixel-mux result during active picture, and the $3F00 backdrop
-    /// colour otherwise. Read by the video-signal state machine to pick a DAC tap set.
+    /// The 6-bit NES palette colour ($00-$3F) selected for the current dot's pixel after
+    /// the background/sprite priority mux. Holds the mux result during active picture, and
+    /// the $3F00 backdrop colour otherwise. Read by the video-signal state machine to pick
+    /// a DAC tap set.
     /// </summary>
-    internal byte CurrentBackgroundColor;
+    internal byte CurrentPixelColor;
 
     /// <summary>
     /// True when the current dot lies inside the visible 256x240 picture area (visible
@@ -54,6 +56,12 @@ partial class Ricoh2C02Chip
                 _bgShifterAttribHi = (byte)((_bgShifterAttribHi << 1) | _bgAttribLatchHi);
             }
 
+            // Secondary-OAM evaluation (dots 65-256) and sprite pattern fetches
+            // (dots 257-320). Runs before the background fetch so the last
+            // sprite's pattern byte is latched off the bus at dot 321 before the
+            // background prefetch drives a new address onto it.
+            SpriteTick();
+
             BackgroundFetchTick();
 
             // Scroll-address updates. Only reached with rendering enabled.
@@ -74,16 +82,16 @@ partial class Ricoh2C02Chip
             }
         }
 
-        // Background pixel mux for the visible picture area.
+        // Background/sprite pixel mux for the visible picture area.
         if (visibleScanline && CurrentDot >= 1 && CurrentDot <= 256)
         {
             IsRenderingActivePicture = true;
-            CurrentBackgroundColor = ComputeBackgroundColor();
+            CurrentPixelColor = ComputePixelColor();
         }
         else
         {
             IsRenderingActivePicture = false;
-            CurrentBackgroundColor = ReadPaletteMemory(0x3F00);
+            CurrentPixelColor = ReadPaletteMemory(0x3F00);
         }
     }
 
@@ -176,39 +184,97 @@ partial class Ricoh2C02Chip
         }
     }
 
-    private byte ComputeBackgroundColor()
+    // Background/sprite priority mux for one visible dot (dots 1-256 of a visible
+    // scanline). Also advances the eight sprite shift registers / X counters and
+    // raises the sprite-0 hit flag. Follows
+    // https://www.nesdev.org/wiki/PPU_rendering#Preface.
+    private byte ComputePixelColor()
     {
-        var screenX = CurrentDot - 1;
+        var screenX = (int)CurrentDot - 1;
 
-        if (!MaskRegister.RenderBackground ||
-            (screenX < 8 && !MaskRegister.RenderBackgroundLeft))
+        // --- Background pixel + palette group ---
+        var backgroundPixel = 0;
+        var backgroundPalette = 0;
+        if (MaskRegister.RenderBackground &&
+            !(screenX < 8 && !MaskRegister.RenderBackgroundLeft))
         {
-            // Background not shown for this pixel: the $3F00 backdrop colour shows through.
-            return ReadPaletteMemory(0x3F00);
+            var patternMux = (ushort)(0x8000 >> _x);
+            backgroundPixel =
+                ((_bgShifterPatternHi & patternMux) != 0 ? 2 : 0) |
+                ((_bgShifterPatternLo & patternMux) != 0 ? 1 : 0);
+
+            if (backgroundPixel != 0)
+            {
+                var attribMux = (byte)(0x80 >> _x);
+                backgroundPalette =
+                    ((_bgShifterAttribHi & attribMux) != 0 ? 2 : 0) |
+                    ((_bgShifterAttribLo & attribMux) != 0 ? 1 : 0);
+            }
         }
 
-        var patternMux = (ushort)(0x8000 >> _x);
-        var patternBits =
-            ((_bgShifterPatternHi & patternMux) != 0 ? 2 : 0) |
-            ((_bgShifterPatternLo & patternMux) != 0 ? 1 : 0);
-
-        if (patternBits == 0)
+        // --- Sprite pixel ---
+        // Every output unit whose X counter has run out shifts one bit this dot;
+        // the first (lowest-index, so highest-priority) non-transparent pixel is
+        // the sprite candidate. Units still counting down just decrement.
+        var spritePixel = 0;
+        var spritePalette = 0;
+        var spriteBehindBackground = false;
+        var spriteIsSpriteZero = false;
+        for (var i = 0; i < _spriteCount; i++)
         {
-            // Transparent background pixel -> universal backdrop at $3F00.
-            return ReadPaletteMemory(0x3F00);
+            if (_spriteXCounters[i] > 0)
+            {
+                _spriteXCounters[i]--;
+                continue;
+            }
+
+            var lo = (_spritePatternShiftLo[i] >> 7) & 1;
+            var hi = (_spritePatternShiftHi[i] >> 7) & 1;
+            _spritePatternShiftLo[i] <<= 1;
+            _spritePatternShiftHi[i] <<= 1;
+
+            var pixel = (hi << 1) | lo;
+            if (pixel != 0 && spritePixel == 0)
+            {
+                spritePixel = pixel;
+                spritePalette = _spriteAttributeLatches[i] & 0x03;
+                spriteBehindBackground = (_spriteAttributeLatches[i] & 0x20) != 0;
+                spriteIsSpriteZero = i == 0 && _spriteZeroInRange;
+            }
         }
 
-        var attribMux = (byte)(0x80 >> _x);
-        var attribBits =
-            ((_bgShifterAttribHi & attribMux) != 0 ? 2 : 0) |
-            ((_bgShifterAttribLo & attribMux) != 0 ? 1 : 0);
+        if (!MaskRegister.RenderSprites ||
+            (screenX < 8 && !MaskRegister.RenderSpritesLeft))
+        {
+            spritePixel = 0;
+        }
 
-        var paletteIndex = (attribBits << 2) | patternBits;
+        // --- Sprite-0 hit ---
+        // Sprite 0's own opaque pixel over an opaque background pixel, with both
+        // layers enabled and never at x=255. Left-column clipping has already
+        // forced the relevant pixel to 0 above, so no separate clip test is
+        // needed. The flag is cleared at (261,1); setting it when already set is
+        // a no-op, so "once per frame" needs nothing here.
+        if (spriteIsSpriteZero && spritePixel != 0 && backgroundPixel != 0 &&
+            MaskRegister.RenderBackground && MaskRegister.RenderSprites &&
+            screenX != 255)
+        {
+            StatusRegister.Sprite0Hit = true;
+        }
 
+        // --- Priority ---
         // Colour emphasis ($2001 bits 5-7) is deliberately not modelled: this is where the
         // ~120-degree-wide chroma pull-down for the emphasised sub-bands would be applied
         // to the colour before it reaches the video DAC.
-        return ReadPaletteMemory((ushort)(0x3F00 | paletteIndex));
+        if (spritePixel != 0 && (backgroundPixel == 0 || !spriteBehindBackground))
+        {
+            return ReadPaletteMemory((ushort)(0x3F10 | (spritePalette << 2) | spritePixel));
+        }
+        if (backgroundPixel != 0)
+        {
+            return ReadPaletteMemory((ushort)(0x3F00 | (backgroundPalette << 2) | backgroundPixel));
+        }
+        return ReadPaletteMemory(0x3F00);
     }
 
     private void BeginVramFetch(ushort address)

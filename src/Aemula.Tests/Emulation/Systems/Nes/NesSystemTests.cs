@@ -173,4 +173,34 @@ public class NesSystemTests
     public Task VblClearTime_Blargg2005() =>
         // Coarse check that the VBL flag clears ~2270 CPU clocks after the NMI.
         AssertBlargg2005Passes("blargg_ppu_tests_2005.09.15b/vbl_clear_time.nes");
+
+    // ---- Sprite pipeline + sprite-0 hit (sprite_hit_tests_2005.10.05) -----
+
+    // These render "PASSED" / "FAILED #n" to name-table 0 with an ASCII font
+    // (tile id == char code), then spin.
+    private static async Task AssertSpriteHitPasses(string rom, int maxFrames = 600)
+    {
+        var run = NesTestRom.RunAndScrape(rom, maxFrames);
+
+        Console.WriteLine($"{rom}: wentIdle={run.WentIdle} frames={run.Frames}\n{run.Text}");
+
+        await Assert.That(run.WentIdle).IsTrue();
+        await Assert.That(run.Passed).IsTrue();
+    }
+
+    [Test]
+    public Task SpriteHit_01_Basics() =>
+        // Sprite-0 hit fires behind BG, and misses when either layer is off,
+        // the overlapping pixels are transparent, or only other sprites overlap.
+        AssertSpriteHitPasses("sprite_hit_tests_2005.10.05/01.basics.nes");
+
+    [Test]
+    public Task SpriteHit_02_Alignment() =>
+        // Pixel-exact hit alignment of sprite vs. BG on all four edges.
+        AssertSpriteHitPasses("sprite_hit_tests_2005.10.05/02.alignment.nes");
+
+    [Test]
+    public Task SpriteHit_09_TimingBasics() =>
+        // $2002 bit 6 is set at the right dot within the scanline.
+        AssertSpriteHitPasses("sprite_hit_tests_2005.10.05/09.timing_basics.nes");
 }

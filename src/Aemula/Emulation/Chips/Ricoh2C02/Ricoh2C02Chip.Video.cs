@@ -250,7 +250,7 @@ partial class Ricoh2C02Chip
     /// <summary>
     /// Updates the composite-video region and DAC-tap selection for the current
     /// PPU dot. Called once per dot from <see cref="CycleDot"/> after the render
-    /// pipeline has produced <see cref="CurrentBackgroundColor"/>.
+    /// pipeline has produced <see cref="CurrentPixelColor"/>.
     /// </summary>
     private void UpdateVideoSignal()
     {
@@ -323,7 +323,7 @@ partial class Ricoh2C02Chip
 
         if (emitPicture)
         {
-            SetActivePicture(CurrentBackgroundColor);
+            SetActivePicture(CurrentPixelColor);
         }
         else
         {
