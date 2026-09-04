@@ -203,4 +203,23 @@ public class NesSystemTests
     public Task SpriteHit_09_TimingBasics() =>
         // $2002 bit 6 is set at the right dot within the scanline.
         AssertSpriteHitPasses("sprite_hit_tests_2005.10.05/09.timing_basics.nes");
+
+    // ---- Sprite overflow (sprite_overflow_tests) -------------------------------
+
+    // Same on-screen "PASSED" / "FAILED: #n" font as the sprite-hit suite, then
+    // a forever loop.
+    [Test]
+    public async Task SpriteOverflow_1_Basics()
+    {
+        // $2002 bit 5 is set when a 9th sprite falls on a scanline, is not
+        // cleared by reading $2002, is cleared at the end of VBL, and is only
+        // evaluated while rendering is enabled ($2001 bits 3-4).
+        var run = NesTestRom.RunAndScrape(
+            "sprite_overflow_tests/1.Basics.nes", maxFrames: 600);
+
+        Console.WriteLine($"sprite_overflow 1.Basics: wentIdle={run.WentIdle} frames={run.Frames}\n{run.Text}");
+
+        await Assert.That(run.WentIdle).IsTrue();
+        await Assert.That(run.Passed).IsTrue();
+    }
 }

@@ -5,7 +5,8 @@ namespace Aemula.Emulation.Chips.Ricoh2C02;
 // Sprite pipeline: secondary-OAM evaluation, sprite pattern fetches, the eight
 // output units (pattern shift registers + X down-counters + attribute latches)
 // and, together with ComputePixelColor in Ricoh2C02Chip.Render.cs, the per-dot
-// sprite pixel mux and sprite-0 hit. SpriteTick runs once per dot from
+// sprite pixel mux and sprite-0 hit. Sprite overflow ($2002.5) is raised here
+// from the evaluation walk. SpriteTick runs once per dot from
 // RenderTick, only while rendering is enabled on a visible or the pre-render
 // scanline. Follows https://www.nesdev.org/wiki/PPU_sprite_evaluation and
 // https://www.nesdev.org/wiki/PPU_rendering.
@@ -102,13 +103,16 @@ partial class Ricoh2C02Chip
 
             if (secondaryFull)
             {
-                // Eight sprites already found. Hardware keeps scanning but walks
-                // m as well as n from here (the diagonal-scan bug), and a ninth
-                // in-range sprite would raise $2002.5. Both of those are left for
-                // sprite overflow; the walk is modelled now so that timing falls
-                // straight out when it is wired up.
+                // Eight sprites already found. Writes to secondary OAM are
+                // disabled and the walk keeps looking for a ninth in-range
+                // sprite. A match sets $2002.5 (sprite overflow); on hardware the
+                // pointer then also increments m along with n while searching -
+                // the diagonal-scan bug - so what counts as "in range" from here
+                // is skewed and the flag has well-known false positives and
+                // negatives (sprite_overflow_tests 2 / 4).
                 if (inRange)
                 {
+                    StatusRegister.SpriteOverflow = true;
                     if (++_evalM == 4)
                     {
                         _evalM = 0;
