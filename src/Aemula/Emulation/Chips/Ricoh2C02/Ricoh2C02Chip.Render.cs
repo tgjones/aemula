@@ -93,6 +93,10 @@ partial class Ricoh2C02Chip
             IsRenderingActivePicture = false;
             CurrentPixelColor = ReadPaletteMemory(0x3F00);
         }
+
+        // Mirror this dot's post-mux colour into the optional raw framebuffer
+        // (a no-op unless RenderFramebuffer is set - see Ricoh2C02Chip.Framebuffer.cs).
+        FramebufferTick();
     }
 
     // Kept separate so sprite evaluation and sprite-pattern fetches can be dropped in
@@ -192,6 +196,16 @@ partial class Ricoh2C02Chip
     {
         var screenX = (int)CurrentDot - 1;
 
+        // --- Background palette hack ---
+        // With rendering fully disabled the shifters are dead, but palette RAM is
+        // still read combinationally off the VRAM address bus: if v points into
+        // $3F00-$3FFF the 2C02 emits that entry for the dot instead of the
+        // backdrop. full_palette.nes paints the whole screen through this.
+        if (!MaskRegister.RenderBackground && !MaskRegister.RenderSprites)
+        {
+            return ReadPaletteMemory((_v & 0x3F00) == 0x3F00 ? _v : (ushort)0x3F00);
+        }
+
         // --- Background pixel + palette group ---
         var backgroundPixel = 0;
         var backgroundPalette = 0;
@@ -263,9 +277,10 @@ partial class Ricoh2C02Chip
         }
 
         // --- Priority ---
-        // Colour emphasis ($2001 bits 5-7) is deliberately not modelled: this is where the
-        // ~120-degree-wide chroma pull-down for the emphasised sub-bands would be applied
-        // to the colour before it reaches the video DAC.
+        // Returns the 6-bit palette colour only. Grayscale is applied in
+        // ReadPaletteMemory; colour emphasis is applied downstream of the mux -
+        // per subcarrier cell in Ricoh2C02Chip.Video.cs for the composite DAC,
+        // and per channel in Ricoh2C02Chip.Framebuffer.cs for the raw RGB frame.
         if (spritePixel != 0 && (backgroundPixel == 0 || !spriteBehindBackground))
         {
             return ReadPaletteMemory((ushort)(0x3F10 | (spritePalette << 2) | spritePixel));

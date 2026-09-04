@@ -166,6 +166,13 @@ partial class Ricoh2C02Chip
     private ushort _videoLevelHigh;
     private int _videoHue;
 
+    // Colour-emphasis mask ($2001 bits 5-7: R, G, B) in effect for the current
+    // active-picture cell; 0 outside active picture. Drives the chroma-phase
+    // pull-down in NextVideoCell. Zero unless a program sets an emphasis bit, so
+    // the calibrated non-emphasis path (Ricoh2C02Tests, NesSystemTelevisionTests)
+    // is byte-for-byte unchanged.
+    private int _videoEmphasis;
+
     // The _h vs _l choice for the cell most recently produced by NextVideoCell().
     private bool _videoCellIsHigh;
 
@@ -184,18 +191,64 @@ partial class Ricoh2C02Chip
             _chromaPhase = 0;
         }
 
+        ushort level;
         if (!_videoAlternates)
         {
             _videoCellIsHigh = _videoConstantIsHigh;
-            return _videoConstantLevel;
+            level = _videoConstantLevel;
+        }
+        else
+        {
+            // hue 1..12; the _h member of the tap pair is selected when
+            // ((hue + phase) % 12) < 6 (hue direction calibrated against
+            // Flawless2C02 over hues $1/$6/$C).
+            _videoCellIsHigh = ((_videoHue + _chromaPhase) % 12) < 6;
+            level = _videoCellIsHigh ? _videoLevelHigh : _videoLevelLow;
         }
 
-        // hue 1..12; the _h member of the tap pair is selected when
-        // ((hue + phase) % 12) < 6 (hue direction calibrated against Flawless2C02
-        // over hues $1/$6/$C).
-        _videoCellIsHigh = ((_videoHue + _chromaPhase) % 12) < 6;
-        return _videoCellIsHigh ? _videoLevelHigh : _videoLevelLow;
+        return ApplyEmphasisPullDown(level);
     }
+
+    // Each colour-emphasis bit drops the composite level to ~0.75 over a
+    // ~120-degree-wide slice of the subcarrier cycle tied to that primary; the
+    // three slices tile the whole cycle, so $2001 = $E0 darkens everything.
+    // Only active-picture (luma-tap) cells are touched - sync / blanking / burst
+    // are not.
+    //
+    // Unlike the rest of this file the slice phases are NOT calibrated against
+    // Flawless2C02 (no emphasis vectors were captured). The phase-exact model is
+    // in the RGB framebuffer path (Ricoh2C02Chip.Framebuffer.cs), which the
+    // tests cover; this just keeps the composite picture plausibly darker under
+    // emphasis without claiming node accuracy.
+    private ushort ApplyEmphasisPullDown(ushort level)
+    {
+        if (_videoEmphasis == 0 ||
+            _videoTapColumn is < VideoTapColumn.Luma0 or > VideoTapColumn.Luma3)
+        {
+            return level;
+        }
+
+        for (var bit = 0; bit < 3; bit++)
+        {
+            if ((_videoEmphasis & (1 << bit)) == 0)
+            {
+                continue;
+            }
+
+            var delta = ((_chromaPhase - EmphasisSliceStartPhase[bit]) % 12 + 12) % 12;
+            if (delta < EmphasisSliceWidth)
+            {
+                return (ushort)(level * 191 / 256); // 191/256 ~= 0.746
+            }
+        }
+
+        return level;
+    }
+
+    // Start phase (0..11) of each emphasis bit's pull-down slice: R, G, B, 120
+    // degrees apart so all three set covers the full cycle. Uncalibrated.
+    private static readonly int[] EmphasisSliceStartPhase = { 0, 4, 8 };
+    private const int EmphasisSliceWidth = 4; // ~120 degrees of the 12-phase cycle
 
     /// <summary>
     /// The digital video-tap node state for the cell most recently produced by
@@ -337,6 +390,7 @@ partial class Ricoh2C02Chip
         _videoAlternates = false;
         _videoConstantIsHigh = true;
         _videoConstantLevel = DacSyncHigh;
+        _videoEmphasis = 0;
     }
 
     private void SetSyncTip()
@@ -345,6 +399,7 @@ partial class Ricoh2C02Chip
         _videoAlternates = false;
         _videoConstantIsHigh = false;
         _videoConstantLevel = DacSyncLow;
+        _videoEmphasis = 0;
     }
 
     private void SetBurst()
@@ -354,13 +409,20 @@ partial class Ricoh2C02Chip
         _videoHue = BurstHue;
         _videoLevelLow = DacBurstLow;
         _videoLevelHigh = DacBurstHigh;
+        _videoEmphasis = 0;
     }
 
     private void SetActivePicture(byte color)
     {
         // LLHH: bits 0-3 hue code, bits 4-5 luma code. Colour emphasis ($2001
-        // bits 5-7) is deliberately unmodelled - this is where the ~120-degree-
-        // wide chroma pull-down for an emphasised sub-band would be applied.
+        // bits 5-7) is applied per subcarrier cell in ApplyEmphasisPullDown via
+        // this mask; grayscale is already folded into `color` upstream by
+        // ReadPaletteMemory.
+        _videoEmphasis =
+            (MaskRegister.EmphasizeRed ? 1 : 0) |
+            (MaskRegister.EmphasizeGreen ? 2 : 0) |
+            (MaskRegister.EmphasizeBlue ? 4 : 0);
+
         var hue = color & 0x0F;
         var luma = (color >> 4) & 0x03;
 

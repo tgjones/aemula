@@ -680,11 +680,17 @@ public sealed partial class Ricoh2C02Chip
 
     private byte ReadPaletteMemory(ushort address)
     {
+        var value = _paletteMemory[GetPaletteAddress(address)];
         if (MaskRegister.Grayscale)
         {
-            address &= 0x30;
+            // Grayscale ($2001.0) masks the colour value down to its luma column
+            // ($00/$10/$20/$30), dropping the hue - it acts on the palette-RAM
+            // output, not the address, so it colours the rendered pixel (via
+            // CurrentPixelColor, which feeds both the composite DAC path and the
+            // raw framebuffer) and $2007 palette reads alike.
+            value &= 0x30;
         }
-        return _paletteMemory[GetPaletteAddress(address)];
+        return value;
     }
 
     private void SetupVramRequest(ushort address)
