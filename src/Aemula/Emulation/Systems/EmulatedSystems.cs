@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Aemula.Emulation.Systems.AppleI;
 using Aemula.Emulation.Systems.AppleII;
 using Aemula.Emulation.Systems.Atari2600;
 using Aemula.Emulation.Systems.Nes;
@@ -13,6 +14,9 @@ public sealed record SystemDescriptor(string Id, string DisplayName, Func<Emulat
 // their canonical id (CLI arg, --input target, UI System submenu), display
 // name, and how to construct one. BbcMicro and AcornSystem1 aren't listed -
 // they're not yet complete enough to boot from any of these entry points.
+// Apple I *is* listed despite being mid-build (docs/apple-i-plan.md) - its
+// Tick() is a no-op until Phase 2, so it'll show a frozen/blank picture, but
+// the plan calls for registering it from Phase 0 onward.
 //
 // Aemula.Console, Aemula.UI and Aemula.Benchmarks each need more than an
 // id/factory pair per system (a ROM-picker filter, a benchmark workload) -
@@ -23,6 +27,7 @@ public static class EmulatedSystems
     public static readonly IReadOnlyList<SystemDescriptor> All =
     [
         new("appleii", "Apple II+", static () => new AppleIISystem()),
+        new("applei", "Apple I", static () => new AppleISystem()),
         new("atari2600", "Atari 2600", static () => new Atari2600System()),
         new("nes", "NES", static () => new NesSystem()),
         new("spaceinvaders", "Space Invaders", static () => new SpaceInvadersSystem()),

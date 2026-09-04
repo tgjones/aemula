@@ -54,6 +54,14 @@ public static class SystemCatalog
                 "Select an Apple II ROM image",
                 [new RomFileFilter("ROM images", "rom;bin"), new RomFileFilter("All files", "*")]),
 
+            // The Monitor ROM is a fixed inlined literal (Roms/WozMonitor.cs)
+            // and there's no cassette support yet (docs/apple-i-plan.md,
+            // Phase 5 stretch) - nothing for File > Open ROM to pick.
+            ["applei"] = (
+                RomRequirement.None,
+                "",
+                []),
+
             ["atari2600"] = (
                 RomRequirement.Required,
                 "Select a cartridge",
