@@ -1,6 +1,7 @@
 using System;
 using Aemula;
 using Aemula.Debugging;
+using Aemula.Emulation.Systems;
 using BenchmarkDotNet.Attributes;
 
 namespace Aemula.Benchmarks;
@@ -34,7 +35,7 @@ public class DebuggerOverheadBenchmark
     {
         var spec = SystemSpecs.Get(SystemName);
 
-        _system = spec.Create();
+        _system = EmulatedSystems.FindById(SystemName)!.Create();
         _system.LoadProgram(spec.WorkloadPath());
         for (var i = 0; i < spec.WarmupTicks; i++)
         {
@@ -46,7 +47,7 @@ public class DebuggerOverheadBenchmark
         // Duration that RunForDuration turns back into ~TicksPerInvocation/Chunks
         // ticks (it does duration -> ticks internally via CyclesPerSecond), so
         // the two benchmarks execute the same amount of emulated time.
-        var secondsPerChunk = _ticksPerInvocation / (double)Chunks / spec.CyclesPerSecond;
+        var secondsPerChunk = _ticksPerInvocation / (double)Chunks / _system.CyclesPerSecond;
         _chunkDuration = TimeSpan.FromSeconds(secondsPerChunk);
 
         _debugger = _system.CreateDebugger()

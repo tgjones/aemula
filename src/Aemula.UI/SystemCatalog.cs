@@ -1,9 +1,7 @@
 using System;
 using System.Collections.Generic;
-using Aemula.Emulation.Systems.AppleII;
-using Aemula.Emulation.Systems.Atari2600;
-using Aemula.Emulation.Systems.Nes;
-using Aemula.Emulation.Systems.SpaceInvaders;
+using System.Linq;
+using Aemula.Emulation.Systems;
 
 namespace Aemula.UI;
 
@@ -40,45 +38,45 @@ public sealed record SystemCatalogEntry(
     string RomDialogTitle,
     RomFileFilter[] RomFilters);
 
-// Replaces the bare Program.Systems dictionary: an ordered list (it drives
-// the File > System submenu) that also carries what each system needs from a
-// file and how to ask for one.
+// The id/display-name/factory triple for each entry comes from
+// Aemula.Emulation.Systems.EmulatedSystems, the cross-project list of which
+// systems are wired up end-to-end; this layers on the ROM-picker metadata
+// that's specific to the UI's File > Open ROM / System submenu, keyed by the
+// same Id. An ordered list (it drives the File > System submenu) rather than
+// a dictionary, so submenu order matches EmulatedSystems.All.
 public static class SystemCatalog
 {
-    public static readonly IReadOnlyList<SystemCatalogEntry> Entries =
-    [
-        new SystemCatalogEntry(
-            "appleii",
-            "Apple II+",
-            static () => new AppleIISystem(),
-            RomRequirement.Optional,
-            "Select an Apple II ROM image",
-            [new RomFileFilter("ROM images", "rom;bin"), new RomFileFilter("All files", "*")]),
+    private static readonly Dictionary<string, (RomRequirement Rom, string RomDialogTitle, RomFileFilter[] RomFilters)> RomInfoById =
+        new()
+        {
+            ["appleii"] = (
+                RomRequirement.Optional,
+                "Select an Apple II ROM image",
+                [new RomFileFilter("ROM images", "rom;bin"), new RomFileFilter("All files", "*")]),
 
-        new SystemCatalogEntry(
-            "atari2600",
-            "Atari 2600",
-            static () => new Atari2600System(),
-            RomRequirement.Required,
-            "Select a cartridge",
-            [new RomFileFilter("Atari 2600 cartridges", "a26;bin"), new RomFileFilter("All files", "*")]),
+            ["atari2600"] = (
+                RomRequirement.Required,
+                "Select a cartridge",
+                [new RomFileFilter("Atari 2600 cartridges", "a26;bin"), new RomFileFilter("All files", "*")]),
 
-        new SystemCatalogEntry(
-            "nes",
-            "NES",
-            static () => new NesSystem(),
-            RomRequirement.Required,
-            "Select a cartridge",
-            [new RomFileFilter("iNES cartridges", "nes"), new RomFileFilter("All files", "*")]),
+            ["nes"] = (
+                RomRequirement.Required,
+                "Select a cartridge",
+                [new RomFileFilter("iNES cartridges", "nes"), new RomFileFilter("All files", "*")]),
 
-        new SystemCatalogEntry(
-            "spaceinvaders",
-            "Space Invaders",
-            static () => new SpaceInvadersSystem(),
-            RomRequirement.None,
-            "",
-            []),
-    ];
+            ["spaceinvaders"] = (
+                RomRequirement.None,
+                "",
+                []),
+        };
+
+    public static readonly IReadOnlyList<SystemCatalogEntry> Entries = EmulatedSystems.All
+        .Select(system =>
+        {
+            var (rom, romDialogTitle, romFilters) = RomInfoById[system.Id];
+            return new SystemCatalogEntry(system.Id, system.DisplayName, system.Create, rom, romDialogTitle, romFilters);
+        })
+        .ToList();
 
     // Boots to BASIC with no file needed - see Program's startup path.
     public static SystemCatalogEntry Default => Entries[0];

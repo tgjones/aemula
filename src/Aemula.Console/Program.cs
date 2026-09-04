@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Aemula.Emulation.Systems;
 
 namespace Aemula.Console;
 
@@ -31,12 +32,10 @@ public static class Program
     {
         var (systemName, framesRequested, romPath, screenshotPath, screenshotEvery, inputSpec, traceTiming) = ParseArgs(args);
 
-        if (!SystemRegistry.Systems.TryGetValue(systemName, out var createSystem))
-        {
-            throw new ArgumentException($"Unknown system '{systemName}'. Supported systems: {string.Join(", ", SystemRegistry.Systems.Keys)}.");
-        }
+        var descriptor = EmulatedSystems.FindById(systemName)
+            ?? throw new ArgumentException($"Unknown system '{systemName}'. Supported systems: {string.Join(", ", EmulatedSystems.All.Select(d => d.Id))}.");
 
-        var system = createSystem();
+        var system = descriptor.Create();
         var television = system.Television;
 
         // Parsed after the system exists so the script's control tokens can be

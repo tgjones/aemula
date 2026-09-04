@@ -3,23 +3,19 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using Aemula.Emulation.Systems.AppleII;
-using Aemula.Emulation.Systems.Atari2600;
-using Aemula.Emulation.Systems.Nes;
-using Aemula.Emulation.Systems.SpaceInvaders;
 
 namespace Aemula.Benchmarks;
 
-// Single source of truth for what each system's benchmark workload is: how to
-// build the system, where its ROM comes from, how far to warm it before
-// measuring, and how many Tick()s make up one measured invocation. Both the
-// per-system SystemBenchmark classes and DebuggerOverheadBenchmark read from
-// here so the two never drift apart.
+// Single source of truth for what each system's benchmark workload is: where
+// its ROM comes from, how far to warm it before measuring, and how many
+// Tick()s make up one measured invocation. Both the per-system SystemBenchmark
+// classes and DebuggerOverheadBenchmark read from here so the two never drift
+// apart. Name matches an Id in Aemula.Emulation.Systems.EmulatedSystems, which
+// is where a system's factory and real CyclesPerSecond live - this doesn't
+// duplicate either.
 internal sealed record SystemSpec(
     string Name,
-    Func<EmulatedSystem> Create,
     Func<string> WorkloadPath,
-    ulong CyclesPerSecond,
     int WarmupTicks,
     int TicksPerInvocation,
     Func<EmulatedSystem, long> Probe);
@@ -31,50 +27,36 @@ internal static class SystemSpecs
     // (sub-frame video/audio dividers, per-frame VSYNC/VBLANK/overscan regions,
     // interrupts, the 60 Hz timer tick); ≈2 frames also crosses a field
     // boundary so odd/even-frame handling is covered.
-    private const ulong AppleIIHz = 14_318_180;
-    private const ulong Atari2600Hz = 3_580_000;
-    private const ulong NesHz = 21_477_272;
-    private const ulong SpaceInvadersHz = 19_968_000;
-
     private static long TelevisionRow(EmulatedSystem system) => system.Television.CurrentRow;
 
     public static readonly IReadOnlyList<SystemSpec> All =
     [
         new SystemSpec(
             "appleii",
-            static () => new AppleIISystem(),
             static () => "", // LoadProgram ignores the path; boots the bundled Apple2_Plus.rom
-            AppleIIHz,
             WarmupTicks: 240_000,          // ≈1 frame: past reset, into the steady text screen
             TicksPerInvocation: 480_000,   // ≈2 frames
             TelevisionRow),
 
         new SystemSpec(
             "atari2600",
-            static () => new Atari2600System(),
             Workloads.Atari2600Kernel,
-            Atari2600Hz,
             WarmupTicks: 120_000,          // ≈2 frames: past the RAM-clear loop, into steady raster
             TicksPerInvocation: 120_000,   // ≈2 frames
             TelevisionRow),
 
         new SystemSpec(
-            "nes",
-            static () => new NesSystem(), // DecodeVideo stays on: the NTSC decode
-                                          // FIR is the hot path and Aemula.UI
-                                          // always runs it. This is the faithful
-                                          // "why is it below real-time" workload.
+            "nes", // DecodeVideo stays on: the NTSC decode FIR is the hot path
+                   // and Aemula.UI always runs it. This is the faithful "why is
+                   // it below real-time" workload.
             Workloads.NesRom,
-            NesHz,
             WarmupTicks: 3_600_000,        // ≈10 frames: past the power-on RAM clear / init, into the steady per-frame NMI loop
             TicksPerInvocation: 720_000,   // ≈2 frames (~357954 ticks/frame; crosses a field boundary)
             TelevisionRow),
 
         new SystemSpec(
             "spaceinvaders",
-            static () => new SpaceInvadersSystem(),
             static () => "", // LoadProgram ignores the path; loads the bundled invaders.[efgh]
-            SpaceInvadersHz,
             WarmupTicks: 340_000,          // ≈1 frame: into attract mode
             TicksPerInvocation: 680_000,   // ≈2 frames (covers both the mid-screen and VBLANK IRQs)
             TelevisionRow),

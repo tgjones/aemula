@@ -1,4 +1,5 @@
 using Aemula;
+using Aemula.Emulation.Systems;
 using BenchmarkDotNet.Attributes;
 
 namespace Aemula.Benchmarks;
@@ -26,15 +27,17 @@ public abstract class SystemBenchmark
     private protected abstract string SystemName { get; }
 
     // Read by RealtimeBudgetColumn (via a throwaway instance) to turn the mean
-    // time into a "% of real-time budget" figure.
-    public ulong NominalCyclesPerSecond => SystemSpecs.Get(SystemName).CyclesPerSecond;
+    // time into a "% of real-time budget" figure. Comes from the real system's
+    // own CyclesPerSecond, not a value tracked here - a fresh instance is cheap
+    // (construction only, no ROM/warmup) so there's no reason to cache it.
+    public ulong NominalCyclesPerSecond => EmulatedSystems.FindById(SystemName)!.Create().CyclesPerSecond;
     public int TicksPerInvocation => SystemSpecs.Get(SystemName).TicksPerInvocation;
 
     [GlobalSetup]
     public void Setup()
     {
         _spec = SystemSpecs.Get(SystemName);
-        _system = _spec.Create();
+        _system = EmulatedSystems.FindById(SystemName)!.Create();
         _system.LoadProgram(_spec.WorkloadPath());
 
         for (var i = 0; i < _spec.WarmupTicks; i++)

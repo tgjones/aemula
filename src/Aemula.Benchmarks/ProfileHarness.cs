@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using Aemula.Emulation.Systems;
 
 namespace Aemula.Benchmarks;
 
@@ -25,7 +26,7 @@ internal static class ProfileHarness
         var seconds = args.Length > 2 && double.TryParse(args[2], out var s) ? s : 15.0;
 
         var spec = SystemSpecs.Get(name);
-        var system = spec.Create();
+        var system = EmulatedSystems.FindById(name)!.Create();
         system.LoadProgram(spec.WorkloadPath());
 
         Console.Error.WriteLine($"[profile] {name}: warming {spec.WarmupTicks:N0} ticks...");
@@ -53,7 +54,7 @@ internal static class ProfileHarness
 
         var nsPerTick = sw.Elapsed.TotalMilliseconds * 1_000_000.0 / ticks;
         var achievedHz = ticks / sw.Elapsed.TotalSeconds;
-        var realtimePct = achievedHz / spec.CyclesPerSecond * 100.0;
+        var realtimePct = achievedHz / system.CyclesPerSecond * 100.0;
         Console.Error.WriteLine(
             $"[profile] {name}: {ticks:N0} ticks in {sw.Elapsed.TotalSeconds:0.00}s = " +
             $"{nsPerTick:0.00} ns/tick, {realtimePct:0}% of real-time (sink={sink})");
