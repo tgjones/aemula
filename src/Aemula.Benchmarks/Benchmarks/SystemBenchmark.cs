@@ -81,6 +81,14 @@ public class Atari2600Benchmark : SystemBenchmark
     public long Tick() => RunTicks();
 }
 
+public class NesBenchmark : SystemBenchmark
+{
+    private protected override string SystemName => "nes";
+
+    [Benchmark]
+    public long Tick() => RunTicks();
+}
+
 public class SpaceInvadersBenchmark : SystemBenchmark
 {
     private protected override string SystemName => "spaceinvaders";

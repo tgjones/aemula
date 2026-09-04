@@ -9,4 +9,15 @@
     <PackageReference Include="BenchmarkDotNet" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Default NES workload: a rendering ROM that runs forever without parking,
+         shared with the Aemula.Tests asset tree so there's no second copy in the
+         repo. Linked (not copied) and embedded so the benchmark exe is
+         self-contained. Override at run time with AEMULA_BENCH_NES_ROM. -->
+    <EmbeddedResource Include="..\Aemula.Tests\Emulation\Systems\Nes\Assets\nes-test-roms\full_palette\full_palette.nes">
+      <Link>Workloads\nes-workload.nes</Link>
+      <LogicalName>nes-workload.nes</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
 </Project>

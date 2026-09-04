@@ -23,10 +23,14 @@ and the ms needed to simulate one 1/60 s frame.
 - **Atari 2600** runs a purpose-built 4 KiB test kernel (`Atari2600TestKernel.cs`)
   that drives a full frame structure and rewrites the playfield / colour /
   sprite / HMOVE registers every scanline.
-- **NES** has no benchmark yet: `NesSystem`'s PPU/mapper support is still a stub,
-  so there's no workload that stays on valid code for a whole invocation
-  (nestest runs off the rails past its automated section). Add one once the NES
-  is a real perf target.
+- **NES** runs a bundled rendering ROM (embedded from the `Aemula.Tests` asset
+  tree, no second copy in the repo) that loops forever without parking the CPU.
+  `DecodeVideo` is left on, so the NTSC composite decode — the measured hot path,
+  and always-on in `Aemula.UI` — is included. Point it at any local `.nes` file
+  (e.g. a real game, to reproduce a below-real-time report) with
+  `AEMULA_BENCH_NES_ROM=/path/to/rom.nes`. The bundled ROM keeps rendering
+  disabled, so it under-weights the sprite / background fetch pipeline relative
+  to a game; use the env override when that path is what you're profiling.
 
 ## Running
 

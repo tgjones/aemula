@@ -2,8 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using Aemula.Emulation.Systems.AppleII;
 using Aemula.Emulation.Systems.Atari2600;
+using Aemula.Emulation.Systems.Nes;
 using Aemula.Emulation.Systems.SpaceInvaders;
 
 namespace Aemula.Benchmarks;
@@ -31,6 +33,7 @@ internal static class SystemSpecs
     // boundary so odd/even-frame handling is covered.
     private const ulong AppleIIHz = 14_318_180;
     private const ulong Atari2600Hz = 3_580_000;
+    private const ulong NesHz = 21_477_272;
     private const ulong SpaceInvadersHz = 19_968_000;
 
     private static long TelevisionRow(EmulatedSystem system) => system.Television.CurrentRow;
@@ -55,9 +58,17 @@ internal static class SystemSpecs
             TicksPerInvocation: 120_000,   // ≈2 frames
             TelevisionRow),
 
-        // No "nes" spec: NesSystem's PPU/mapper support is still a stub, so
-        // nestest runs off the rails past its automated section ($C66E) with
-        // nothing valid to execute. Re-add once the NES is a real perf target.
+        new SystemSpec(
+            "nes",
+            static () => new NesSystem(), // DecodeVideo stays on: the NTSC decode
+                                          // FIR is the hot path and Aemula.UI
+                                          // always runs it. This is the faithful
+                                          // "why is it below real-time" workload.
+            Workloads.NesRom,
+            NesHz,
+            WarmupTicks: 3_600_000,        // ≈10 frames: past the power-on RAM clear / init, into the steady per-frame NMI loop
+            TicksPerInvocation: 720_000,   // ≈2 frames (~357954 ticks/frame; crosses a field boundary)
+            TelevisionRow),
 
         new SystemSpec(
             "spaceinvaders",
@@ -84,6 +95,27 @@ internal static class Workloads
     {
         var path = Path.Combine(Path.GetTempPath(), "aemula-bench-atari2600.bin");
         File.WriteAllBytes(path, Atari2600TestKernel.Image);
+        return path;
+    }
+
+    // NES workload ROM. Set AEMULA_BENCH_NES_ROM to point the benchmark at any
+    // local .nes file (e.g. a real game, to reproduce a below-real-time report);
+    // otherwise the bundled rendering ROM embedded from the Aemula.Tests asset
+    // tree is materialised to a stable temp path.
+    public static string NesRom()
+    {
+        var overridePath = Environment.GetEnvironmentVariable("AEMULA_BENCH_NES_ROM");
+        if (!string.IsNullOrWhiteSpace(overridePath))
+        {
+            return overridePath;
+        }
+
+        var path = Path.Combine(Path.GetTempPath(), "aemula-bench-nes.nes");
+        using var stream = Assembly.GetExecutingAssembly()
+            .GetManifestResourceStream("nes-workload.nes")
+            ?? throw new InvalidOperationException("Embedded nes-workload.nes is missing.");
+        using var file = File.Create(path);
+        stream.CopyTo(file);
         return path;
     }
 }
