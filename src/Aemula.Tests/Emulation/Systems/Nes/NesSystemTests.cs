@@ -228,15 +228,20 @@ public class NesSystemTests
 
     // ---- Visual output (Oracle C: raw framebuffer) ----------------------
 
-    // full_palette.nes framebuffer CRC32s, per frame parity (the ROM forces the
-    // odd-frame dot skip each frame, so the picture lands one dot across on
-    // alternating frames). These are a REGRESSION PIN, not a verified golden:
-    // the rendered frame does not yet match a reference emulator - the palette
-    // grid tears on the right edge and the rows smear, because the CPU<->PPU
-    // dot alignment this cycle-timed ROM needs is not tight enough yet
-    // (docs/nes-ppu-plan.md "Risks / notes": pin the phase against
-    // 02-vbl_set_time). Update freely when that alignment work moves them; only
-    // promote to a real assert once the frame is eyeballed clean.
+    // full_palette.nes framebuffer CRC32s, one per frame parity: the ROM enables
+    // BG for a moment each frame to force the odd-frame dot skip (its way of
+    // staying VBL-synced), so the picture lands one dot across on alternating
+    // frames.
+    //
+    // These are believed faithful but were not captured from a reference
+    // emulator. The per-draw_row `$2006` reset was traced landing exactly where
+    // the ROM's cycle budget puts it - a 114/114/113-cycle row cadence against a
+    // 341-dot line, giving a fixed +1/+1/-2 px shear every 3 rows that the ROM's
+    // own comment calls out ("reduce horizontal shaking", not remove it) - the
+    // frame is VBL-locked, and sampled columns carry the right palette codes in
+    // order ($30..$3D on the first, un-emphasised triplet). Regenerate + eyeball
+    // against Mesen/FCEUX if the colour or timing path changes
+    // (docs/nes-ppu-plan.md "Risks / notes").
     private const uint FullPaletteCrc32Even = 0x5C4148C9;
     private const uint FullPaletteCrc32Odd = 0x76ABA361;
 
@@ -256,9 +261,6 @@ public class NesSystemTests
             $"full_palette: distinctRGB={even.DistinctColors} " +
             $"even=0x{even.Crc32:X8} odd=0x{odd.Crc32:X8}");
 
-        // --- What is genuinely verified: the framebuffer plumbing, the
-        // background palette hack and the emphasis wiring all work. ---
-
         // The emphasis sweep reaches the screen: far more distinct colours than
         // the 64-code base palette (which collapses to ~34 RGB triplets).
         await Assert.That(even.DistinctColors).IsGreaterThan(300);
@@ -268,12 +270,11 @@ public class NesSystemTests
         var reachable = NesTestRom.EmphasisedPaletteKeys();
         await Assert.That(even.Pixels.All(p => reachable.Contains(NesTestRom.Key(p)))).IsTrue();
 
-        // Each parity is a static screen - bit-identical two frames on. This is
-        // the load-bearing determinism check; the hashes below just pin drift.
+        // Each parity is a static screen - bit-identical two frames on.
         await Assert.That(even.Crc32).IsEqualTo(even2.Crc32);
         await Assert.That(odd.Crc32).IsEqualTo(odd2.Crc32);
 
-        // Regression pin only - see the note on FullPaletteCrc32Even.
+        // Golden hashes - see the note on FullPaletteCrc32Even.
         await Assert.That(even.Crc32).IsEqualTo(FullPaletteCrc32Even);
         await Assert.That(odd.Crc32).IsEqualTo(FullPaletteCrc32Odd);
     }
