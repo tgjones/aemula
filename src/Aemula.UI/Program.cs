@@ -314,14 +314,14 @@ public static unsafe class Program
 
             var emulatorTime = new EmulatorTime(elapsed, deltaTimeSpan);
 
+            emulationWindow.SetPerf(perfFps, perfMsPerFrame, perfActualMHz, perfNominalMHz);
+
             var emuCommandBuffer = SDL.AcquireGPUCommandBuffer(gpuDevice);
             emulationWindow.RenderFrame(emulatorTime, emuCommandBuffer, emulationClearColor);
             SDL.SubmitGPUCommandBuffer(emuCommandBuffer);
 
             if (debuggerHost.Visible)
             {
-                debuggerHost.SetPerf(perfFps, perfMsPerFrame, perfActualMHz, perfNominalMHz);
-
                 var debuggerCommandBuffer = SDL.AcquireGPUCommandBuffer(gpuDevice);
                 debuggerHost.RenderFrame(emulatorTime, debuggerCommandBuffer, debuggerClearColor);
                 SDL.SubmitGPUCommandBuffer(debuggerCommandBuffer);

@@ -59,6 +59,12 @@ public sealed class EmulationWindow : IDisposable
     private bool _muted;
     private float _volume = 1f;
 
+    // Perf readout - Program pushes the latest numbers in before each render.
+    private double _perfFps;
+    private double _perfMsPerFrame;
+    private double _perfActualMHz;
+    private double _perfNominalMHz;
+
     public EmulationWindow(SDLGPUDevicePtr gpuDevice, ImGuiWindowContext context, Callbacks callbacks)
     {
         _gpuDevice = gpuDevice;
@@ -117,6 +123,14 @@ public sealed class EmulationWindow : IDisposable
     public void HandleKeyEvent(SDLKeyboardEvent keyEvent)
     {
         _system?.OnKeyEvent(keyEvent);
+    }
+
+    public void SetPerf(double fps, double msPerFrame, double actualMHz, double nominalMHz)
+    {
+        _perfFps = fps;
+        _perfMsPerFrame = msPerFrame;
+        _perfActualMHz = actualMHz;
+        _perfNominalMHz = nominalMHz;
     }
 
     public void RenderFrame(EmulatorTime time, SDLGPUCommandBufferPtr commandBuffer, Vector4 clearColor)
@@ -252,7 +266,34 @@ public sealed class EmulationWindow : IDisposable
             ImGui.EndMenu();
         }
 
+        DrawPerfReadout();
+
         ImGui.EndMainMenuBar();
+    }
+
+    // Right-aligned in the menu bar: frames-per-second, per-frame update cost,
+    // and the emulated clock actual-vs-nominal. Program pushes the numbers in
+    // via SetPerf before each render.
+    private void DrawPerfReadout()
+    {
+        var perfText = $"{_perfFps:F0} FPS  {_perfMsPerFrame:F2} ms  {_perfActualMHz:F2} / {_perfNominalMHz:F2} MHz";
+        var perfTextSize = ImGui.CalcTextSize(perfText);
+        var perfTextX = ImGui.GetWindowWidth() - perfTextSize.X - ImGui.GetStyle().ItemSpacing.X;
+        if (perfTextX > ImGui.GetCursorPosX())
+        {
+            ImGui.SetCursorPosX(perfTextX);
+        }
+
+        // Falling more than 5% behind the nominal clock is a sign we're no
+        // longer keeping up with real-time.
+        if (_perfActualMHz < _perfNominalMHz * 0.95)
+        {
+            ImGui.TextColored(new Vector4(1.0f, 0.4f, 0.4f, 1.0f), perfText);
+        }
+        else
+        {
+            ImGui.TextUnformatted(perfText);
+        }
     }
 
     // Height of the console-control status bar, or 0 when the current system

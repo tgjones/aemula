@@ -11,8 +11,8 @@ namespace Aemula.UI;
 
 // Everything the old Program.cs rendered: the dockspace, every DebuggerWindow
 // (TelevisionWindow, DisassemblyWindow, LogicAnalyzerWindow, memory editors,
-// ...), the perf readout, and the imgui.ini persistence - now its own OS
-// window sharing the one SDL_GPUDevice. Created lazily on first Show(); hidden
+// ...) and the imgui.ini persistence - now its own OS window sharing the one
+// SDL_GPUDevice. Created lazily on first Show(); hidden
 // at startup and toggled with backtick / View ▸ Debugger afterwards. While
 // hidden it isn't rendered and doesn't drive the clock (see Program's single
 // tick driver).
@@ -32,12 +32,6 @@ public sealed class DebuggerHost : IDisposable
 
     private bool _firstRunLayout;
 
-    // Perf readout - Program pushes the latest numbers in before each render.
-    private double _perfFps;
-    private double _perfMsPerFrame;
-    private double _perfActualMHz;
-    private double _perfNominalMHz;
-
     public DebuggerHost(SDLGPUDevicePtr gpuDevice, float mainScale)
     {
         _gpuDevice = gpuDevice;
@@ -51,14 +45,6 @@ public sealed class DebuggerHost : IDisposable
     public bool WantTextInput => _context?.WantTextInput ?? false;
 
     public bool WantCaptureKeyboard => _context?.WantCaptureKeyboard ?? false;
-
-    public void SetPerf(double fps, double msPerFrame, double actualMHz, double nominalMHz)
-    {
-        _perfFps = fps;
-        _perfMsPerFrame = msPerFrame;
-        _perfActualMHz = actualMHz;
-        _perfNominalMHz = nominalMHz;
-    }
 
     public void Show()
     {
@@ -255,27 +241,6 @@ public sealed class DebuggerHost : IDisposable
             }
 
             ImGui.EndMenu();
-        }
-
-        var perfText = $"{_perfFps:F0} FPS  {_perfMsPerFrame:F2} ms  {_perfActualMHz:F2} / {_perfNominalMHz:F2} MHz";
-        var perfTextSize = ImGui.CalcTextSize(perfText);
-        var perfTextX = ImGui.GetWindowWidth() - perfTextSize.X - ImGui.GetStyle().ItemSpacing.X;
-        if (perfTextX > ImGui.GetCursorPosX())
-        {
-            ImGui.SetCursorPosX(perfTextX);
-        }
-
-        // Falling more than 5% behind the nominal clock is a sign that
-        // debugger windows (e.g. TelevisionWindow, LogicAnalyzerWindow) are
-        // too expensive to draw every frame and we're no longer keeping up
-        // with real-time.
-        if (_perfActualMHz < _perfNominalMHz * 0.95)
-        {
-            ImGui.TextColored(new Vector4(1.0f, 0.4f, 0.4f, 1.0f), perfText);
-        }
-        else
-        {
-            ImGui.TextUnformatted(perfText);
         }
 
         ImGui.EndMainMenuBar();
