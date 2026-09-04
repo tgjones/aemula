@@ -5,10 +5,9 @@ using Aemula.UI;
 
 namespace Aemula.Emulation.Systems.AppleI.Debugging;
 
-// Phase 0 scaffolding (see docs/apple-i-plan.md): just enough to inspect the
-// CPU and raw memory. No ScreenDisplayWindow/LogicAnalyzerWindow/
-// TelevisionWindow yet - those need the video timing and composite video
-// work from later phases.
+// Just enough to inspect the CPU and raw memory (see docs/apple-i-plan.md).
+// No ScreenDisplayWindow/LogicAnalyzerWindow/TelevisionWindow yet - those
+// need the video timing and composite video work that hasn't landed yet.
 public sealed class AppleIDebugger : Debugger
 {
     private readonly AppleISystem _appleI;
