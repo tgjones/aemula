@@ -4,15 +4,15 @@ using System.Threading.Tasks;
 namespace Aemula.Tests.Emulation.Systems.Nes;
 
 // Per-ROM verdicts for the community NES test-ROM suites, driven through the
-// NesTestRom harness (docs/nes-ppu-plan.md). Phase 1 covers register / VRAM
-// correctness: the $2007 read buffer, the PPU open-bus decay register, the
-// $2004 OAM-attribute $E3 mask, and palette-RAM mirroring.
+// NesTestRom harness. What is covered so far: register / VRAM correctness (the
+// $2007 read buffer, the PPU open-bus decay register, the $2004 OAM-attribute
+// $E3 mask, palette-RAM mirroring) and VBL / NMI timing.
 //
 // Runs stay targetable with --treenode-filter; the full community suite is
 // ~40 min so it is never run whole.
 public class NesSystemTests
 {
-    // ---- Phase 0 smoke: the plumbing reaches a verdict at all ---------------
+    // ---- Smoke: the plumbing reaches a verdict at all -----------------------
 
     [Test]
     public async Task OracleA_SeesTheBlarggSignature_OnAnNrom256Rom()
@@ -43,7 +43,7 @@ public class NesSystemTests
         await Assert.That(run.Text.Length).IsGreaterThan(0);
     }
 
-    // ---- Phase 1: register & VRAM correctness ------------------------------
+    // ---- Register & VRAM correctness ---------------------------------------
 
     // The 2005-era blargg PPU suite has no $6000 status byte - it prints a
     // result code to name-table 0 with a tile-id == ASCII font, then spins.
@@ -100,4 +100,77 @@ public class NesSystemTests
         // $2003/$2004 access, no increment on read, increment on write, the $E3
         // attribute mask, and a full $4014 OAM DMA.
         AssertBlargg2005Passes("blargg_ppu_tests_2005.09.15b/sprite_ram.nes");
+
+    // ---- VBL / NMI timing (ppu_vbl_nmi) ------------------------------------
+
+    private static async Task AssertBlarggPasses(string rom, int maxFrames)
+    {
+        var run = NesTestRom.RunBlargg(rom, maxFrames);
+
+        Console.WriteLine(
+            $"{rom}: terminated={run.Terminated} code={run.Code} frames={run.Frames}\n{run.Text}");
+
+        await Assert.That(run.Passed).IsTrue();
+    }
+
+    [Test]
+    public Task VblNmi_01_VblBasics() =>
+        // Length of the VBL period, $2002 mirrored every 8 bytes, flag cleared
+        // on read, and the BG-off period.
+        AssertBlarggPasses("ppu_vbl_nmi/rom_singles/01-vbl_basics.nes", 600);
+
+    [Test]
+    public Task VblNmi_02_VblSetTime() =>
+        // The exact dot the VBL flag is set on, to 1-dot resolution - including
+        // the read one dot earlier that cancels the flag for the whole frame.
+        AssertBlarggPasses("ppu_vbl_nmi/rom_singles/02-vbl_set_time.nes", 600);
+
+    [Test]
+    public Task VblNmi_03_VblClearTime() =>
+        // The exact dot the VBL flag is cleared on.
+        AssertBlarggPasses("ppu_vbl_nmi/rom_singles/03-vbl_clear_time.nes", 600);
+
+    [Test]
+    public Task VblNmi_04_NmiControl() =>
+        // NMI when enabled while the flag is already set, $2000 mirroring, no
+        // second NMI from re-writing $80, "after the NEXT instruction".
+        AssertBlarggPasses("ppu_vbl_nmi/rom_singles/04-nmi_control.nes", 600);
+
+    [Test]
+    public Task VblNmi_05_NmiTiming() =>
+        // Delivery latency of the NMI relative to the instruction boundary.
+        AssertBlarggPasses("ppu_vbl_nmi/rom_singles/05-nmi_timing.nes", 600);
+
+    [Test]
+    public Task VblNmi_06_Suppression() =>
+        // Reading $2002 around the set dot: one dot early reads clear and kills
+        // the flag; on the dot or just after reads set but suppresses the NMI.
+        AssertBlarggPasses("ppu_vbl_nmi/rom_singles/06-suppression.nes", 600);
+
+    [Test]
+    public Task VblNmi_07_NmiOnTiming() =>
+        // Enabling NMI within a couple of dots of the flag being set.
+        AssertBlarggPasses("ppu_vbl_nmi/rom_singles/07-nmi_on_timing.nes", 600);
+
+    [Test]
+    public Task VblNmi_08_NmiOffTiming() =>
+        // Disabling NMI around the set dot - the /NMI pulse is then too short
+        // for the CPU's once-per-cycle edge detector to see.
+        AssertBlarggPasses("ppu_vbl_nmi/rom_singles/08-nmi_off_timing.nes", 600);
+
+    [Test]
+    public Task VblNmi_09_EvenOddFrames() =>
+        // Whether the odd field's pre-render dot is dropped, against the pattern
+        // of BG enables.
+        AssertBlarggPasses("ppu_vbl_nmi/rom_singles/09-even_odd_frames.nes", 600);
+
+    [Test]
+    public Task VblNmi_10_EvenOddTiming() =>
+        // Which PPU clock the drop decision samples the rendering bits on.
+        AssertBlarggPasses("ppu_vbl_nmi/rom_singles/10-even_odd_timing.nes", 900);
+
+    [Test]
+    public Task VblClearTime_Blargg2005() =>
+        // Coarse check that the VBL flag clears ~2270 CPU clocks after the NMI.
+        AssertBlargg2005Passes("blargg_ppu_tests_2005.09.15b/vbl_clear_time.nes");
 }

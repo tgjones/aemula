@@ -39,9 +39,7 @@ public sealed partial class NesSystem : EmulatedSystem
         _ram = new byte[0x0800];
         _ciram = new byte[0x0800];
 
-        // Reset CPU.
-        Cpu.Res = false;
-        Cpu.Res = true;
+        Reset();
     }
 
     /// <summary>
@@ -321,8 +319,11 @@ public sealed partial class NesSystem : EmulatedSystem
 
     public override void Reset()
     {
+        // /RES is common to both chips on the mainboard.
         Cpu.Res = false;
+        Ppu.Res = false;
         Cpu.Res = true;
+        Ppu.Res = true;
     }
 
     internal byte ReadChrRom(ushort address)

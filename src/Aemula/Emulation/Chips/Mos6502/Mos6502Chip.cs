@@ -59,6 +59,7 @@ public partial class Mos6502Chip
     private byte? _dataOutputRegister;
 
     private bool _nmiPin;
+    private bool _nmiPinLastSample;
     private bool _irqPin;
     private ushort _nmiCounter;
     private ushort _irqCounter;
@@ -106,6 +107,21 @@ public partial class Mos6502Chip
             {
                 // Transitioning from high to low.
                 // Will be executing instruction.
+
+                // NMI is edge-sensitive, but the edge detector is clocked: it
+                // compares the level it saw on the pin last cycle with the level
+                // it sees now, once per cycle. A /NMI pulse that starts and ends
+                // between two samples is therefore never seen at all - which is
+                // exactly what the NES's 08-nmi_off_timing measures, disabling
+                // the PPU's NMI output a fraction of a CPU cycle after the VBL
+                // flag pulled the line low. Sampling here rather than in the pin
+                // setter is also why this sits above the RDY check: a halted core
+                // still clocks its edge detector.
+                if (!_nmiPin && _nmiPinLastSample)
+                {
+                    _nmiCounter |= 1;
+                }
+                _nmiPinLastSample = _nmiPin;
 
                 // Real 6502 hardware only stalls on RDY during a read cycle
                 // - a cycle already in progress as a write always completes.
@@ -256,15 +272,9 @@ public partial class Mos6502Chip
     {
         // Exposed for testing, even though this is a write-only pin.
         internal get => _nmiPin;
-        set
-        {
-            // NMI is edge-sensitive (triggered by high-to-low transition).
-            if (!value && _nmiPin)
-            {
-                _nmiCounter |= 1;
-            }
-            _nmiPin = value;
-        }
+        // The edge detector runs off the per-cycle sample taken in Phi0's
+        // setter, so this only records the level.
+        set => _nmiPin = value;
     }
 
     public bool Irq
@@ -311,6 +321,7 @@ public partial class Mos6502Chip
         _resetPin = true;
         _brkFlags = BrkFlags.Reset;
         _nmiPin = true;
+        _nmiPinLastSample = true;
         _irqPin = true;
         _address = 0x00FF;
         _data = 0x00;

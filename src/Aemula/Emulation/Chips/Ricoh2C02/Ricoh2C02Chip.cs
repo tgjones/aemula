@@ -51,6 +51,28 @@ public sealed partial class Ricoh2C02Chip
     // one second" window and far past every refresh-then-check sequence.
     private const ulong OpenBusDecayCycles = 3_221_591;
 
+    // The even/odd field flip-flop, toggled once per frame and cleared by reset.
+    // Kept separate from Frames, which is a free-running counter the debugger and
+    // the test harnesses read.
+    private bool _oddField;
+
+    // Latched at (261, 338): whether this odd field drops its last pre-render dot.
+    private bool _skipPreRenderDot;
+
+    // R̄E̅S̅ and the post-reset warm-up. For roughly the first frame after reset the
+    // 2C02 ignores writes to $2000/$2001/$2005/$2006 - the internal registers are
+    // not writable until the chip has settled - so a program that pokes them
+    // straight out of reset gets nothing. Counted in dots; the figure the test
+    // suites pin it to is 29658 CPU clocks.
+    private bool _res = true;
+    private uint _warmUpDots;
+
+    private const uint WarmUpDots = 29658 * 3;
+
+    // Set when a $2002 read lands on the dot before the VBL flag would be set,
+    // cancelling the flag (and so the NMI) for that frame.
+    private bool _suppressVBlank;
+
     // Registers
     internal PpuCtrlRegister CtrlRegister;
     internal PpuMaskRegister MaskRegister;
@@ -92,7 +114,10 @@ public sealed partial class Ricoh2C02Chip
     private bool _ppuAle;
     private bool _ppuRd;
     private bool _ppuWr;
-    private bool _nmi;
+
+    // I̅N̅T̅ is active low and now only moves when UpdateNmi() says so, so it has
+    // to start out idle-high rather than at bool's default.
+    private bool _nmi = true;
 
     /// <summary>R/W̄ - CPU-bus read/write select (input).</summary>
     public bool CpuRw
@@ -139,6 +164,29 @@ public sealed partial class Ricoh2C02Chip
 
     /// <summary>I̅N̅T̅ - connected to the CPU's N̅M̅I̅ pin, active low (output).</summary>
     public bool Nmi => _nmi;
+
+    /// <summary>
+    /// R̄E̅S̅ - reset, active low (input). Clears the two control registers, the
+    /// $2005/$2006 write toggle, the $2007 read buffer and the even/odd field
+    /// flag, and starts the warm-up during which those registers ignore writes.
+    /// </summary>
+    public bool Res
+    {
+        set
+        {
+            if (_res == value)
+            {
+                return;
+            }
+
+            _res = value;
+
+            if (!value)
+            {
+                OnReset();
+            }
+        }
+    }
 
     /// <summary>
     /// D̄B̄Ē - data-bus enable / chip select, active low (input). Idle high; the
@@ -342,43 +390,59 @@ public sealed partial class Ricoh2C02Chip
 
         if (CurrentScanline == 241 && CurrentDot == 1)
         {
-            StatusRegister.VBlankStarted = true;
+            // A $2002 read in the ~1/3 CPU cycle before this dot wins the race:
+            // it reads the flag back clear and stops it being set at all for
+            // this frame (02-vbl_set_time / 06-suppression row 04).
+            StatusRegister.VBlankStarted = !_suppressVBlank;
+            _suppressVBlank = false;
+            UpdateNmi();
         }
         else if (CurrentScanline == 261 && CurrentDot == 1)
         {
             StatusRegister.VBlankStarted = false;
             StatusRegister.Sprite0Hit = false;
             StatusRegister.SpriteOverflow = false;
+            UpdateNmi();
         }
 
-        // Increment dot and scanline counters. With rendering enabled, odd frames
-        // drop the last dot of the pre-render line (scanline 261, dot 340),
-        // jumping straight from dot 339 to (0, 0). The shorter odd field shifts
-        // the dot<->subcarrier phase relationship every frame, matching real
-        // hardware; because the chroma phase counter free-runs, dropping the dot
-        // is all that is needed. Which frames count as "odd" is a calibration
-        // landmark for the Flawless2C02 comparison (step 6).
-        var renderingEnabled = MaskRegister.RenderBackground || MaskRegister.RenderSprites;
-        var skipLastDot =
-            CurrentScanline == 261 &&
-            CurrentDot == 339 &&
-            renderingEnabled &&
-            (Frames & 1) == 1;
+        // With rendering enabled, odd frames drop the last dot of the pre-render
+        // line (scanline 261, dot 340), jumping straight from dot 339 to (0, 0).
+        // The shorter odd field shifts the dot<->subcarrier phase relationship
+        // every frame, matching real hardware; because the chroma phase counter
+        // free-runs, dropping the dot is all that is needed. Which frames count
+        // as "odd" is a calibration landmark for the Flawless2C02 comparison
+        // (step 6).
+        //
+        // The rendering bits are sampled two dots before the dropped one rather
+        // than read at the drop: a $2001 write landing in the dot period before
+        // 339 is already too late to shorten this field (10-even_odd_timing
+        // tests 2 and 3, which bracket exactly this clock).
+        if (CurrentScanline == 261 && CurrentDot == 338)
+        {
+            _skipPreRenderDot =
+                _oddField &&
+                (MaskRegister.RenderBackground || MaskRegister.RenderSprites);
+        }
 
         CurrentDot++;
-        if (CurrentDot == 341 || skipLastDot)
+        if (CurrentDot == 341 || (CurrentDot == 340 && _skipPreRenderDot))
         {
+            _skipPreRenderDot = false;
             CurrentDot = 0;
             CurrentScanline++;
             if (CurrentScanline == 262)
             {
                 CurrentScanline = 0;
+                _oddField = !_oddField;
 
                 Frames++;
             }
         }
 
-        _nmi = !(StatusRegister.VBlankStarted && CtrlRegister.EnableNmi);
+        if (_warmUpDots != 0 && _res)
+        {
+            _warmUpDots--;
+        }
 
         Cycles++;
     }
@@ -408,6 +472,15 @@ public sealed partial class Ricoh2C02Chip
                     result = StatusRegister.Data.Value;
                     RefreshOpenBus(result, 0xE0);
                     StatusRegister.VBlankStarted = false;
+                    if (CurrentScanline == 241 && CurrentDot == 1)
+                    {
+                        // CurrentScanline / CurrentDot name the dot that has not
+                        // run yet, so this read is inside the dot period that
+                        // will set the VBL flag. Reading there beats the flag to
+                        // it: bit 7 comes back clear and the flag stays clear for
+                        // the whole frame.
+                        _suppressVBlank = true;
+                    }
                     _w = false;
                     break;
 
@@ -450,6 +523,15 @@ public sealed partial class Ricoh2C02Chip
             // Any PPU-register write drives all 8 open-bus bits to the written
             // value (ppu_open_bus 2), the read-only $2002 included.
             RefreshOpenBus(_cpuData, 0xFF);
+
+            // Writes the chip is not yet awake for are dropped on the floor -
+            // but they still drive the CPU data bus, so the open-bus refresh
+            // above stands.
+            if (_warmUpDots != 0 && _cpuAddress is
+                PpuCtrlAddress or PpuMaskAddress or PpuScrollAddress or PpuAddrAddress)
+            {
+                return;
+            }
 
             switch (_cpuAddress)
             {
@@ -528,6 +610,36 @@ public sealed partial class Ricoh2C02Chip
                     throw new ArgumentOutOfRangeException();
             }
         }
+
+        UpdateNmi();
+    }
+
+    private void OnReset()
+    {
+        CtrlRegister.Data.Value = 0;
+        MaskRegister.Data.Value = 0;
+        _w = false;
+        _ppuReadBuffer = 0;
+        _skipPreRenderDot = false;
+        _suppressVBlank = false;
+
+        CurrentScanline = 0;
+        CurrentDot = 0;
+        _oddField = false;
+
+        _warmUpDots = WarmUpDots;
+
+        UpdateNmi();
+    }
+
+    // I̅N̅T̅ is combinational: the PPU pulls it low for as long as the VBL flag
+    // ("NMI occurred") and $2000 bit 7 ("NMI output") are both set. It has to be
+    // recomputed the moment either changes - a register write or a $2002 read
+    // between two dots moves it just as a dot boundary does, and the CPU's edge
+    // detector is sampling three times per dot.
+    private void UpdateNmi()
+    {
+        _nmi = !(StatusRegister.VBlankStarted && CtrlRegister.EnableNmi);
     }
 
     // The open-bus value as it reads right now: any bit whose last drive-to-1
