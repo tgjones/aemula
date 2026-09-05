@@ -5,9 +5,12 @@ using Aemula.UI;
 
 namespace Aemula.Emulation.Systems.AppleI.Debugging;
 
-// Just enough to inspect the CPU and raw memory (see docs/apple-i-plan.md).
-// No ScreenDisplayWindow/LogicAnalyzerWindow/TelevisionWindow yet - those
-// need the video timing and composite video work that hasn't landed yet.
+// The CPU/memory views, plus the composite video picture through
+// TelevisionWindow now that AppleISystem drives Television for real (see
+// AppleISystem.CompositeVideo.cs). No ScreenDisplayWindow - unlike Apple II,
+// there's no DisplayBuffer here (see AppleISystem.Video.cs's remarks on the
+// read-side simplification); the composite picture is the only view. No
+// LogicAnalyzerWindow yet either.
 public sealed class AppleIDebugger : Debugger
 {
     private readonly AppleISystem _appleI;
@@ -50,5 +53,6 @@ public sealed class AppleIDebugger : Debugger
 
         result.Add(new BreakpointsWindow(this));
         result.Add(new MemoryEditor(1, address => _appleI.ReadByteDebug((ushort)address), (address, data) => _appleI.WriteByteDebug((ushort)address, data)));
+        result.Add(new TelevisionWindow(_appleI.Television));
     }
 }

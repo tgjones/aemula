@@ -66,6 +66,8 @@ public sealed partial class AppleISystem : EmulatedSystem
 
         Pia.Res = false;
         Pia.Res = true;
+
+        ResetCharacterMemory();
     }
 
     public override void LoadProgram(string filePath)
@@ -85,6 +87,8 @@ public sealed partial class AppleISystem : EmulatedSystem
 
         Pia.Res = false;
         Pia.Res = true;
+
+        ResetCharacterMemory();
     }
 
     public override void Tick()

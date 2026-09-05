@@ -70,6 +70,11 @@ public sealed partial class AppleISystem
 
     internal bool Phi0ForTests => _dotDivider < 7;
 
+    // The horizontal counters' reload target (see TickCounters below) - the
+    // first of the 65 character-times in a line, and so the start of
+    // AppleISystem.Video.cs's 40-character active window.
+    private const int HorizontalActiveStart = 95;
+
     private int HorizontalCount =>
         NibbleValue(_horizontalCounterHigh.Qa, _horizontalCounterHigh.Qb, _horizontalCounterHigh.Qc, _horizontalCounterHigh.Qd) * 10 +
         NibbleValue(_horizontalCounterLow.Qa, _horizontalCounterLow.Qb, _horizontalCounterLow.Qc, _horizontalCounterLow.Qd);
@@ -92,8 +97,13 @@ public sealed partial class AppleISystem
         if (characterRateRisingEdge)
         {
             DoCpuMemoryAccess();
+            TickVideo();
             TickCounters();
+            TickCharacterMemory();
         }
+
+        TickVideoDot();
+        TickCompositeVideo();
 
         _dotDivider++;
         if (_dotDivider == 14)

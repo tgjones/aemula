@@ -39,6 +39,13 @@ internal static class SystemSpecs
             TelevisionRow),
 
         new SystemSpec(
+            "applei",
+            static () => "", // LoadProgram ignores the path; the Monitor ROM is fixed
+            WarmupTicks: 240_000,          // ≈1 frame: past reset, into WozMon's idle prompt loop
+            TicksPerInvocation: 480_000,   // ≈2 frames
+            TelevisionRow),
+
+        new SystemSpec(
             "atari2600",
             Workloads.Atari2600Kernel,
             WarmupTicks: 120_000,          // ≈2 frames: past the RAM-clear loop, into steady raster

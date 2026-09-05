@@ -76,6 +76,14 @@ public class AppleIIBenchmark : SystemBenchmark
     public long Tick() => RunTicks();
 }
 
+public class AppleIBenchmark : SystemBenchmark
+{
+    private protected override string SystemName => "applei";
+
+    [Benchmark]
+    public long Tick() => RunTicks();
+}
+
 public class Atari2600Benchmark : SystemBenchmark
 {
     private protected override string SystemName => "atari2600";
