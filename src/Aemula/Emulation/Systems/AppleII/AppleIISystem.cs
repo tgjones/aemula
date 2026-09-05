@@ -29,8 +29,10 @@ public sealed partial class AppleIISystem : EmulatedSystem
     // Autostart Monitor + Applesoft BASIC, mapped at $D000-$FFFF.
     private readonly byte[] _rom = new byte[0x3000];
 
-    // Character generator ROM (Signetics 2513 / Apple 341-0036).
-    private readonly byte[] _characterRom = new byte[0x800];
+    // ICD2-equivalent character generator, a Signetics 2513 - shared with
+    // the Apple I (same physical chip, see Emulation/Chips/Roms/README.txt)
+    // rather than owning its own copy of the ROM data.
+    private readonly Signetics2513Chip _characterGenerator;
 
     // Decodes the CPU address bus for everything from $C000 up. Four
     // chained 74LS138s plus a hex inverter (Sather ch. 7, "Address Decoding
@@ -97,6 +99,9 @@ public sealed partial class AppleIISystem : EmulatedSystem
         _textVideoXor = new Ttl7486Chip();
         _invertTextLatch = new Ttl7474Chip();
 
+        _characterGenerator = Signetics2513Chip.Load();
+        _characterGenerator.ChipEnable = false; // Tied low - always enabled.
+
         _modeSwitchLatch = new Ttl74259Chip();
         _hiresVideoShiftRegister = new Ttl74166Chip();
 
@@ -123,11 +128,6 @@ public sealed partial class AppleIISystem : EmulatedSystem
         using (var romStream = File.OpenRead(Path.Combine(romsDirectory, "Apple2_Plus.rom")))
         {
             romStream.ReadExactly(_rom);
-        }
-
-        using (var characterRomStream = File.OpenRead(Path.Combine(romsDirectory, "Apple2_Video.rom")))
-        {
-            characterRomStream.ReadExactly(_characterRom);
         }
 
         // An optional override image for the $D000-$FFFF ROM space: a full 12K

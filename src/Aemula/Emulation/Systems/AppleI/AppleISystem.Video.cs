@@ -1,5 +1,4 @@
 using Aemula.Emulation.Chips;
-using Aemula.Emulation.Systems.AppleI.Roms;
 
 namespace Aemula.Emulation.Systems.AppleI;
 
@@ -16,7 +15,7 @@ namespace Aemula.Emulation.Systems.AppleI;
 // storage directly instead of through the 2519's serial output. The write
 // side (AppleISystem.CharacterMemory.cs) does not take this shortcut - it
 // only ever goes through the real chips' In/Out pins), then feeds the 2513
-// character generator's glyph data (Roms/CharacterGenerator.cs) through a
+// character generator (_characterGenerator, see AppleISystem.cs) through a
 // real Ttl74166Chip (ICD1) to produce one video dot per call.
 public sealed partial class AppleISystem
 {
@@ -41,25 +40,40 @@ public sealed partial class AppleISystem
         var column = HorizontalCount - HorizontalActiveStart;
         var active = column is >= 0 and < VisibleColumns && row < VisibleRows;
 
-        byte glyphRow = 0;
+        bool out1 = false, out2 = false, out3 = false, out4 = false, out5 = false;
 
         if (active)
         {
             var ringPosition = row * VisibleColumns + column;
             var code = PeekCharacterCode(ringPosition) & 0x3F;
             var scanline = VerticalCount % 8;
-            glyphRow = CharacterGenerator.Image[code * 8 + scanline];
+
+            _characterGenerator.Address4 = (code & 0x01) != 0;
+            _characterGenerator.Address5 = (code & 0x02) != 0;
+            _characterGenerator.Address6 = (code & 0x04) != 0;
+            _characterGenerator.Address7 = (code & 0x08) != 0;
+            _characterGenerator.Address8 = (code & 0x10) != 0;
+            _characterGenerator.Address9 = (code & 0x20) != 0;
+            _characterGenerator.Address1 = (scanline & 0x01) != 0;
+            _characterGenerator.Address2 = (scanline & 0x02) != 0;
+            _characterGenerator.Address3 = (scanline & 0x04) != 0;
+
+            out1 = _characterGenerator.Out1 == true;
+            out2 = _characterGenerator.Out2 == true;
+            out3 = _characterGenerator.Out3 == true;
+            out4 = _characterGenerator.Out4 == true;
+            out5 = _characterGenerator.Out5 == true;
         }
 
         // D..H = the 2513's 5-bit glyph row (D=O1..H=O5, per the schematic
         // wiring traced in AppleISystem.CharacterMemory.cs's header); A/B/C
         // are grounded on real hardware, giving 3 dots of inter-character
         // spacing after the 5 glyph dots.
-        _pixelShiftRegister.H = (glyphRow & 0x10) != 0;
-        _pixelShiftRegister.G = (glyphRow & 0x08) != 0;
-        _pixelShiftRegister.F = (glyphRow & 0x04) != 0;
-        _pixelShiftRegister.E = (glyphRow & 0x02) != 0;
-        _pixelShiftRegister.D = (glyphRow & 0x01) != 0;
+        _pixelShiftRegister.H = out5;
+        _pixelShiftRegister.G = out4;
+        _pixelShiftRegister.F = out3;
+        _pixelShiftRegister.E = out2;
+        _pixelShiftRegister.D = out1;
         _pixelShiftRegister.C = false;
         _pixelShiftRegister.B = false;
         _pixelShiftRegister.A = false;

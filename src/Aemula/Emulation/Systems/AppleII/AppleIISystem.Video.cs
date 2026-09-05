@@ -273,26 +273,32 @@ public sealed partial class AppleIISystem
         // screen byte select one of 64 glyphs; VA-VC - the sub-scanline
         // counter, distinct from the V0-V2 already folded into the DRAM
         // address above - select which of its 8 rows.
-        var charRomAddress =
-            ((screenByte & 0x3F) << 3) |
-            (VC ? 1 << 2 : 0) |
-            (VB ? 1 << 1 : 0) |
-            (VA ? 1 << 0 : 0);
-        var glyphRow = _characterRom[charRomAddress];
+        _characterGenerator.Address4 = (screenByte & 0x01) != 0;
+        _characterGenerator.Address5 = (screenByte & 0x02) != 0;
+        _characterGenerator.Address6 = (screenByte & 0x04) != 0;
+        _characterGenerator.Address7 = (screenByte & 0x08) != 0;
+        _characterGenerator.Address8 = (screenByte & 0x10) != 0;
+        _characterGenerator.Address9 = (screenByte & 0x20) != 0;
+        _characterGenerator.Address1 = VA;
+        _characterGenerator.Address2 = VB;
+        _characterGenerator.Address3 = VC;
 
-        // Parallel-load the ROM's 7 dot bits, MSB (bit 6) first - Sather
-        // p.8-30 is explicit that the TEXT ROM shifts out most-significant
-        // bit first. Real hardware spreads this load-then-shift across the
-        // 7 dot clocks of one character time; collapsed into one step here,
-        // the same simplification already used for LDPS' above (it isn't
+        // Parallel-load the ROM's dot bits, MSB first - Sather p.8-30 is
+        // explicit that the TEXT ROM shifts out most-significant bit first.
+        // Real hardware spreads this load-then-shift across the 7 dot
+        // clocks of one character time; collapsed into one step here, the
+        // same simplification already used for LDPS' above (it isn't
         // visible in the rendered raster, only in internal signal timing).
-        _textVideoShiftRegister.H = (glyphRow & 0x40) != 0;
-        _textVideoShiftRegister.G = (glyphRow & 0x20) != 0;
-        _textVideoShiftRegister.F = (glyphRow & 0x10) != 0;
-        _textVideoShiftRegister.E = (glyphRow & 0x08) != 0;
-        _textVideoShiftRegister.D = (glyphRow & 0x04) != 0;
-        _textVideoShiftRegister.C = (glyphRow & 0x02) != 0;
-        _textVideoShiftRegister.B = (glyphRow & 0x01) != 0;
+        // A and H are grounded on real hardware (the 2513 only drives 5 of
+        // the cell's 7 dot positions - see Signetics2513Chip), giving a
+        // blank spacer column on each side of the glyph.
+        _textVideoShiftRegister.H = false;
+        _textVideoShiftRegister.G = _characterGenerator.Out5 == true;
+        _textVideoShiftRegister.F = _characterGenerator.Out4 == true;
+        _textVideoShiftRegister.E = _characterGenerator.Out3 == true;
+        _textVideoShiftRegister.D = _characterGenerator.Out2 == true;
+        _textVideoShiftRegister.C = _characterGenerator.Out1 == true;
+        _textVideoShiftRegister.B = false;
         _textVideoShiftRegister.A = false;
         _textVideoShiftRegister.ShLd = false;
         PulseShiftRegister();

@@ -40,6 +40,12 @@ public sealed partial class AppleISystem : EmulatedSystem
     // top instance of that mirroring, not a separately decoded range.
     private readonly byte[] _rom = WozMonitor.Image;
 
+    // ICD2: the character generator, a Signetics 2513 - see
+    // Emulation/Chips/Roms/README.txt for why this is a shared chip class
+    // rather than data private to this system (the Apple II sockets the
+    // literal same physical part).
+    private readonly Signetics2513Chip _characterGenerator;
+
     public readonly Mos6820Chip Pia;
 
     // ICB9: the chip-select generator - a single 4-to-16 decoder over
@@ -53,6 +59,9 @@ public sealed partial class AppleISystem : EmulatedSystem
         Cpu = new Mos6502Chip(Mos6502Options.Default);
         Pia = new Mos6820Chip();
         _chipSelectDecoder = new Ttl74154Chip();
+
+        _characterGenerator = Signetics2513Chip.Load();
+        _characterGenerator.ChipEnable = false; // Tied low - always enabled.
 
         _horizontalCounterLow = new Ttl74160Chip();
         _horizontalCounterHigh = new Ttl74161Chip();
