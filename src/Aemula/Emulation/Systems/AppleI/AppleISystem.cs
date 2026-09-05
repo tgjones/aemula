@@ -7,10 +7,9 @@ using Aemula.Emulation.Systems.AppleI.Roms;
 
 namespace Aemula.Emulation.Systems.AppleI;
 
-// No video timing yet (see docs/apple-i-plan.md's "Composite video" section)
-// - the CPU, its 8K of DRAM, the Monitor ROM, and the PIA are wired through
-// the real address-decode chain, but the PIA's display-side handshake lines
-// (CB2, and the keyboard side PA/CA1) are left at their power-on levels.
+// The PIA's display-side handshake lines (CB2, and the keyboard side
+// PA/CA1) are left at their power-on levels - no character memory or
+// keyboard wiring yet.
 public sealed partial class AppleISystem : EmulatedSystem
 {
     // The board's master oscillator: 4x the NTSC colour subcarrier
@@ -49,21 +48,18 @@ public sealed partial class AppleISystem : EmulatedSystem
     // Y15 (jumper Y) the ROM; the rest are unpopulated expansion blocks.
     private readonly Ttl74154Chip _chipSelectDecoder;
 
-    // Stands in for the real video-timing counter chain (ICD6-ICD9/ICD11/
-    // ICD15, not built yet - see the plan's "Composite video" section) that
-    // will eventually derive CLK0 from the crystal. The ratio itself is
-    // exact - 14.31818MHz / 14 is precisely 2/7 of the subcarrier, i.e. the
-    // 6502's real 1.022727MHz - so the CPU already runs at the right rate,
-    // even though the square wave's shape isn't yet the schematic's real
-    // one.
-    private byte _masterClockCounter;
-    private bool _lastPhase0;
-
     public AppleISystem()
     {
         Cpu = new Mos6502Chip(Mos6502Options.Default);
         Pia = new Mos6820Chip();
         _chipSelectDecoder = new Ttl74154Chip();
+
+        _horizontalCounterLow = new Ttl74160Chip();
+        _horizontalCounterHigh = new Ttl74161Chip();
+        _characterAddressLow = new Ttl74161Chip();
+        _characterAddressHigh = new Ttl74161Chip();
+        _verticalCounterLow = new Ttl74161Chip();
+        _verticalCounterHigh = new Ttl74161Chip();
 
         Cpu.Res = false;
         Cpu.Res = true;
@@ -93,28 +89,10 @@ public sealed partial class AppleISystem : EmulatedSystem
 
     public override void Tick()
     {
-        var phase0 = _masterClockCounter < 7;
-        var phase0RisingEdge = phase0 && !_lastPhase0;
-        _lastPhase0 = phase0;
-
-        Cpu.Phi0 = phase0;
-
-        // Only touch the bus once per CPU cycle, right as the new cycle's
-        // address (set at the previous falling edge) and, for a write, data
-        // (committed by Cpu.Phi0's own rising-edge handling, just above)
-        // are both already stable - not on every master tick, which would
-        // let the PIA's falling-edge write commit land a half-cycle early,
-        // before Cpu.Data catches up to the byte actually being stored.
-        if (phase0RisingEdge)
-        {
-            DoCpuMemoryAccess();
-        }
-
-        _masterClockCounter++;
-        if (_masterClockCounter == 14)
-        {
-            _masterClockCounter = 0;
-        }
+        // Drives Cpu.Phi0 off the real horizontal/vertical counter chain and,
+        // on its rising edge, calls DoCpuMemoryAccess() - see
+        // AppleISystem.VideoTiming.cs.
+        TickVideoTiming();
     }
 
     private void DoCpuMemoryAccess()
