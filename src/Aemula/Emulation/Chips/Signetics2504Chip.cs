@@ -53,12 +53,13 @@ public sealed class Signetics2504Chip
 
     internal void Clear() => Array.Clear(_bits);
 
-    // Direct access into the ring, used only by AppleISystem's video-draw
-    // code as a tractable stand-in for literally re-deriving a character's
-    // position by counting recirculation cycles from the read side (which
-    // the real hardware's 2519 line buffer exists to do, and which this
-    // codebase doesn't reproduce cycle-for-cycle - see
-    // AppleISystem.CharacterMemory.cs). The write side never uses this; it
-    // only ever goes through In/Out, exactly like the real chip.
+    // Test-only introspection - AppleISystem.Video.cs no longer needs this
+    // (it now reads the real Signetics2519Chip line buffer's Out pins,
+    // clocked and recirculate-controlled by the actual traced schematic
+    // signals - see AppleISystem.CharacterMemory.cs). Kept for
+    // AppleISystemCharacterMemoryTests, which needs to inspect a specific
+    // ring position directly to confirm the write side landed the right
+    // bits. The write side itself never calls this; it only ever goes
+    // through In/Out, exactly like the real chip.
     internal bool Peek(int ringPosition) => _bits[ringPosition];
 }

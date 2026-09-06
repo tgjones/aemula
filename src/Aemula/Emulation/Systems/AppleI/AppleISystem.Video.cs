@@ -2,21 +2,12 @@ using Aemula.Emulation.Chips;
 
 namespace Aemula.Emulation.Systems.AppleI;
 
-// Text video: reads the current screen position's character code straight
-// out of the character-memory rings (see AppleISystem.CharacterMemory.cs -
-// this is the one deliberate fidelity gap in this phase: real hardware can
-// only ever see "whichever bit is at OUT right now", so it needs the 2519
-// line buffer to hold one row static across the 8 scanlines that redraw it;
-// working out the real relationship between the 2519's own clock and the
-// character rings' clock - so that the 2519 is being reloaded on exactly
-// the right scanline and otherwise recirculating its own held content -
-// wasn't resolved from the rendered schematic tiles in the time available.
-// Peek(ringPosition) sidesteps that puzzle by reading the character rings'
-// storage directly instead of through the 2519's serial output. The write
-// side (AppleISystem.CharacterMemory.cs) does not take this shortcut - it
-// only ever goes through the real chips' In/Out pins), then feeds the 2513
-// character generator (_characterGenerator, see AppleISystem.cs) through a
-// real Ttl74166Chip (ICD1) to produce one video dot per call.
+// Text video: reads the current character code straight off the real 2519
+// line buffer's OUT pins (see AppleISystem.CharacterMemory.cs.TickLineBufferClock
+// for how its Recirculate/Clock pins are driven from the traced schematic
+// signals LINE0/LINE7), then feeds the 2513 character generator
+// (_characterGenerator, see AppleISystem.cs) through a real Ttl74166Chip
+// (ICD1) to produce one video dot per call.
 public sealed partial class AppleISystem
 {
     private readonly Ttl74166Chip _pixelShiftRegister = new();
@@ -44,16 +35,14 @@ public sealed partial class AppleISystem
 
         if (active)
         {
-            var ringPosition = row * VisibleColumns + column;
-            var code = PeekCharacterCode(ringPosition) & 0x3F;
             var scanline = VerticalCount % 8;
 
-            _characterGenerator.Address4 = (code & 0x01) != 0;
-            _characterGenerator.Address5 = (code & 0x02) != 0;
-            _characterGenerator.Address6 = (code & 0x04) != 0;
-            _characterGenerator.Address7 = (code & 0x08) != 0;
-            _characterGenerator.Address8 = (code & 0x10) != 0;
-            _characterGenerator.Address9 = (code & 0x20) != 0;
+            _characterGenerator.Address4 = _lineBuffer.Out1;
+            _characterGenerator.Address5 = _lineBuffer.Out2;
+            _characterGenerator.Address6 = _lineBuffer.Out3;
+            _characterGenerator.Address7 = _lineBuffer.Out4;
+            _characterGenerator.Address8 = _lineBuffer.Out5;
+            _characterGenerator.Address9 = _lineBuffer.Out6;
             _characterGenerator.Address1 = (scanline & 0x01) != 0;
             _characterGenerator.Address2 = (scanline & 0x02) != 0;
             _characterGenerator.Address3 = (scanline & 0x04) != 0;

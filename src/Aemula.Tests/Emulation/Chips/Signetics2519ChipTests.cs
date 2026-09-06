@@ -47,4 +47,32 @@ public class Signetics2519ChipTests
         await Assert.That(chip.Out5).IsFalse();
         await Assert.That(chip.Out6).IsTrue();
     }
+
+    // Per the real Signetics 2518/2519 datasheet's truth table: Recirculate=1
+    // holds/recirculates a channel's own last bit regardless of In, ignoring
+    // whatever's on In entirely.
+    [Test]
+    public async Task RecirculateHoldsExistingDataRegardlessOfIn()
+    {
+        var chip = new Signetics2519Chip { In3 = true };
+        Pulse(chip);
+        chip.In3 = false;
+
+        for (var i = 0; i < 39; i++)
+        {
+            Pulse(chip);
+        }
+
+        await Assert.That(chip.Out3).IsTrue();
+
+        chip.Recirculate = true;
+        chip.In3 = true;
+
+        for (var i = 0; i < 40; i++)
+        {
+            Pulse(chip);
+        }
+
+        await Assert.That(chip.Out3).IsTrue();
+    }
 }

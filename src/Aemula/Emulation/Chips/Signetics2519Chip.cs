@@ -4,10 +4,15 @@ namespace Aemula.Emulation.Chips;
 
 /// <summary>
 /// 40-position, 6-bit-wide recirculating shift register - six independent
-/// 40-bit rings sharing one clock. Unlike <see cref="Signetics2504Chip"/>'s
-/// pair of external clock phases, the 2519 generates its own internal
-/// two-phase timing from a single external RC/CLK pair, so this model
-/// exposes just one clock pin.
+/// 40-bit rings sharing one clock and one <see cref="Recirculate"/> control.
+/// Confirmed from the real Signetics 2518/2519 datasheet: pin 6 ("Clock") is
+/// a plain per-bit shift clock, not an internal oscillator, and pin 4
+/// ("Recirculate") is a dedicated control shared by all six channels - "RC"
+/// as some schematics abbreviate that pin is short for Recirculate, not a
+/// resistor-capacitor timing network (a mistake this class's docs used to
+/// make). Per the datasheet's truth table, Recirculate=1 holds/recirculates
+/// each channel's own last bit on the next clock edge regardless of its In
+/// pin; Recirculate=0 writes In instead.
 /// </summary>
 public sealed class Signetics2519Chip
 {
@@ -26,6 +31,8 @@ public sealed class Signetics2519Chip
     public bool In4 { private get; set; }
     public bool In5 { private get; set; }
     public bool In6 { private get; set; }
+
+    public bool Recirculate { private get; set; }
 
     public bool Out1 => _bits1[Length - 1];
     public bool Out2 => _bits2[Length - 1];
@@ -58,9 +65,10 @@ public sealed class Signetics2519Chip
         }
     }
 
-    private static void Shift(bool[] bits, bool input)
+    private void Shift(bool[] bits, bool input)
     {
+        var recirculated = bits[Length - 1];
         Array.Copy(bits, 0, bits, 1, Length - 1);
-        bits[0] = input;
+        bits[0] = Recirculate ? recirculated : input;
     }
 }

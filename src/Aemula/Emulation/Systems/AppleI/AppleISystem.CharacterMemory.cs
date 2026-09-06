@@ -54,12 +54,25 @@ public sealed partial class AppleISystem
     private readonly Signetics2504Chip _cursorBit = new();
 
     // ICC3 - buffers the 40 character codes of whatever row the character-
-    // code bit-planes are currently outputting. Wired for real (its IN pins
-    // do follow the character bits' OUT pins, matching the schematic), but
-    // nothing currently reads its own OUT pins back out - see
-    // AppleISystem.Video.cs for why the video draw path reads the character
-    // bit-plane rings directly instead.
+    // code bit-planes most recently output. Its IN pins follow the
+    // character bits' OUT pins (matching the schematic), and its own
+    // Recirculate/Clock pins are driven for real below by TickLineBufferClock
+    // - AppleISystem.Video.cs reads its OUT pins directly, the same way the
+    // real 2513 character generator's A4-A9 address pins do.
     private readonly Signetics2519Chip _lineBuffer = new();
+
+    // ICD11 - a free-running 74161 that produces the fast "CL" bit combined
+    // into LINE0 below. Confirmed from the schematic: CET/CEP/PE (the 74161's
+    // ENT/ENP/LOAD-bar) are all tied to its own weight-8 output (Qd), and
+    // P0/P2 are grounded while P1/P3 are left floating (floating TTL inputs
+    // pull high), giving preset 1010 = 10 - so it self-reloads to 10
+    // whenever it counts past 15 (wraps to 0, at which point Qd=0 forces the
+    // reload on the next edge), cycling 10,11,12,13,14,15,0 - a 7-character-
+    // time period. Real hardware clocks it from ICD1.QH (the pixel shift
+    // register's own last stage, pulsing once per character-time); clocking
+    // it once per TickCharacterMemory call here is equivalent, since that's
+    // already gated to the same characterRateRisingEdge.
+    private readonly Ttl74161Chip _lineBufferClockCounter = new();
 
     // ICC11A - two-phase clock driver for the whole bank above. Its two
     // channels invert (see Ds0025Chip's remarks); that inversion has no
@@ -181,6 +194,7 @@ public sealed partial class AppleISystem
         _lineBuffer.In5 = _characterBits[4].Out;
         _lineBuffer.In6 = _characterBits[5].Out;
 
+        TickLineBufferClock();
         PulseCharacterMemoryClock();
 
         if (commitWrite)
@@ -221,9 +235,47 @@ public sealed partial class AppleISystem
         _shiftClockDriver.In2 = false;
         SetPhase1(_shiftClockDriver.Out1);
         SetPhase2(_shiftClockDriver.Out2);
+    }
 
-        _lineBuffer.Clk = false;
-        _lineBuffer.Clk = true;
+    // ICC3's own Recirculate(pin4)/Clock(pin6) control, confirmed from the
+    // schematic: Recirculate = net "LINE 7" = NAND(V0,V1,V2) - active
+    // (recirculate/hold) except when the scanline-within-row count is 7, so
+    // the line buffer only writes fresh data during a row's *last* scanline,
+    // preloading the *next* row one scanline early (avoiding the 40-clock
+    // pipeline delay a same-row load would cause). Clock = net "LINE0" =
+    // NAND(HBL, CL), where HBL is ICD7's own weight-4 output
+    // (_horizontalCounterHigh.Qc, already modelled by the horizontal
+    // counter) and CL is _lineBufferClockCounter's weight-4 output above.
+    //
+    // V0-V2 (real hardware's ICD8, the scanline-within-row counter) are
+    // stood in for here by VerticalCount's own low 3 bits rather than a
+    // separate counter object: both are plain "advance once per line"
+    // binary counters, so which one supplies the low 3 bits doesn't change
+    // their cycling. What this equivalence does NOT capture is the exact
+    // frame-boundary moment real hardware resets the row-within-frame count:
+    // that reset is gated by a /WC1-and-/VBL condition (ICC9:C) that reaches
+    // into the write-cursor commit state machine (ICC7/ICC8:A/ICC12/ICC13),
+    // which wasn't traced to completion. TODO: revisit once that write-
+    // cursor logic gets studied more - for now VerticalCount's own mod-256
+    // wraparound stands in, and may not land on the exact same frame
+    // boundary real hardware does.
+    private void TickLineBufferClock()
+    {
+        var hbl = _horizontalCounterHigh.Qc;
+
+        _lineBufferClockCounter.A = false;
+        _lineBufferClockCounter.B = true;
+        _lineBufferClockCounter.C = false;
+        _lineBufferClockCounter.D = true;
+        _lineBufferClockCounter.Enp = _lineBufferClockCounter.Qd;
+        _lineBufferClockCounter.Ent = _lineBufferClockCounter.Qd;
+        _lineBufferClockCounter.Load = _lineBufferClockCounter.Qd;
+        PulseClock(_lineBufferClockCounter);
+
+        var cl = _lineBufferClockCounter.Qc;
+
+        _lineBuffer.Recirculate = (VerticalCount % 8) != 7;
+        _lineBuffer.Clk = !(hbl && cl);
     }
 
     private void SetPhase1(bool value)
@@ -244,17 +296,20 @@ public sealed partial class AppleISystem
         _cursorBit.Phi2 = value;
     }
 
-    // See AppleISystem.Video.cs. logicalPosition is a ring position in the
-    // same sense _ringPosition is - "whichever position was at the write
-    // point on the character-time this data was (or would be) committed" -
-    // not a fixed array slot: a genuinely recirculating register has no
-    // such thing, since Signetics2504Chip.Phi2 physically moves every bit
-    // one array slot on every clock. A bit written while _ringPosition read
-    // L is at array index ((current _ringPosition) - 1 - L) mod 1024 - 0
-    // the tick right after it's written, all the way up to 1023 (Out) one
-    // full rotation later, which is what makes L a stable enough concept to
-    // call a "position" at all.
-    internal byte PeekCharacterCode(int logicalPosition)
+    // Test-only introspection (see Signetics2504Chip.Peek's own remarks) -
+    // AppleISystem.Video.cs no longer needs this, since it now reads the
+    // real 2519 line buffer's OUT pins instead of peeking the character
+    // rings by position. logicalPosition is a ring position in the same
+    // sense _ringPosition is - "whichever position was at the write point
+    // on the character-time this data was (or would be) committed" - not a
+    // fixed array slot: a genuinely recirculating register has no such
+    // thing, since Signetics2504Chip.Phi2 physically moves every bit one
+    // array slot on every clock. A bit written while _ringPosition read L is
+    // at array index ((current _ringPosition) - 1 - L) mod 1024 - 0 the tick
+    // right after it's written, all the way up to 1023 (Out) one full
+    // rotation later, which is what makes L a stable enough concept to call
+    // a "position" at all.
+    internal byte PeekCharacterCodeForTests(int logicalPosition)
     {
         var arrayIndex = ((_ringPosition - 1 - logicalPosition) % 1024 + 1024) % 1024;
 

@@ -57,7 +57,7 @@ public class AppleISystemCharacterMemoryTests
         for (var i = 0; i < 60_000 && !committed; i++)
         {
             system.Tick();
-            committed = system.PeekCharacterCode(0) != 0;
+            committed = system.PeekCharacterCodeForTests(0) != 0;
         }
 
         await Assert.That(committed).IsTrue();
@@ -67,7 +67,7 @@ public class AppleISystemCharacterMemoryTests
         // masking (only PB0-PB6 are wired as outputs) - whatever 6-of-7
         // bits made it into the character rings should be non-zero and
         // stable once committed.
-        var code = system.PeekCharacterCode(0);
+        var code = system.PeekCharacterCodeForTests(0);
         await Assert.That(code).IsNotEqualTo((byte)0);
     }
 
@@ -93,7 +93,7 @@ public class AppleISystemCharacterMemoryTests
         {
             wasCursorOutBeforeCommit = system.CursorOutForTests;
             system.Tick();
-            committed = system.PeekCharacterCode(0) != 0;
+            committed = system.PeekCharacterCodeForTests(0) != 0;
         }
 
         await Assert.That(committed).IsTrue();
