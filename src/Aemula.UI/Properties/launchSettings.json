@@ -2,6 +2,10 @@
   "profiles": {
     "Aemula.UI": {
       "commandName": "Project",
+      "commandLineArgs": "applei"
+    },
+    "Aemula.UI (seed system + file)": {
+      "commandName": "Project",
       "commandLineArgs": "spaceinvaders"
     }
   }
