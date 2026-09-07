@@ -12,10 +12,10 @@ public sealed partial class AppleISystem
 {
     private readonly Ttl74166Chip _pixelShiftRegister = new();
 
-    // 40x24 - no scroll yet (see
-    // AppleISystem.CharacterMemory.cs's _ringPosition remarks): once the
-    // cursor passes the last position it wraps back to the top-left rather
-    // than scrolling the screen up.
+    // 40x24. No scroll yet: once the cursor passes the last position it
+    // wraps back to the top-left rather than scrolling the screen up (the
+    // ICD8/ICD9 reload that drives scrolling isn't wired - see
+    // AppleISystem.VideoTiming.cs).
     private const int VisibleColumns = 40;
     private const int VisibleRows = 24;
 
@@ -35,7 +35,7 @@ public sealed partial class AppleISystem
 
         if (active)
         {
-            var scanline = VerticalCount % 8;
+            var scanline = GlyphRow;
 
             _characterGenerator.Address4 = _lineBuffer.Out1;
             _characterGenerator.Address5 = _lineBuffer.Out2;

@@ -65,10 +65,8 @@ public sealed partial class AppleISystem : EmulatedSystem
 
         _horizontalCounterLow = new Ttl74160Chip();
         _horizontalCounterHigh = new Ttl74161Chip();
-        _characterAddressLow = new Ttl74161Chip();
-        _characterAddressHigh = new Ttl74161Chip();
-        _verticalCounterLow = new Ttl74161Chip();
-        _verticalCounterHigh = new Ttl74161Chip();
+        _lineCounterLow = new Ttl74161Chip();
+        _lineCounterHigh = new Ttl74161Chip();
 
         Cpu.Res = false;
         Cpu.Res = true;

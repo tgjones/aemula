@@ -97,6 +97,60 @@ public class AppleISystemVideoTimingTests
     }
 
     [Test]
+    public async Task CharacterRingCompletesExactlyOneRotationPerFrame()
+    {
+        var system = new AppleISystem();
+        system.LoadProgram("");
+
+        // Run past the counters' power-up transient (they start at 0, not
+        // their presets, so the first frame is irregular).
+        for (var i = 0; i < MasterTicksPerLine * 256 * 2; i++)
+        {
+            system.Tick();
+        }
+
+        // Align to a VSync rising edge - the frame boundary.
+        var lastVSync = system.VSync;
+        while (true)
+        {
+            system.Tick();
+            if (system.VSync && !lastVSync)
+            {
+                break;
+            }
+            lastVSync = system.VSync;
+        }
+
+        var startRingPosition = system.RingPositionForTests;
+        var shifts = 0;
+        var lastRingPosition = startRingPosition;
+        lastVSync = system.VSync;
+
+        // Count ring advances until the next VSync rising edge (one frame).
+        while (true)
+        {
+            system.Tick();
+
+            var ringPosition = system.RingPositionForTests;
+            if (ringPosition != lastRingPosition)
+            {
+                shifts++;
+                lastRingPosition = ringPosition;
+            }
+
+            if (system.VSync && !lastVSync)
+            {
+                break;
+            }
+            lastVSync = system.VSync;
+        }
+
+        // Exactly one 1024-place rotation, landing back where it started.
+        await Assert.That(shifts).IsEqualTo(1024);
+        await Assert.That(system.RingPositionForTests).IsEqualTo(startRingPosition);
+    }
+
+    [Test]
     public async Task VSyncPulsesOnceEveryTwoHundredFiftySixLines()
     {
         var system = new AppleISystem();

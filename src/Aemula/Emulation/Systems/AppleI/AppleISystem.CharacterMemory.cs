@@ -80,6 +80,37 @@ public sealed partial class AppleISystem
     // pulses ever reads Out1/Out2.
     private readonly Ds0025Chip _shiftClockDriver = new();
 
+    // The MEM0 gate chain (ICC5:A/ICD10:B/ICC10:C/ICB2:B) that decides which
+    // character-times the recirculating rings actually shift on, replacing
+    // an unconditional shift every character-time. MEM0 works out to exactly
+    // 1024 asserted character-times per frame - one full ring rotation:
+    //  * 40 per row on each glyph's last scanline, across the 24 visible
+    //    rows  (960), plus
+    //  * 8 per line on the 8 blanked glyph-rows whose V0-V2 count still
+    //    reads "last scanline"  (64).
+    //
+    // ICB2:B (7410): _S1_97 = NAND(V0,V1,V2) - low only on a glyph row's
+    // last scanline. Also the 2519 line buffer's Recirculate control
+    // (ICC3.4), so it's wired once and read by both.
+    private readonly Ttl7410Chip _glyphRowLastLineGate = new();
+
+    // ICD10:B (7400): LINE0 = NAND(H6, CL). H6 (ICD7's weight-4 output) is
+    // the 40-character active window. CL is ICD11's dot-rate strobe that
+    // chops that window into 40 discrete column clocks; evaluated once per
+    // character-time it is always mid-strobe, so it's tied high here. Its
+    // only other consumer, the 2519's own clock, still gets a real edge per
+    // character-time from TickLineBufferClock.
+    private readonly Ttl7400Chip _line0Gate = new();
+
+    // ICC10:C (7402): _S1_0 = NOR(ICD6.Qd, /VBL). During active video /VBL
+    // is high so _S1_0 is 0 and doesn't gate MEM0; during vertical blank it
+    // follows !ICD6.Qd, which is what trims the blanked-row contribution to
+    // 8 character-times per line.
+    private readonly Ttl7402Chip _memBlankingGate = new();
+
+    // ICC5:A (7427): MEM0 = NOR(_S1_0, LINE0, _S1_97).
+    private readonly Ttl7427Chip _memClockGate = new();
+
     // ICC4 (four channels, driving the first four character bit-planes) and
     // ICC14 (two of its four channels, driving the remaining two - the
     // other two are the schematic's cursor-clear channel, reproduced
@@ -115,8 +146,8 @@ public sealed partial class AppleISystem
     // know "the bit at Out right now"; this just names which of the 1024
     // ring positions that bit is, so AppleISystem.Video.cs's simplified
     // direct-index read (see that file) can find the same character a write
-    // here just landed on. Wraps without scrolling - see that file's remarks
-    // on the scroll gap.
+    // here just landed on. Advanced only on a real MEM0-gated shift (see
+    // ShiftCharacterRings), so it completes exactly one rotation per frame.
     private int _ringPosition;
 
     internal bool CursorOutForTests => _cursorBit.Out;
@@ -148,6 +179,12 @@ public sealed partial class AppleISystem
 
     private void TickCharacterMemory()
     {
+        // MEM0 (ICC5:A) - the ring shift clock. The write mux select and the
+        // ring recirculation are the same clocked event on real hardware, so
+        // a pending character can only be committed on a character-time the
+        // rings are actually shifting.
+        var ringClock = EvaluateRingClock();
+
         var cb2 = Pia.Cb2;
         if (_lastCb2 && !cb2)
         {
@@ -156,7 +193,7 @@ public sealed partial class AppleISystem
         _lastCb2 = cb2;
 
         var cursorHere = _cursorBit.Out;
-        var commitWrite = _pendingWrite && cursorHere;
+        var commitWrite = ringClock && _pendingWrite && cursorHere;
         var writeBar = !commitWrite;
 
         _writeMuxA.G = false;
@@ -195,7 +232,11 @@ public sealed partial class AppleISystem
         _lineBuffer.In6 = _characterBits[5].Out;
 
         TickLineBufferClock();
-        PulseCharacterMemoryClock();
+
+        if (ringClock)
+        {
+            ShiftCharacterRings();
+        }
 
         if (commitWrite)
         {
@@ -213,18 +254,49 @@ public sealed partial class AppleISystem
         }
 
         Pia.PB = (byte)(_pendingWrite ? 0x80 : 0x00);
-
-        _ringPosition = (_ringPosition + 1) % 1024;
     }
 
     private bool ReadCharacterDataBit(int index) =>
         (Pia.PortB & (1 << CharacterDataPiaBit[index])) != 0;
 
-    // Routed through the real Ds0025Chip so its inversion (see that class's
-    // remarks) is actually load-bearing here, not just instantiated and
-    // ignored: driving its inputs high-then-low is what produces the
-    // rising edge on Phi1/Phi2 that the 2504s shift on.
-    private void PulseCharacterMemoryClock()
+    // ICB2:B (7410): _S1_97 = NAND(V0,V1,V2), high except on a glyph row's
+    // last scanline (V0=V1=V2=1). Feeds both the ring clock (MEM0) and the
+    // 2519 line buffer's Recirculate pin.
+    private bool GlyphRowLastScanlineBar()
+    {
+        _glyphRowLastLineGate.A1 = _lineCounterLow.Qa; // V0
+        _glyphRowLastLineGate.B1 = _lineCounterLow.Qb; // V1
+        _glyphRowLastLineGate.C1 = _lineCounterLow.Qc; // V2
+        return _glyphRowLastLineGate.Y1;
+    }
+
+    // MEM0 = NOR(_S1_0, LINE0, _S1_97) - the ring shift clock, asserted for
+    // exactly 1024 character-times per frame (see the _memClockGate field
+    // remarks).
+    private bool EvaluateRingClock()
+    {
+        // LINE0 = NAND(H6, CL); CL tied high (see _line0Gate remarks).
+        _line0Gate.A1 = _horizontalCounterHigh.Qc; // H6 - 40-character window
+        _line0Gate.B1 = true;                       // CL
+
+        // _S1_0 = NOR(ICD6.Qd, /VBL).
+        _memBlankingGate.A1 = _horizontalCounterLow.Qd;
+        _memBlankingGate.B1 = NotVerticalBlank;
+
+        _memClockGate.A1 = _memBlankingGate.Y1; // _S1_0
+        _memClockGate.B1 = _line0Gate.Y1;       // LINE0
+        _memClockGate.C1 = GlyphRowLastScanlineBar(); // _S1_97
+
+        return _memClockGate.Y1;
+    }
+
+    // One MEM0-gated ring advance. Routed through ICC11A (DS0025) so its
+    // level-shift/inversion is load-bearing: driving its inputs high-then-
+    // low produces the rising edge on Phi1/Phi2 that the 2504s shift on. The
+    // real chip clocks each 2504 once per phase and O3/O4 alternate at half
+    // the character rate, so one MEM0-gated character-time is one ring
+    // position either way - emit that single shift.
+    private void ShiftCharacterRings()
     {
         _shiftClockDriver.In1 = true;
         _shiftClockDriver.In2 = true;
@@ -235,10 +307,12 @@ public sealed partial class AppleISystem
         _shiftClockDriver.In2 = false;
         SetPhase1(_shiftClockDriver.Out1);
         SetPhase2(_shiftClockDriver.Out2);
+
+        _ringPosition = (_ringPosition + 1) & 1023;
     }
 
     // ICC3's own Recirculate(pin4)/Clock(pin6) control, confirmed from the
-    // schematic: Recirculate = net "LINE 7" = NAND(V0,V1,V2) - active
+    // schematic: Recirculate = _S1_97 = NAND(V0,V1,V2) - active
     // (recirculate/hold) except when the scanline-within-row count is 7, so
     // the line buffer only writes fresh data during a row's *last* scanline,
     // preloading the *next* row one scanline early (avoiding the 40-clock
@@ -246,19 +320,8 @@ public sealed partial class AppleISystem
     // NAND(HBL, CL), where HBL is ICD7's own weight-4 output
     // (_horizontalCounterHigh.Qc, already modelled by the horizontal
     // counter) and CL is _lineBufferClockCounter's weight-4 output above.
-    //
-    // V0-V2 (real hardware's ICD8, the scanline-within-row counter) are
-    // stood in for here by VerticalCount's own low 3 bits rather than a
-    // separate counter object: both are plain "advance once per line"
-    // binary counters, so which one supplies the low 3 bits doesn't change
-    // their cycling. What this equivalence does NOT capture is the exact
-    // frame-boundary moment real hardware resets the row-within-frame count:
-    // that reset is gated by a /WC1-and-/VBL condition (ICC9:C) that reaches
-    // into the write-cursor commit state machine (ICC7/ICC8:A/ICC12/ICC13),
-    // which wasn't traced to completion. TODO: revisit once that write-
-    // cursor logic gets studied more - for now VerticalCount's own mod-256
-    // wraparound stands in, and may not land on the exact same frame
-    // boundary real hardware does.
+    // V0-V2 come from the real ICD8 counter (_lineCounterLow) via
+    // GlyphRowLastScanlineBar.
     private void TickLineBufferClock()
     {
         var hbl = _horizontalCounterHigh.Qc;
@@ -274,7 +337,7 @@ public sealed partial class AppleISystem
 
         var cl = _lineBufferClockCounter.Qc;
 
-        _lineBuffer.Recirculate = (VerticalCount % 8) != 7;
+        _lineBuffer.Recirculate = GlyphRowLastScanlineBar();
         _lineBuffer.Clk = !(hbl && cl);
     }
 

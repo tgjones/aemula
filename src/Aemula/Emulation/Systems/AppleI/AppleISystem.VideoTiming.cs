@@ -2,35 +2,44 @@ using Aemula.Emulation.Chips;
 
 namespace Aemula.Emulation.Systems.AppleI;
 
-// The horizontal/vertical counter chain (ICD6-ICD9, ICD11, ICD15 on the
-// schematic) that generates composite sync. Traced from
-// http://retro.hansotten.nl/uploads/apple1/a1%20circuit.pdf (Terminal
-// Section, sheet 1 of 3).
+// The horizontal/vertical counter chain (ICD6-ICD9 on the schematic) that
+// generates composite sync and the character-generator row address. Traced
+// from http://retro.hansotten.nl/uploads/apple1/a1%20circuit.pdf (Terminal
+// Section, sheet 1 of 3) and the extracted netlist.
 //
-// Confirmed from the schematic: a Pierce oscillator (crystal ZQ1 plus a pair
-// of 7404 inverters, ICD12:B/ICD12:C) produces the 14.31818MHz dot clock;
-// ICD6 (74160) and ICD7 (74161) are synchronously cascaded (ICD7's ENT tied
-// to ICD6's RCO) off one shared clock, same for ICD11/ICD15, and ICD8/ICD9
-// feed six Q-outputs labelled V0-V5 - almost certainly the 2513 character
-// generator's A4-A9 address bits. What the rendered schematic tiles didn't
-// resolve at readable pin-for-pin detail is *which* clock the ICD6-9/11/15
-// bank actually shares (the traceable wire leaves sheet 1 as a labelled net,
-// "O2", that on sheet 2 immediately disappears into a jumper-selectable
-// cluster - ICC1 (7404) plus four discrete transistors - that's only
-// populated for a 6800 substitution, per the schematic's own Note 7). So
-// rather than a gate-for-gate reproduction, the divide-by-14 here is done
-// directly (dot clock / 14, exactly matching the 6502's real 1.022727MHz
-// with no remainder - unlike Apple II, there's no long-cycle stretch to
-// reproduce), and the two counters' preset-reload values are chosen to land
-// on a clean 65-character-time line - the same line length Apple II uses
-// off the same crystal for the same NTSC target - rather than the literal
-// PE wiring (illegible at the available render resolution). HSync/VSync are
-// decoded from the resulting counts rather than the exact gate netlist
-// (ICC5:A/ICC9:B/ICC10 and friends) for the same reason. ICD8/ICD9's exact
-// reset/comparison behaviour is real character-memory-write territory (a
-// cursor-column comparator built from several more gates and two more
-// registers) - left free-running here and picked back up once that
-// comparator is wired up.
+// ICD6 (74160) + ICD7 (74161): the horizontal character-position counter,
+// synchronously cascaded (ICD7's ENT tied to ICD6's RCO) off one shared
+// clock. That clock is the 14.31818MHz dot clock divided by 14 - done
+// directly here rather than as a gate-for-gate reproduction, because the
+// traceable wire leaves sheet 1 as a labelled net ("O2") that on sheet 2
+// disappears into a jumper-selectable 7404/transistor cluster only populated
+// for a 6800 substitution (schematic Note 7). 14.31818MHz / 14 is exactly
+// the 6502's real 1.022727MHz with no remainder - unlike Apple II there's no
+// long-cycle stretch to reproduce. The two counters' preset-reload values
+// (ICD6 = 5, ICD7 = 9) land on a clean 65-character-time line, matching
+// NTSC's 15734Hz line rate; HSync/VSync are decoded from the resulting
+// counts rather than the exact gate netlist (ICC5:A/ICC9:B/ICC10 and
+// friends), which are illegible at the available render resolution.
+//
+// ICD8 (74161) + ICD9 (74161): the vertical counter - "V0-V5" on the
+// schematic plus ICD9's two top bits - one 8-bit line-in-frame count
+// clocked once per line (ICD8's ENT tied to LASTH, ICD7's end-of-line RCO),
+// ICD9 cascaded off ICD8's RCO. V0-V2 are the row-within-glyph address that
+// feeds the 2513 character generator's A1-A3 and the ICB2:B NAND that gates
+// the recirculating rings and the 2519 line buffer (see
+// AppleISystem.CharacterMemory.cs). ICD9's top two bits (V6/V7) are decoded
+// by ICD10:C into /VBL.
+//
+// The real board also runs ICD8/ICD9's ENP off VINH (ICD15's QB) and can
+// reload them mid-count from ICC9:C's "/VBL and /WC1" term - that reload is
+// the vertical-scroll mechanism and depends on /WC1 from the write-cursor
+// state machine, which isn't built yet, so it's omitted here: the counter
+// free-runs mod 256, which is the correct behaviour for a screen that hasn't
+// scrolled, and VINH is treated as permanently enabling.
+//
+// /VBL (ICD10:C, 7400): NAND(V6, V7) - pulled low (blanking) once the line
+// count reaches 0xC0 (192), i.e. after the 192 visible scanlines (24 rows x
+// 8 scanlines), and back high for the 64-line vertical-blank interval.
 public sealed partial class AppleISystem
 {
     // ICD6/ICD7: horizontal character-position counter. Cascaded (ICD7.Ent =
@@ -41,24 +50,21 @@ public sealed partial class AppleISystem
     private readonly Ttl74160Chip _horizontalCounterLow;
     private readonly Ttl74161Chip _horizontalCounterHigh;
 
-    // ICD8/ICD9: the character-generator address counter (V0-V5). Cascaded
-    // the same way, free-running mod 256 - the real reset/compare logic is
-    // the character-memory delay line's write-cursor comparator, not yet
-    // wired up.
-    private readonly Ttl74161Chip _characterAddressLow;
-    private readonly Ttl74161Chip _characterAddressHigh;
+    // ICD8/ICD9: the vertical line-in-frame counter ("V0-V5" plus ICD9's two
+    // top bits). Cascaded (ICD9.Ent = ICD8.Rco), clocked once per line off
+    // ICD7's end-of-line RCO. Free-running mod 256 - see the file header on
+    // the omitted VINH gate and scroll reload.
+    private readonly Ttl74161Chip _lineCounterLow;
+    private readonly Ttl74161Chip _lineCounterHigh;
 
-    // ICD11/ICD15: vertical line counter. Cascaded (ICD15.Ent = ICD11.Rco),
-    // clocked once per horizontal line (off ICD7's RCO) rather than every
-    // character-time. Free-running mod 256 lines/frame - a round-number
-    // stand-in for NTSC's 262/263, which two 4-bit stages can't reach (max
-    // 255) without preset-reload wiring this build doesn't have confirmed.
-    private readonly Ttl74161Chip _verticalCounterLow;
-    private readonly Ttl74161Chip _verticalCounterHigh;
+    // ICD10:C: /VBL generator - NAND of the line counter's two top bits, so
+    // /VBL falls once the line count reaches 192 (0xC0) and stays low for the
+    // rest of the 256-line frame.
+    private readonly Ttl7400Chip _verticalBlankGate = new();
 
     // Divides the 14.31818MHz dot clock by 14 into the shared clock for the
-    // CPU and all six counters above - see the file header for why this is
-    // done directly rather than as a traced gate chain.
+    // CPU and the counters above - see the file header for why this is done
+    // directly rather than as a traced gate chain.
     private byte _dotDivider;
     private bool _lastCharacterRate;
 
@@ -79,9 +85,26 @@ public sealed partial class AppleISystem
         NibbleValue(_horizontalCounterHigh.Qa, _horizontalCounterHigh.Qb, _horizontalCounterHigh.Qc, _horizontalCounterHigh.Qd) * 10 +
         NibbleValue(_horizontalCounterLow.Qa, _horizontalCounterLow.Qb, _horizontalCounterLow.Qc, _horizontalCounterLow.Qd);
 
+    // ICD8/ICD9 read as one 8-bit line-in-frame count.
     private int VerticalCount =>
-        (NibbleValue(_verticalCounterHigh.Qa, _verticalCounterHigh.Qb, _verticalCounterHigh.Qc, _verticalCounterHigh.Qd) << 4) |
-        NibbleValue(_verticalCounterLow.Qa, _verticalCounterLow.Qb, _verticalCounterLow.Qc, _verticalCounterLow.Qd);
+        (NibbleValue(_lineCounterHigh.Qa, _lineCounterHigh.Qb, _lineCounterHigh.Qc, _lineCounterHigh.Qd) << 4) |
+        NibbleValue(_lineCounterLow.Qa, _lineCounterLow.Qb, _lineCounterLow.Qc, _lineCounterLow.Qd);
+
+    // Row-within-glyph (V0-V2): the 2513 character generator's A1-A3 scanline
+    // address, taken straight off ICD8's low three outputs.
+    private int GlyphRow =>
+        (_lineCounterLow.Qa ? 1 : 0) | (_lineCounterLow.Qb ? 2 : 0) | (_lineCounterLow.Qc ? 4 : 0);
+
+    // /VBL (ICD10:C): NAND(V6, V7). Low during the vertical-blank interval.
+    private bool NotVerticalBlank
+    {
+        get
+        {
+            _verticalBlankGate.A1 = _lineCounterHigh.Qc; // V6
+            _verticalBlankGate.B1 = _lineCounterHigh.Qd; // V7
+            return _verticalBlankGate.Y1;
+        }
+    }
 
     private static int NibbleValue(bool qa, bool qb, bool qc, bool qd) =>
         (qa ? 1 : 0) | (qb ? 2 : 0) | (qc ? 4 : 0) | (qd ? 8 : 0);
@@ -122,39 +145,38 @@ public sealed partial class AppleISystem
 
         // Reloads both stages together the tick after the combined count
         // hits its natural max (159), landing back on a preset (95) chosen
-        // so the wrap spans exactly 65 states - see the file header.
-        var horizontalReload = _horizontalCounterHigh.Rco;
+        // so the wrap spans exactly 65 states - see the file header. This
+        // same signal is LASTH, the end-of-line strobe that clocks the
+        // vertical counter.
+        var lastH = _horizontalCounterHigh.Rco;
 
-        _horizontalCounterLow.Load = !horizontalReload;
+        _horizontalCounterLow.Load = !lastH;
         _horizontalCounterLow.A = true;  // preset 5 = 0b0101
         _horizontalCounterLow.B = false;
         _horizontalCounterLow.C = true;
         _horizontalCounterLow.D = false;
 
-        _horizontalCounterHigh.Load = !horizontalReload;
+        _horizontalCounterHigh.Load = !lastH;
         _horizontalCounterHigh.A = true; // preset 9 = 0b1001
         _horizontalCounterHigh.B = false;
         _horizontalCounterHigh.C = false;
         _horizontalCounterHigh.D = true;
 
-        _characterAddressLow.Enp = true;
-        _characterAddressLow.Ent = true;
+        // Vertical line counter: ICD8 advances once per line (ENT = LASTH),
+        // ICD9 cascaded off ICD8's ripple carry. No parallel load - the
+        // scroll reload is omitted (file header) - so it free-runs mod 256.
+        _lineCounterLow.Enp = true;
+        _lineCounterLow.Ent = lastH;
+        _lineCounterLow.Load = true;
 
-        _characterAddressHigh.Enp = true;
-        _characterAddressHigh.Ent = _characterAddressLow.Rco;
-
-        _verticalCounterLow.Enp = true;
-        _verticalCounterLow.Ent = horizontalReload;
-
-        _verticalCounterHigh.Enp = true;
-        _verticalCounterHigh.Ent = _verticalCounterLow.Rco;
+        _lineCounterHigh.Enp = true;
+        _lineCounterHigh.Ent = _lineCounterLow.Rco;
+        _lineCounterHigh.Load = true;
 
         PulseClock(_horizontalCounterLow);
         PulseClock(_horizontalCounterHigh);
-        PulseClock(_characterAddressLow);
-        PulseClock(_characterAddressHigh);
-        PulseClock(_verticalCounterLow);
-        PulseClock(_verticalCounterHigh);
+        PulseClock(_lineCounterLow);
+        PulseClock(_lineCounterHigh);
     }
 
     private static void PulseClock(Ttl74160Chip chip)
