@@ -1,7 +1,9 @@
+using System;
 using Aemula.Debugging;
 using Aemula.Emulation.Chips;
 using Aemula.Emulation.Chips.Mos6502;
 using Aemula.Emulation.Chips.Mos6820;
+using Aemula.Emulation.Systems.AppleI.Cassette;
 using Aemula.Emulation.Systems.AppleI.Debugging;
 using Aemula.Emulation.Systems.AppleI.Roms;
 
@@ -54,7 +56,17 @@ public sealed partial class AppleISystem : EmulatedSystem
     // Y15 (jumper Y) the ROM; the rest are unpopulated expansion blocks.
     private readonly Ttl74154Chip _chipSelectDecoder;
 
+    // Whatever is plugged into the board's one expansion connector, or null for
+    // a bare board. Driven once per CPU bus cycle from DoCpuMemoryAccess - the
+    // connector carries no clock of its own.
+    private readonly IExpansionCard? _expansionCard;
+
     public AppleISystem()
+        : this(AppleISystemOptions.Default)
+    {
+    }
+
+    public AppleISystem(AppleISystemOptions options)
     {
         Cpu = new Mos6502Chip(Mos6502Options.Default);
         Pia = new Mos6820Chip();
@@ -62,6 +74,15 @@ public sealed partial class AppleISystem : EmulatedSystem
 
         _characterGenerator = Signetics2513Chip.Load();
         _characterGenerator.ChipEnable = false; // Tied low - always enabled.
+
+        if (options.CassetteCard)
+        {
+            // CyclesPerSecond / 14: the character clock, which is also the
+            // 6502's phi0 - the rate DoCpuMemoryAccess (and therefore the
+            // card) runs at. See AppleISystem.VideoTiming.cs.
+            _cassetteCard = new AppleCassetteInterfaceCard(CyclesPerSecond / 14.0);
+            _expansionCard = _cassetteCard;
+        }
 
         InitializeVideoTiming();
 
@@ -81,10 +102,17 @@ public sealed partial class AppleISystem : EmulatedSystem
 
     public override void LoadProgram(string filePath)
     {
-        // No cassette support yet (see the plan's "Target configuration" -
-        // out of scope until the cassette-interface stretch goal), and the
-        // Monitor ROM is fixed, so there's nothing to load from filePath yet.
         Reset();
+
+        // The Monitor ROM is fixed, so the only thing a path can mean here is a
+        // cassette WAV to drop onto the cassette-in jack (when the card is
+        // fitted); the user still types the WozMon call that reads it.
+        if (_cassetteCard != null &&
+            !string.IsNullOrEmpty(filePath) &&
+            filePath.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
+        {
+            InsertCassette(filePath);
+        }
 
         RaiseProgramLoaded();
     }
@@ -102,6 +130,8 @@ public sealed partial class AppleISystem : EmulatedSystem
 
         Pia.Res = false;
         Pia.Res = true;
+
+        _expansionCard?.Reset();
     }
 
     public override void Tick()
@@ -153,9 +183,30 @@ public sealed partial class AppleISystem : EmulatedSystem
         Pia.E = true;
         Pia.E = false;
 
+        // The expansion connector: the raw bus, pulsed once per CPU cycle. A
+        // card that decodes this address drives the data bus and asserts
+        // DrivesData; the motherboard's open-bus value is used otherwise.
+        if (_expansionCard != null)
+        {
+            _expansionCard.Address = address;
+            _expansionCard.RW = Cpu.RW;
+            _expansionCard.Rdy = true;
+            _expansionCard.ResetBar = Cpu.Res;
+            _expansionCard.DmaBar = true;
+            _expansionCard.DataBus = Cpu.Data;
+            _expansionCard.Phi2 = false;
+            _expansionCard.Phi2 = true;
+            _expansionCard.Phi2 = false;
+        }
+
         if (Cpu.RW)
         {
             Cpu.Data = ReadByte(address);
+
+            if (_expansionCard is { DrivesData: true })
+            {
+                Cpu.Data = _expansionCard.DataBus;
+            }
         }
         else
         {
@@ -212,6 +263,12 @@ public sealed partial class AppleISystem : EmulatedSystem
 
     internal byte ReadByteDebug(ushort address)
     {
+        if (_expansionCard is AppleCassetteInterfaceCard card &&
+            card.PeekDebug(address) is byte value)
+        {
+            return value;
+        }
+
         SetChipSelectDecoderAddress(address);
 
         return ReadByte(address);

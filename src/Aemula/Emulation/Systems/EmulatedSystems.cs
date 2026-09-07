@@ -28,6 +28,7 @@ public static class EmulatedSystems
     [
         new("appleii", "Apple II+", static () => new AppleIISystem()),
         new("applei", "Apple I", static () => new AppleISystem()),
+        new("applei-aci", "Apple I + Cassette", static () => new AppleISystem(new AppleISystemOptions(cassetteCard: true))),
         new("atari2600", "Atari 2600", static () => new Atari2600System()),
         new("nes", "NES", static () => new NesSystem()),
         new("spaceinvaders", "Space Invaders", static () => new SpaceInvadersSystem()),
