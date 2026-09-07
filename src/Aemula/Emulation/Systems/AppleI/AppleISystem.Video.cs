@@ -12,10 +12,9 @@ public sealed partial class AppleISystem
 {
     private readonly Ttl74166Chip _pixelShiftRegister = new();
 
-    // 40x24. No scroll yet: once the cursor passes the last position it
-    // wraps back to the top-left rather than scrolling the screen up (the
-    // ICD8/ICD9 reload that drives scrolling isn't wired - see
-    // AppleISystem.VideoTiming.cs).
+    // 40x24. Once the cursor is pushed past the last row, the next committed
+    // write reloads the ICD8/ICD9 vertical counter mid-blank (see
+    // AppleISystem.VideoTiming.cs), sliding the display up one row.
     private const int VisibleColumns = 40;
     private const int VisibleRows = 24;
 

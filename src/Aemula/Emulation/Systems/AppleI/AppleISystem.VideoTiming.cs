@@ -30,12 +30,15 @@ namespace Aemula.Emulation.Systems.AppleI;
 // AppleISystem.CharacterMemory.cs). ICD9's top two bits (V6/V7) are decoded
 // by ICD10:C into /VBL.
 //
-// The real board also runs ICD8/ICD9's ENP off VINH (ICD15's QB) and can
-// reload them mid-count from ICC9:C's "/VBL and /WC1" term - that reload is
-// the vertical-scroll mechanism and depends on /WC1 from the write-cursor
-// state machine, which isn't built yet, so it's omitted here: the counter
-// free-runs mod 256, which is the correct behaviour for a screen that hasn't
-// scrolled, and VINH is treated as permanently enabling.
+// ICD8/ICD9 also take a synchronous parallel load from ICC9:C's "/VBL and
+// /WC1" term - the vertical-scroll mechanism, wired up in TickCounters:
+// when a character write commits with the cursor already pushed past the
+// bottom row, the counter reloads mid-blank onto one more MEM0-active line,
+// adding a line's worth of ring shifts and sliding the display up a row.
+// The real board also gates ICD8/ICD9's ENP off VINH (ICD15's QB); that
+// gate is still treated as permanently enabling, since VINH only matters
+// for the exact blanked-line count and not for scroll or the glyph-row
+// address.
 //
 // /VBL (ICD10:C, 7400): NAND(V6, V7) - pulled low (blanking) once the line
 // count reaches 0xC0 (192), i.e. after the 192 visible scanlines (24 rows x
@@ -51,9 +54,9 @@ public sealed partial class AppleISystem
     private readonly Ttl74161Chip _horizontalCounterHigh;
 
     // ICD8/ICD9: the vertical line-in-frame counter ("V0-V5" plus ICD9's two
-    // top bits). Cascaded (ICD9.Ent = ICD8.Rco), clocked once per line off
-    // ICD7's end-of-line RCO. Free-running mod 256 - see the file header on
-    // the omitted VINH gate and scroll reload.
+    // top bits). Cascaded (ICD9.Ent = ICD8.Rco), advanced once per line off
+    // ICD7's end-of-line RCO. Normally free-runs mod 256; the scroll reload
+    // (TickCounters) is the one thing that perturbs it - see the file header.
     private readonly Ttl74161Chip _lineCounterLow;
     private readonly Ttl74161Chip _lineCounterHigh;
 
@@ -170,19 +173,42 @@ public sealed partial class AppleISystem
         _horizontalCounterHigh.C = false;
         _horizontalCounterHigh.D = true;
 
+        PulseClock(_horizontalCounterLow);
+        PulseClock(_horizontalCounterHigh);
+
         // Vertical line counter: ICD8 advances once per line (ENT = LASTH),
-        // ICD9 cascaded off ICD8's ripple carry. No parallel load - the
-        // scroll reload is omitted (file header) - so it free-runs mod 256.
+        // ICD9 cascaded off ICD8's ripple carry. ENP is really gated by
+        // VINH (ICD15's once-per-line strobe); that gate is still treated as
+        // permanently enabling (see the file header).
+        //
+        // The parallel load is the scroll mechanism. ICC9:C drives both
+        // stages' active-low load pin - _verticalCounterLoadBar, low only
+        // while a write commits during vertical blank (see
+        // AppleISystem.CharacterMemory.cs). ICD8's four preset inputs and
+        // ICD9's P0/P1/P3 are wired to ICC10:C's _S1_0; ICD9's P2 (V6) is
+        // grounded. During blank _S1_0 has settled high by the character
+        // time the load fires, so the counter loads $BF (V0-V5 and V7 set,
+        // V6 clear) - one short of the 192-line active region, i.e. a line
+        // whose last scanline still clocks MEM0. Replaying that line's 40
+        // ring shifts is what advances the whole display up by one row.
+        var linePreset = EvaluateMemBlanking(); // _S1_0
+
         _lineCounterLow.Enp = true;
         _lineCounterLow.Ent = lastH;
-        _lineCounterLow.Load = true;
+        _lineCounterLow.Load = _verticalCounterLoadBar;
+        _lineCounterLow.A = linePreset;
+        _lineCounterLow.B = linePreset;
+        _lineCounterLow.C = linePreset;
+        _lineCounterLow.D = linePreset;
 
         _lineCounterHigh.Enp = true;
         _lineCounterHigh.Ent = _lineCounterLow.Rco;
-        _lineCounterHigh.Load = true;
+        _lineCounterHigh.Load = _verticalCounterLoadBar;
+        _lineCounterHigh.A = linePreset;  // V4
+        _lineCounterHigh.B = linePreset;  // V5
+        _lineCounterHigh.C = false;       // V6 - preset input tied to ground
+        _lineCounterHigh.D = linePreset;  // V7
 
-        PulseClock(_horizontalCounterLow);
-        PulseClock(_horizontalCounterHigh);
         PulseClock(_lineCounterLow);
         PulseClock(_lineCounterHigh);
 

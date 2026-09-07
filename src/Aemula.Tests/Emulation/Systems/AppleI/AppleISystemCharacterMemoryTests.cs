@@ -207,4 +207,81 @@ public class AppleISystemCharacterMemoryTests
         var cursorPosition = RunToCursorPosition(system);
         await Assert.That(cursorPosition).IsEqualTo(VisibleColumns);
     }
+
+    // Advances to the next VSync rising edge (a frame boundary) and returns
+    // the ring position there. While nothing scrolls this is a fixed
+    // constant frame to frame (see
+    // AppleISystemVideoTimingTests.CharacterRingCompletesExactlyOneRotationPerFrame);
+    // a scroll shows up here as a step in that constant.
+    private static int RingPositionAtFrameBoundary(AppleISystem system)
+    {
+        var lastVSync = system.VSync;
+
+        while (true)
+        {
+            system.Tick();
+
+            if (system.VSync && !lastVSync)
+            {
+                return system.RingPositionForTests;
+            }
+
+            lastVSync = system.VSync;
+        }
+    }
+
+    // Fill the screen, keep typing, and the display scrolls up. Ken
+    // Shirriff's teardown describes the mechanism as "the scroll feature
+    // delays the shift register timing by one line rather than explicitly
+    // moving the bits" - so the observable is that the ring/scan phase steps
+    // on by exactly one screen row's worth of positions (40) across the
+    // frame the scroll fires in.
+    [Test]
+    public async Task TypingPastTheBottomRowScrollsTheDisplayUpOneRow()
+    {
+        const int VisibleColumns = 40;
+        const int VisibleRows = 24;
+        const int FirstOffScreenPosition = VisibleColumns * VisibleRows;
+
+        var system = new AppleISystem();
+        system.LoadProgram("");
+
+        await Assert.That(RunToNextCharLoop(system)).IsTrue();
+
+        // Settle past the reset transient, same as RunToCursorPosition.
+        for (var i = 0; i < MasterTicksPerFrame * 3; i++)
+        {
+            system.Tick();
+        }
+
+        var baseline = RingPositionAtFrameBoundary(system);
+        await Assert.That(RingPositionAtFrameBoundary(system)).IsEqualTo(baseline);
+
+        // Park the cursor one row below the last visible line and type a
+        // character. WozMon echoes it; it commits at that off-screen ring
+        // position, which is in vertical blank, so ICC9:C pulls the vertical
+        // counter's load line and the scroll reload fires.
+        system.SetCursorLogicalPositionForTests(FirstOffScreenPosition);
+        PressKey(system, 'X');
+
+        var committed = false;
+        for (var i = 0; i < MasterTicksPerFrame * 3 && !committed; i++)
+        {
+            system.Tick();
+            committed = system.PeekCharacterCodeForTests(FirstOffScreenPosition) != 0;
+        }
+
+        await Assert.That(committed).IsTrue();
+
+        // Let the scroll frame finish.
+        for (var i = 0; i < MasterTicksPerFrame; i++)
+        {
+            system.Tick();
+        }
+
+        var scrolled = RingPositionAtFrameBoundary(system);
+        var advance = ((scrolled - baseline) % 1024 + 1024) % 1024;
+
+        await Assert.That(advance).IsEqualTo(VisibleColumns);
+    }
 }

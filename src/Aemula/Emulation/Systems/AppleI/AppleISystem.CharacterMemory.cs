@@ -133,7 +133,9 @@ public sealed partial class AppleISystem
     private readonly Ttl7404Chip _crInverter = new();
 
     // ICC9 (7432, quad 2-input OR). Gate A: CLR = OR(VBL, B4-12) - forces
-    // the write muxes to inject $00. Gate D: /WRITE = OR(_S1_89, _S1_71),
+    // the write muxes to inject $00. Gate C: _S1_41 = OR(/VBL, /WC1), the
+    // ICD8/ICD9 vertical counter's active-low parallel-load control - see
+    // _verticalCounterLoadBar. Gate D: /WRITE = OR(_S1_89, _S1_71),
     // active-low, low exactly when a printable char (bit 5 or 6 set) is
     // committing at the cursor; drives the write-mux selects and ICC12:B.
     private readonly Ttl7432Chip _icc9 = new();
@@ -197,6 +199,16 @@ public sealed partial class AppleISystem
     // running CR line-fill drives the same net through diode CR4 regardless.
     private bool _clearScreenKeyDown;
 
+    // ICC9:C output _S1_41, the ICD8/ICD9 vertical counter's active-low
+    // synchronous parallel-load pin. Low (load) only while a write is
+    // committing (/WC1 low) with the beam in vertical blank (/VBL low);
+    // that reload is the vertical-scroll mechanism (see TickCounters in
+    // AppleISystem.VideoTiming.cs). Computed at the end of
+    // TickCharacterMemory and consumed by the next TickCounters, so the
+    // real one-character-time of pipeline delay between ICC12:B and the
+    // CLA edge that acts on it is preserved - see the scroll notes there.
+    private bool _verticalCounterLoadBar = true;
+
     // Bookkeeping only - not extra hardware state. The real chips only ever
     // know "the bit at Out right now"; this just names which of the 1024
     // ring positions that bit is, so AppleISystem.Video.cs's simplified
@@ -225,6 +237,7 @@ public sealed partial class AppleISystem
         _cursorBit.Poke(1023, false);
 
         _clearScreenKeyDown = false;
+        _verticalCounterLoadBar = true;
         _ringPosition = 0;
 
         // ICC7: /RDA (Q3) and /WC2 (Q6) idle high; the rest idle low.
@@ -319,6 +332,18 @@ public sealed partial class AppleISystem
         _icc12.A2 = writeBar;
         _icc12.B2 = s1_169;
         var wc1 = _icc12.Y2;
+
+        // ICC9:C  _S1_41 = OR(/VBL, /WC1) - the ICD8/ICD9 vertical counter's
+        // active-low synchronous load. Both inputs active-low, so it goes
+        // low (load the preset) only when a write commits while the beam is
+        // in vertical blank - i.e. when the cursor has been pushed past the
+        // last visible row. The reload lands the counter on one more
+        // MEM0-active line, adding 40 ring shifts to the frame, which slides
+        // the whole display up by one row. Latched here for the next
+        // TickCounters call to act on.
+        _icc9.A3 = NotVerticalBlank;
+        _icc9.B3 = wc1;
+        _verticalCounterLoadBar = _icc9.Y3;
 
         // ICC9:A  CLR = OR(VBL, B4-12) - forces $00 into the write path.
         _icc9.A1 = !NotVerticalBlank;
@@ -450,15 +475,27 @@ public sealed partial class AppleISystem
         _line0Gate.A1 = _horizontalCounterHigh.Qc; // H6 - 40-character window
         _line0Gate.B1 = true;                       // CL
 
-        // _S1_0 = NOR(ICD6.Qd, /VBL).
-        _memBlankingGate.A1 = _horizontalCounterLow.Qd;
-        _memBlankingGate.B1 = NotVerticalBlank;
-
-        _icc5.A1 = _memBlankingGate.Y1;        // _S1_0
+        _icc5.A1 = EvaluateMemBlanking();      // _S1_0
         _icc5.B1 = _line0Gate.Y1;              // LINE0
         _icc5.C1 = GlyphRowLastScanlineBar();  // _S1_97
 
         return _icc5.Y1;
+    }
+
+    // ICC10:C (7402): _S1_0 = NOR(ICD6.Qd, /VBL). One of the three MEM0
+    // terms - during active video /VBL holds it low and it does nothing;
+    // during blank it follows !ICD6.Qd, admitting a ring shift only on the
+    // ones-digit-8/9 columns, which is what trims the blanked lines'
+    // contribution to 64 shifts per frame. The same net is also ICD8/ICD9's
+    // preset value (their P0-P3, except ICD9's V6 which is grounded), so a
+    // scroll reload fired while the beam sits in blank - where !ICD6.Qd is
+    // high by the time the horizontal counter has stepped off that column -
+    // loads $BF into the V0-V7 counter.
+    private bool EvaluateMemBlanking()
+    {
+        _memBlankingGate.A1 = _horizontalCounterLow.Qd;
+        _memBlankingGate.B1 = NotVerticalBlank;
+        return _memBlankingGate.Y1;
     }
 
     // One MEM0-gated ring advance. Routed through ICC11A (DS0025) so its
@@ -558,5 +595,18 @@ public sealed partial class AppleISystem
         }
 
         return value;
+    }
+
+    // Test-only: seed the cursor marker (the lone 0 in ICC11B's field of 1s)
+    // so it next reaches the write point when the ring is at logical
+    // position L - i.e. park the cursor at a chosen screen cell without
+    // typing the tens of thousands of characters it would take to walk it
+    // there through WozMon.
+    internal void SetCursorLogicalPositionForTests(int logicalPosition)
+    {
+        var arrayIndex = ((_ringPosition - 1 - logicalPosition) % 1024 + 1024) % 1024;
+
+        _cursorBit.Fill();
+        _cursorBit.Poke(arrayIndex, false);
     }
 }
