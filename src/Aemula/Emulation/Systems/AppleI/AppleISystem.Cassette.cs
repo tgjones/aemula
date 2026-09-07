@@ -26,6 +26,8 @@ public sealed partial class AppleISystem
     /// <summary>Whether a recording is currently being captured from the tape-out jack.</summary>
     public bool IsRecordingCassette => _cassetteCard?.Recorder.IsRecording ?? false;
 
+    internal AppleCassetteInterfaceCard? CassetteCardForTests => _cassetteCard;
+
     private AppleCassetteInterfaceCard CassetteCardOrThrow =>
         _cassetteCard ?? throw new System.InvalidOperationException(
             "This Apple I was built without the cassette interface card.");
