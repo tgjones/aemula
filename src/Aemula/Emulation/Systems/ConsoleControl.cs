@@ -12,7 +12,8 @@ public sealed class ConsoleControl
     public enum ControlKind
     {
         // A push button, closed only while the user actively holds it (RESET,
-        // SELECT). The UI drives Value true for exactly as long as it's held.
+        // SELECT). Value is written true on press and false on release, and
+        // not in between, so a setter may act on either edge.
         Momentary,
 
         // A two-position latching switch (colour / black-and-white, difficulty

@@ -405,8 +405,15 @@ public sealed class EmulationWindow : IDisposable
             case ConsoleControl.ControlKind.Momentary:
                 ImGui.Button(control.Label);
                 // Closed for exactly as long as the mouse is held on it, so a
-                // game polling the switch sees a real, releasable press.
-                control.Value = ImGui.IsItemActive();
+                // game polling the switch sees a real, releasable press. Only
+                // written on a change of level: a setter that acts on the
+                // release edge (the Apple I's RESET key, which re-runs WozMon)
+                // must not see a fresh "released" every frame.
+                var held = ImGui.IsItemActive();
+                if (held != control.Value)
+                {
+                    control.Value = held;
+                }
                 break;
 
             case ConsoleControl.ControlKind.Toggle:
