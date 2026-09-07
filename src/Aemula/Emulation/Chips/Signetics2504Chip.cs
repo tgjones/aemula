@@ -44,14 +44,17 @@ public sealed class Signetics2504Chip
         }
     }
 
-    // Real hardware needs a reset/power-on path that seeds exactly one '1'
-    // bit somewhere in the cursor ring (see AppleISystem.CharacterMemory.cs)
-    // - a pure recirculating register has no other way to ever contain a
-    // bit that wasn't shifted in through In. Not used for anything else;
+    // Real hardware needs a reset/power-on path that seeds the cursor ring
+    // (see AppleISystem.CharacterMemory.cs) - a pure recirculating register
+    // has no other way to ever contain a bit that wasn't shifted in through
+    // In. The cursor marker is a single 0 in a field of 1s, so that seed is
+    // Fill() followed by one Poke(pos, false). Not used for anything else;
     // the write side never pokes an arbitrary position mid-recirculation.
     internal void Poke(int ringPosition, bool value) => _bits[ringPosition] = value;
 
     internal void Clear() => Array.Clear(_bits);
+
+    internal void Fill() => Array.Fill(_bits, true);
 
     // Test-only introspection - AppleISystem.Video.cs no longer needs this
     // (it now reads the real Signetics2519Chip line buffer's Out pins,

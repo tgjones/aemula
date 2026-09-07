@@ -68,6 +68,14 @@ public sealed partial class AppleISystem
     private byte _dotDivider;
     private bool _lastCharacterRate;
 
+    // End-of-line / end-of-frame strobes for the character-memory state
+    // machine (LASTH / LAST on the schematic). ICC7 in
+    // AppleISystem.CharacterMemory.cs registers them on the MEM0 edge
+    // (D5->Q5 = _S1_105, D1->Q1 = _S1_101) to drive the write-cursor advance
+    // and the CR line-fill. Set at the end of TickCounters - see there.
+    private bool _endOfLine;
+    private bool _endOfFrame;
+
     public bool HSync => HorizontalCount >= 155;
 
     public bool VSync => VerticalCount >= 252;
@@ -177,6 +185,23 @@ public sealed partial class AppleISystem
         PulseClock(_horizontalCounterHigh);
         PulseClock(_lineCounterLow);
         PulseClock(_lineCounterHigh);
+
+        // LASTH / LAST for the character-memory state machine, read from the
+        // post-clock counts - the same view EvaluateRingClock's H6/V0-V2
+        // decode uses, so the character-time this is asserted is also one
+        // MEM0 clocks ICC7 on and _S1_105 can actually capture it.
+        //
+        // Asserted one MEM0 shift before the horizontal counter's terminal
+        // count (159), not on it: after ICC7's two-stage
+        // LASTH -> _S1_105 -> /WC1 -> /WC2 pipeline the cursor re-seat then
+        // lands exactly on column 0 of the next row. The precise place LASTH
+        // sits within the 40-shift active window is one of the horizontal
+        // decode values still taken empirically rather than enumerated from
+        // ICD6/ICD7's presets.
+        _endOfLine = HorizontalCount == 158;
+        _endOfFrame = _endOfLine &&
+            _lineCounterLow.Qa && _lineCounterLow.Qb && _lineCounterLow.Qc && _lineCounterLow.Qd &&
+            _lineCounterHigh.Qa && _lineCounterHigh.Qb && _lineCounterHigh.Qc && _lineCounterHigh.Qd;
     }
 
     private static void PulseClock(Ttl74160Chip chip)

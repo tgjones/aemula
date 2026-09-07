@@ -52,6 +52,15 @@ public class AppleISystemCharacterMemoryTests
     // budget (a little over one full frame-long rotation).
     private static int RunToCursorPosition(AppleISystem system)
     {
+        // The reset "\" + CR echo (CR now runs the real line-fill state
+        // machine) re-seats the cursor while the video counters are still
+        // spinning up from zero; give the ring/counter phase a few frames to
+        // settle before trusting a cursor sighting's ring position.
+        for (var i = 0; i < MasterTicksPerFrame * 3; i++)
+        {
+            system.Tick();
+        }
+
         for (var i = 0; i < MasterTicksPerFrame + MasterTicksPerFrame / 8; i++)
         {
             system.Tick();
@@ -161,20 +170,20 @@ public class AppleISystemCharacterMemoryTests
     }
 
     // WozMon's reset path unconditionally echoes "\" (the ESCAPE glyph) and
-    // then a CR through ECHO/DSP before it ever reads the keyboard. ECHO
-    // blocks on the display busy flag between the two, so both writes have to
-    // land - and at successive cursor positions, not on top of each other.
-    // The character rings can only accept a byte on the character-clock the
-    // cursor bit passes the write point, so this budgets a few frames.
+    // then a CR through ECHO/DSP before it ever reads the keyboard. The "\"
+    // lands at column 0; the CR is decoded by ICC6:C/ICC5:C/ICC8:B and is
+    // never itself stored - instead it latches the line-fill state machine,
+    // which forces $00 into every remaining column of the row and re-seats
+    // the cursor at column 0 of the next line (see
+    // AppleISystem.CharacterMemory.cs).
     [Test]
-    public async Task ResetEchoLandsBackslashThenCarriageReturnAtDistinctPositions()
+    public async Task ResetEchoLandsBackslashThenCarriageReturnClearsRestOfLineAndWraps()
     {
         // Six PIA display bits (skipping PB5) fed through the write mux, so a
         // byte's stored code keeps bits 0-4 and 6. "\" is echoed as $DC,
-        // masked to $5C by the display DDR -> 0x3C; CR is echoed as $8D,
-        // masked to $0D -> 0x0D.
+        // masked to $5C by the display DDR -> 0x3C.
         const byte BackslashCode = 0x3C;
-        const byte CarriageReturnCode = 0x0D;
+        const int VisibleColumns = 40;
 
         var system = new AppleISystem();
         system.LoadProgram("");
@@ -184,11 +193,18 @@ public class AppleISystemCharacterMemoryTests
             system.Tick();
         }
 
-        var first = system.PeekCharacterCodeForTests(0);
-        var second = system.PeekCharacterCodeForTests(1);
+        await Assert.That(system.PeekCharacterCodeForTests(0)).IsEqualTo(BackslashCode);
 
-        await Assert.That(first).IsEqualTo(BackslashCode);
-        await Assert.That(second).IsEqualTo(CarriageReturnCode);
-        await Assert.That(first).IsNotEqualTo(second);
+        // The CR is not stored anywhere on the line - every column after the
+        // "\" is a real blank ($00), not $0D.
+        for (var column = 1; column < VisibleColumns; column++)
+        {
+            await Assert.That(system.PeekCharacterCodeForTests(column)).IsEqualTo((byte)0);
+        }
+
+        // The cursor bit has wrapped to column 0 of the next line, so the
+        // next character typed will commit at ring position 40.
+        var cursorPosition = RunToCursorPosition(system);
+        await Assert.That(cursorPosition).IsEqualTo(VisibleColumns);
     }
 }
