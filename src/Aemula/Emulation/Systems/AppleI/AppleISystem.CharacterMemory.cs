@@ -43,10 +43,13 @@ namespace Aemula.Emulation.Systems.AppleI;
 // RD7 bit-plane's data to make _S1_110, which is that plane's own 2519
 // line-buffer input. While _S1_139 is low _S1_110 just passes the plane bit
 // through inverted; while it is high it forces that code bit, so the cursor
-// cell alternates between '@' and blank at the 555 rate. The inversion is
-// undone at the character generator's address pin (AppleISystem.Video.cs) -
-// on real hardware the 2513's mask has that one bit flipped to match this
-// wiring; the shared ROM image here doesn't, so the compensation is explicit.
+// cell alternates between '@' and blank at the 555 rate. That inversion is
+// carried straight through to the character generator's weight-0x20 address
+// pin (AppleISystem.Video.cs) rather than being cancelled: it's the reason a
+// zeroed cell (power-on, or anything CLEAR SCREEN wrote) shows the 2513's
+// space glyph instead of '@', and WozMon's echoed ASCII still maps to the
+// right glyphs because its code bit 6 (the one this plane carries) is set
+// exactly for the $40-$5F range the 2513 puts at $00-$1F.
 //
 // One reading taken on trust: the extracted netlist puts ICC14's spare
 // channel's two data pins (CURS, GND) the opposite way round from what's

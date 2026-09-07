@@ -42,11 +42,18 @@ public sealed partial class AppleISystem
             _characterGenerator.Address7 = _lineBuffer.Out4;
             _characterGenerator.Address8 = _lineBuffer.Out5;
 
-            // The RD7 bit-plane reaches the line buffer through ICC10:A, a
-            // NOR (see AppleISystem.CharacterMemory.cs), so Out6 is that code
-            // bit inverted. The Apple I's own 2513 is masked to match; the
-            // shared ROM image isn't, so flip it back here.
-            _characterGenerator.Address9 = !_lineBuffer.Out6;
+            // Address9 is the 2513's weight-0x20 character-code bit, and on
+            // this board it arrives inverted relative to the stored code:
+            // ICC10:A (a NOR - see AppleISystem.CharacterMemory.cs) already
+            // inverts the RD7 plane into Out6, and the real Apple I 2513 is
+            // masked so that inversion is *not* cancelled but is the intended
+            // mapping. Keeping it is what makes an all-zeros cell (power-on,
+            // and every cell CLEAR SCREEN writes) land on the 2513's space
+            // glyph ($20) rather than '@' ($00) - i.e. a genuinely blank
+            // screen - while WozMon's echoed ASCII still resolves to the
+            // right glyphs ('\' -> $1C, '5' -> $35, 'A' -> $01) and the
+            // cursor cell still alternates '@'/blank with the 555.
+            _characterGenerator.Address9 = _lineBuffer.Out6;
             _characterGenerator.Address1 = (scanline & 0x01) != 0;
             _characterGenerator.Address2 = (scanline & 0x02) != 0;
             _characterGenerator.Address3 = (scanline & 0x04) != 0;
