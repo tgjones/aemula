@@ -224,9 +224,10 @@ public sealed partial class AppleISystem
     // wired to either write mux; see the file header.
     private static readonly int[] CharacterDataPiaBit = [0, 1, 2, 3, 4, 6];
 
-    // B4.12 on the keyboard connector - the dedicated CLEAR SCREEN key.
-    // Only reachable headlessly once the phase-4f console harness lands; a
-    // running CR line-fill drives the same net through diode CR4 regardless.
+    // B4.12 on the keyboard connector - the dedicated CLEAR SCREEN key, held
+    // true while it's down (the UI and the console harness both drive it as a
+    // console control). A running CR line-fill drives the same net through
+    // diode CR4 regardless.
     private bool _clearScreenKeyDown;
 
     // ICC9:C output _S1_41, the ICD8/ICD9 vertical counter's active-low

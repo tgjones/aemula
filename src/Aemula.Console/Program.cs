@@ -228,7 +228,8 @@ public static class Program
             throw new ArgumentException(
                 "Usage: aemula-console <system> --frames <n> [--rom <path>] " +
                 "[--screenshot <path>] [--screenshot-every <n>] " +
-                "[--input \"<frame>:<token>,...\"] [--trace-timing]");
+                "[--input \"<frame>:<token>+/-  or  <frame>:\\\"typed text\\\", ...\"] " +
+                "[--trace-timing]");
         }
 
         if (framesRequested == null)

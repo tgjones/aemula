@@ -255,14 +255,25 @@ public partial class Mos6502Chip
         get => _resetPin; // Shouldn't be accessible
         set
         {
+            var risingEdge = value && !_resetPin;
+
             _resetPin = value;
 
             if (!value)
             {
+                // RES pulled low: abandon whatever the core was doing and hold
+                // it in reset. The Phi0 setter freezes the core while _resetPin
+                // is low, so nothing advances until RES is released.
                 _brkFlags = BrkFlags.Reset;
             }
-            else if (value && !_resetPin)
+            else if (risingEdge)
             {
+                // RES released: run the reset sequence from the top on the
+                // following clocks. _resetTimer only counts up while _brkFlags
+                // is Reset and is never otherwise cleared, so without this a
+                // second RES pulse (a mid-run reset, not just power-on) would
+                // leave it past its vector-fetch counts and the core would run
+                // straight past the reset vector.
                 _resetTimer = 0;
             }
         }

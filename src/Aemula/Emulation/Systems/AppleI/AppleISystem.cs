@@ -74,7 +74,12 @@ public sealed partial class AppleISystem : EmulatedSystem
         Pia.Res = false;
         Pia.Res = true;
 
+        // Power-on only: seed the recirculating character/cursor rings (they
+        // free-run from power-on and the RESET key never touches them - see
+        // Reset()).
         ResetCharacterMemory();
+
+        InitializeConsoleControls();
     }
 
     public override void LoadProgram(string filePath)
@@ -89,13 +94,17 @@ public sealed partial class AppleISystem : EmulatedSystem
 
     public override void Reset()
     {
+        // The RESET key (and the UI's Reset command) just pulses the 6502 and
+        // PIA reset lines. The video counters and the shift-register character
+        // memory free-run from power-on and are left alone - like the real
+        // board, where RESET doesn't clear the screen (that's the CLEAR SCREEN
+        // key), and re-seeding them mid-run would knock the recirculating rings
+        // out of phase with the still-running counters.
         Cpu.Res = false;
         Cpu.Res = true;
 
         Pia.Res = false;
         Pia.Res = true;
-
-        ResetCharacterMemory();
     }
 
     public override void Tick()
