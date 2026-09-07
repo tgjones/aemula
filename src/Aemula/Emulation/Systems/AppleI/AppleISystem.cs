@@ -126,23 +126,26 @@ public sealed partial class AppleISystem : EmulatedSystem
 
         if (piaSelected)
         {
-            // DB is only driven from the shared bus - and only pulsed -
-            // while actually selected, so it's otherwise left holding
-            // whatever the PIA last really answered (what ReadByteDebug/
-            // WriteByteDebug read back later, without re-triggering a live
-            // access, rather than whatever unrelated ROM/RAM byte happened
-            // to cross the bus most recently).
+            // DB is only driven from the shared bus while actually selected,
+            // so it's otherwise left holding whatever the PIA last really
+            // answered (what ReadByteDebug/WriteByteDebug read back later,
+            // without re-triggering a live access, rather than whatever
+            // unrelated ROM/RAM byte happened to cross the bus most
+            // recently).
             Pia.DB = Cpu.Data;
-
-            // One full E pulse per bus cycle - not yet the schematic's real
-            // continuously-running E (that only matters once CA2/CB2
-            // handshake timing does), but enough to commit exactly one
-            // register access: the rising edge commits a read, the falling
-            // edge commits a write.
-            Pia.E = false;
-            Pia.E = true;
-            Pia.E = false;
         }
+
+        // E (pin 25) is tied to the free-running phi2 clock (net O2), so it
+        // pulses every CPU cycle whether or not the PIA is addressed. Only a
+        // selected cycle commits a register access (rising edge = read,
+        // falling edge = write), but the edges still advance the CA2/CB2
+        // handshake state machine on unselected cycles - which is what lets
+        // the CB2 strobe armed by a display write fall on the very next
+        // cycle, instead of stalling until the next PIA access and being
+        // missed by WozMon's back-to-back busy poll.
+        Pia.E = false;
+        Pia.E = true;
+        Pia.E = false;
 
         if (Cpu.RW)
         {

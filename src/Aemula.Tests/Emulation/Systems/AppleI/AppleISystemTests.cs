@@ -13,13 +13,19 @@ public class AppleISystemTests
     // wired correctly end to end, without needing video or a keyboard yet.
     private const ushort NextCharLoop = 0xFF29;
 
+    // WozMon's reset path now echoes "\" and CR through a display handshake
+    // that genuinely blocks until the character rings accept each byte, and
+    // the video counters only start turning at reset (not at power-on), so
+    // the first echo can stall for up to a full frame-long ring rotation.
+    private const int MasterTicksPerFrame = 256 * 65 * 14;
+
     [Test]
     public async Task RunsResetVectorIntoWozMonNextCharLoop()
     {
         var system = new AppleISystem();
         system.LoadProgram("");
 
-        var maxCycles = 10_000;
+        var maxCycles = MasterTicksPerFrame * 3;
         var cycles = 0;
         var reachedNextCharLoop = false;
 
@@ -48,7 +54,7 @@ public class AppleISystemTests
         var system = new AppleISystem();
         system.LoadProgram("");
 
-        for (var i = 0; i < 10_000; i++)
+        for (var i = 0; i < MasterTicksPerFrame * 3; i++)
         {
             system.Tick();
         }

@@ -27,7 +27,13 @@ public class AppleISystemCharacterMemoryTests
 
     private static bool RunToNextCharLoop(AppleISystem system)
     {
-        for (var i = 0; i < 10_000; i++)
+        // WozMon's reset path echoes "\" then CR before it first reaches the
+        // keyboard-poll loop, and its ECHO routine now genuinely blocks on
+        // the display busy flag. The video counters start from zero on reset
+        // (unlike real hardware, where they've been free-running since
+        // power-on), so the very first echo can't commit until the ring has
+        // turned over once - budget a few frames.
+        for (var i = 0; i < MasterTicksPerFrame * 3; i++)
         {
             system.Tick();
 
@@ -40,14 +46,32 @@ public class AppleISystemCharacterMemoryTests
         return false;
     }
 
+    // Runs until the recirculating cursor bit is at the write point and
+    // returns the ring position it's sitting at - the position the next
+    // committed character will land in. -1 if it never surfaces in the
+    // budget (a little over one full frame-long rotation).
+    private static int RunToCursorPosition(AppleISystem system)
+    {
+        for (var i = 0; i < MasterTicksPerFrame + MasterTicksPerFrame / 8; i++)
+        {
+            system.Tick();
+
+            if (system.CursorOutForTests)
+            {
+                return system.RingPositionForTests;
+            }
+        }
+
+        return -1;
+    }
+
     // WozMon's GETLINE echoes every typed character back out through
     // ECHO/DSP, so pressing a key and running long enough should land that
-    // same character in the character-memory ring at the cursor's starting
-    // position (row 0, column 0 - see
-    // AppleISystem.CharacterMemory.cs.ResetCharacterMemory). The write only
-    // commits on the character-clock where the cursor bit passes the write
-    // point, and the rings only turn over once per frame, so this budgets a
-    // few frames rather than assuming the write is instant.
+    // same character in the character-memory ring at whatever position the
+    // cursor bit is currently sitting. The write only commits on the
+    // character-clock where the cursor bit passes the write point, and the
+    // rings only turn over once per frame, so this budgets a few frames
+    // rather than assuming the write is instant.
     [Test]
     public async Task TypedCharacterLandsInCharacterMemoryAtCursor()
     {
@@ -56,6 +80,12 @@ public class AppleISystemCharacterMemoryTests
 
         await Assert.That(RunToNextCharLoop(system)).IsTrue();
 
+        var cursorPosition = RunToCursorPosition(system);
+        await Assert.That(cursorPosition).IsGreaterThanOrEqualTo(0);
+
+        // Nothing has been written where the cursor currently is.
+        await Assert.That(system.PeekCharacterCodeForTests(cursorPosition)).IsEqualTo((byte)0);
+
         PressKey(system, 'A');
 
         var committed = false;
@@ -63,18 +93,15 @@ public class AppleISystemCharacterMemoryTests
         for (var i = 0; i < MasterTicksPerFrame * 3 && !committed; i++)
         {
             system.Tick();
-            committed = system.PeekCharacterCodeForTests(0) != 0;
+            committed = system.PeekCharacterCodeForTests(cursorPosition) != 0;
         }
-
-        await Assert.That(committed).IsTrue();
 
         // 'A' -> uppercase ASCII 'A' | 0x80 into PA, echoed back out to
         // $D012 by WozMon with the high bit stripped by the PIA's own DDR
         // masking (only PB0-PB6 are wired as outputs) - whatever 6-of-7
         // bits made it into the character rings should be non-zero and
         // stable once committed.
-        var code = system.PeekCharacterCodeForTests(0);
-        await Assert.That(code).IsNotEqualTo((byte)0);
+        await Assert.That(committed).IsTrue();
     }
 
     // Confirmed from the schematic (see AppleISystem.CharacterMemory.cs's
@@ -90,6 +117,9 @@ public class AppleISystemCharacterMemoryTests
 
         await Assert.That(RunToNextCharLoop(system)).IsTrue();
 
+        var cursorPosition = RunToCursorPosition(system);
+        await Assert.That(cursorPosition).IsGreaterThanOrEqualTo(0);
+
         PressKey(system, 'A');
 
         var committed = false;
@@ -99,7 +129,7 @@ public class AppleISystemCharacterMemoryTests
         {
             wasCursorOutBeforeCommit = system.CursorOutForTests;
             system.Tick();
-            committed = system.PeekCharacterCodeForTests(0) != 0;
+            committed = system.PeekCharacterCodeForTests(cursorPosition) != 0;
         }
 
         await Assert.That(committed).IsTrue();
@@ -128,5 +158,37 @@ public class AppleISystemCharacterMemoryTests
         }
 
         await Assert.That(cursorBackAtExpectedPosition).IsTrue();
+    }
+
+    // WozMon's reset path unconditionally echoes "\" (the ESCAPE glyph) and
+    // then a CR through ECHO/DSP before it ever reads the keyboard. ECHO
+    // blocks on the display busy flag between the two, so both writes have to
+    // land - and at successive cursor positions, not on top of each other.
+    // The character rings can only accept a byte on the character-clock the
+    // cursor bit passes the write point, so this budgets a few frames.
+    [Test]
+    public async Task ResetEchoLandsBackslashThenCarriageReturnAtDistinctPositions()
+    {
+        // Six PIA display bits (skipping PB5) fed through the write mux, so a
+        // byte's stored code keeps bits 0-4 and 6. "\" is echoed as $DC,
+        // masked to $5C by the display DDR -> 0x3C; CR is echoed as $8D,
+        // masked to $0D -> 0x0D.
+        const byte BackslashCode = 0x3C;
+        const byte CarriageReturnCode = 0x0D;
+
+        var system = new AppleISystem();
+        system.LoadProgram("");
+
+        for (var i = 0; i < MasterTicksPerFrame * 3; i++)
+        {
+            system.Tick();
+        }
+
+        var first = system.PeekCharacterCodeForTests(0);
+        var second = system.PeekCharacterCodeForTests(1);
+
+        await Assert.That(first).IsEqualTo(BackslashCode);
+        await Assert.That(second).IsEqualTo(CarriageReturnCode);
+        await Assert.That(first).IsNotEqualTo(second);
     }
 }

@@ -9,6 +9,12 @@ namespace Aemula.Emulation.Systems.AppleI;
 // cursor's position - designators ICC3/ICC4/ICC11A/ICC11B/ICC14/ICD4A/
 // ICD4B/ICD5A/ICD5B/ICD14A/ICD14B on the schematic.
 //
+// The CPU-side handshake is gate-level: ICC15:D inverts the PIA's CB2 into
+// the active-high busy flag DA (read back on PB7); ICC7 (74174), clocked by
+// MEM0, registers DA and the write-commit term _S1_71 (from ICC6:B); ICC7's
+// /RDA output fires the ICB3:B one-shot, whose pulse drives CB1 to restore
+// CB2 and clear busy once a character has latched into the rings.
+//
 // Confirmed from the schematic (http://retro.hansotten.nl/uploads/apple1/a1
 // %20circuit.pdf, Terminal Section): ICC4 and ICC14 are 74157 quad 2:1
 // muxes whose S select is a net drawn with an overline ("WRITE-bar") and
@@ -118,29 +124,52 @@ public sealed partial class AppleISystem
     private readonly Ttl74157Chip _writeMuxA = new();
     private readonly Ttl74157Chip _writeMuxB = new();
 
+    // ICC15:D (7400, drawn on the processor sheet): DA = NAND(CB2, CB2) =
+    // NOT(CB2). The PIA pulls its CB2 handshake line low the instant the CPU
+    // commits a write to $D012/ORB and holds it there until the write is
+    // acknowledged; this inverter turns that into the active-high busy level
+    // that reaches PB7 - the bit WozMon's ECHO polls (it spins while bit 7
+    // reads 1 and writes once it reads 0, i.e. bit 7 is busy, not ready).
+    private readonly Ttl7400Chip _displayBusyInverter = new();
+
+    // ICC7 (74174), clocked by MEM0 - the same gated clock the recirculating
+    // rings shift on. D2->Q2 registers DA one ring-clock late (net _S1_148);
+    // D3->Q3 registers _S1_71 as /RDA, the write-acknowledge strobe. Feeding
+    // the write path a registered, one-ring-clock-late view of the busy flag
+    // rather than the live one is what widens the commit window enough for
+    // WozMon's back-to-back busy poll to actually catch a write in flight.
+    // (The four other flip-flops carry end-of-line/frame and cursor-advance
+    // signals not yet wired here.)
+    private readonly Ttl74174Chip _writeAckRegister = new();
+
+    // ICC6:B (7410): _S1_71 = NAND(CURS, _S1_148, _S1_148) - low exactly
+    // when the cursor bit is at the write point and the registered busy flag
+    // is still set, i.e. a character is committing into the rings on this
+    // ring clock.
+    private readonly Ttl7410Chip _writeCommitGate = new();
+
+    // ICB3:B (74123, also on the processor sheet): the write-acknowledge
+    // one-shot. A falling edge on /RDA fires a fixed ~3.5us pulse whose
+    // trailing edge releases CB1; CB1's active (rising) transition is what
+    // tells the PIA to restore CB2 high, dropping the busy flag once the new
+    // character has had time to latch into the shift register.
+    private readonly Ttl74123Chip _writeAckOneShot = new()
+    {
+        // Pin 10 (2B) is tied high; the pulse width models R11/C-network's
+        // ~3.5us at the 1.0227MHz character rate (rounded up to a whole
+        // character-time, erring toward the CPU seeing busy a touch longer).
+        B2 = true,
+        PulseTicks2 = 4,
+    };
+
     // Which PIA PB bit (of PB0-PB6) each entry of _characterBits reads from
     // - PB5 (RD6 on the schematic) is the one bit that's genuinely not
     // wired to either write mux; see the file header.
     private static readonly int[] CharacterDataPiaBit = [0, 1, 2, 3, 4, 6];
 
-    // Set on CB2's falling edge (Mos6820Chip's own handshake-mode logic
-    // pulses CB2 low the instant the CPU commits a write to $D012/ORB) and
-    // cleared once that byte actually gets latched into the character bits,
-    // which can only happen on the specific character-clock where the
-    // recirculating cursor bit is the one currently at the write point -
-    // i.e. real, hardware-accurate variable latency, up to just over one
-    // full 1024-cycle rotation in the worst case. Also driven out onto PB7
-    // (PIA.PortB's one input-configured bit) every cycle, since disassembling
-    // the real WozMon ROM's ECHO routine ($FFEF: BIT $D012 / BMI $FFEF/
-    // STA $D012) shows the CPU spins while bit 7 reads 1 and writes once it
-    // reads 0 - i.e. bit 7 is a busy flag, not a ready flag.
-    private bool _pendingWrite;
-
     // True for exactly the one character-clock following a committed write -
     // see the file header's ICC13/WC2 discussion.
     private bool _cursorSetPending;
-
-    private bool _lastCb2 = true;
 
     // Bookkeeping only - not extra hardware state. The real chips only ever
     // know "the bit at Out right now"; this just names which of the 1024
@@ -171,10 +200,16 @@ public sealed partial class AppleISystem
         _cursorBit.Clear();
         _cursorBit.Poke(1023, true);
 
-        _pendingWrite = false;
         _cursorSetPending = false;
-        _lastCb2 = true;
         _ringPosition = 0;
+
+        // Seed ICC7.Q3 (/RDA) high - its idle state, since _S1_71 is a NAND
+        // that sits high whenever the cursor bit isn't at the write point.
+        // Without this the register powers up with Q3 low and the very first
+        // sample would look like a write-acknowledge strobe to the one-shot.
+        _writeAckRegister.D3 = true;
+        _writeAckRegister.Clk = false;
+        _writeAckRegister.Clk = true;
     }
 
     private void TickCharacterMemory()
@@ -185,15 +220,27 @@ public sealed partial class AppleISystem
         // rings are actually shifting.
         var ringClock = EvaluateRingClock();
 
-        var cb2 = Pia.Cb2;
-        if (_lastCb2 && !cb2)
-        {
-            _pendingWrite = true;
-        }
-        _lastCb2 = cb2;
+        // DA (ICC15:D) - the live busy level, just the inverse of the PIA's
+        // CB2 handshake line.
+        var displayBusy = DisplayBusy();
 
+        // CURS - approximated as the cursor ring's own Out. The real net is
+        // ICC13's registered copy of it, one character-clock behind; that
+        // indirection lands with the cursor-advance logic and isn't modelled
+        // yet.
         var cursorHere = _cursorBit.Out;
-        var commitWrite = ringClock && _pendingWrite && cursorHere;
+
+        // _S1_71 (ICC6:B): NAND(CURS, _S1_148, _S1_148), low only when the
+        // cursor is at the write point and the busy flag registered on the
+        // previous ring clock (ICC7.Q2) is still set. A low here is a commit
+        // this ring clock - the same condition the real WRITE mux-select net
+        // resolves to once the CR/scroll terms (not yet wired) are inactive.
+        _writeCommitGate.A1 = cursorHere;
+        _writeCommitGate.B1 = _writeAckRegister.Q2;
+        _writeCommitGate.C1 = _writeAckRegister.Q2;
+        var writeCommitBar = _writeCommitGate.Y1;
+
+        var commitWrite = ringClock && !writeCommitBar;
         var writeBar = !commitWrite;
 
         _writeMuxA.G = false;
@@ -233,27 +280,47 @@ public sealed partial class AppleISystem
 
         TickLineBufferClock();
 
+        // ICC7 registers DA and _S1_71 on the same MEM0 edge the rings shift
+        // on. Q3 (/RDA) going low is the write-acknowledge strobe; it stays
+        // low for one ring clock, since committing a write clears the cursor
+        // bit and so forces _S1_71 back high.
+        _writeAckRegister.D2 = displayBusy;
+        _writeAckRegister.D3 = writeCommitBar;
+
         if (ringClock)
         {
             ShiftCharacterRings();
+
+            _writeAckRegister.Clk = false;
+            _writeAckRegister.Clk = true;
         }
 
-        if (commitWrite)
-        {
-            _pendingWrite = false;
+        // ICB3:B: a falling edge on /RDA fires the one-shot. Its Qn output
+        // holds CB1 low for the pulse and releases it high at the end; that
+        // rising edge is CB1's configured active transition (per WozMon's
+        // CRB init), which restores CB2 high in handshake mode and so drops
+        // the busy flag. CB1's IRQ1 flag also sets as a side effect, same as
+        // real 6821 behaviour, but Pia.Irqb isn't wired to Cpu.Irq anywhere
+        // in this system (no net for it on the schematic), so it has no
+        // observable effect.
+        _writeAckOneShot.ABar2 = _writeAckRegister.Q3;
+        _writeAckOneShot.Tick();
+        Pia.Cb1 = _writeAckOneShot.Qn2;
 
-            // Restores CB2 high (handshake mode's "paired C1 active
-            // transition" - see Mos6820Chip's remarks) on CB1's configured
-            // active edge (rising, per WozMon's own CRB init). CB1's IRQ1
-            // flag also sets as a side effect, same as real 6821 behaviour,
-            // but Pia.Irqb is never wired to Cpu.Irq anywhere in this
-            // system - no net for it was found on the schematic - so it
-            // has no observable effect.
-            Pia.Cb1 = false;
-            Pia.Cb1 = true;
-        }
+        // DA drives PB7 (PIA.PortB's one input-configured bit): WozMon's
+        // ECHO spins while bit 7 reads 1 and writes once it reads 0.
+        // Recomputed here, after the CB1 update, so the tick the one-shot
+        // finishes and restores CB2 is the same tick the busy flag drops -
+        // no extra character-time of lag before WozMon's next poll.
+        Pia.PB = (byte)(DisplayBusy() ? 0x80 : 0x00);
+    }
 
-        Pia.PB = (byte)(_pendingWrite ? 0x80 : 0x00);
+    // DA (ICC15:D, a 7400 wired as an inverter): NOT(CB2).
+    private bool DisplayBusy()
+    {
+        _displayBusyInverter.A1 = Pia.Cb2;
+        _displayBusyInverter.B1 = Pia.Cb2;
+        return _displayBusyInverter.Y1;
     }
 
     private bool ReadCharacterDataBit(int index) =>
