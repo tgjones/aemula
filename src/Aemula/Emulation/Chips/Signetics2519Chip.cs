@@ -1,5 +1,3 @@
-using System;
-
 namespace Aemula.Emulation.Chips;
 
 /// <summary>
@@ -18,12 +16,17 @@ public sealed class Signetics2519Chip
 {
     private const int Length = 40;
 
+    // The six rings, each a circular buffer: a clock edge moves the shared
+    // head rather than every bit (the Apple I clocks this 40 times a line).
+    // Stage i of a ring - 0 being the one In feeds, Length - 1 the one Out
+    // reads - lives at index (_head + i) % Length.
     private readonly bool[] _bits1 = new bool[Length];
     private readonly bool[] _bits2 = new bool[Length];
     private readonly bool[] _bits3 = new bool[Length];
     private readonly bool[] _bits4 = new bool[Length];
     private readonly bool[] _bits5 = new bool[Length];
     private readonly bool[] _bits6 = new bool[Length];
+    private int _head;
 
     public bool In1 { private get; set; }
     public bool In2 { private get; set; }
@@ -34,12 +37,14 @@ public sealed class Signetics2519Chip
 
     public bool Recirculate { private get; set; }
 
-    public bool Out1 => _bits1[Length - 1];
-    public bool Out2 => _bits2[Length - 1];
-    public bool Out3 => _bits3[Length - 1];
-    public bool Out4 => _bits4[Length - 1];
-    public bool Out5 => _bits5[Length - 1];
-    public bool Out6 => _bits6[Length - 1];
+    private int OutIndex => (_head + Length - 1) % Length;
+
+    public bool Out1 => _bits1[OutIndex];
+    public bool Out2 => _bits2[OutIndex];
+    public bool Out3 => _bits3[OutIndex];
+    public bool Out4 => _bits4[OutIndex];
+    public bool Out5 => _bits5[OutIndex];
+    public bool Out6 => _bits6[OutIndex];
 
     private bool _clk;
 
@@ -56,19 +61,18 @@ public sealed class Signetics2519Chip
                 return;
             }
 
-            Shift(_bits1, In1);
-            Shift(_bits2, In2);
-            Shift(_bits3, In3);
-            Shift(_bits4, In4);
-            Shift(_bits5, In5);
-            Shift(_bits6, In6);
-        }
-    }
+            // Every ring's last stage becomes its new first stage's
+            // neighbour: step the head back one, and the slot it now points
+            // at (the old last stage) is where the new bit goes.
+            var outIndex = OutIndex;
+            _head = outIndex;
 
-    private void Shift(bool[] bits, bool input)
-    {
-        var recirculated = bits[Length - 1];
-        Array.Copy(bits, 0, bits, 1, Length - 1);
-        bits[0] = Recirculate ? recirculated : input;
+            _bits1[outIndex] = Recirculate ? _bits1[outIndex] : In1;
+            _bits2[outIndex] = Recirculate ? _bits2[outIndex] : In2;
+            _bits3[outIndex] = Recirculate ? _bits3[outIndex] : In3;
+            _bits4[outIndex] = Recirculate ? _bits4[outIndex] : In4;
+            _bits5[outIndex] = Recirculate ? _bits5[outIndex] : In5;
+            _bits6[outIndex] = Recirculate ? _bits6[outIndex] : In6;
+        }
     }
 }

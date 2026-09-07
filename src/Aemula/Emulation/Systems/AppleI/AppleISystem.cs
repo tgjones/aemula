@@ -7,9 +7,9 @@ using Aemula.Emulation.Systems.AppleI.Roms;
 
 namespace Aemula.Emulation.Systems.AppleI;
 
-// The PIA's display-side handshake lines (CB2, and the keyboard side
-// PA/CA1) are left at their power-on levels - no character memory or
-// keyboard wiring yet.
+// The processor sheet: CPU, RAM, Monitor ROM, PIA and the 74154 chip-select
+// decoder. The terminal sheet - video timing, the shift-register character
+// memory and the composite output - is the other partial files.
 public sealed partial class AppleISystem : EmulatedSystem
 {
     // The board's master oscillator: 4x the NTSC colour subcarrier
@@ -63,10 +63,7 @@ public sealed partial class AppleISystem : EmulatedSystem
         _characterGenerator = Signetics2513Chip.Load();
         _characterGenerator.ChipEnable = false; // Tied low - always enabled.
 
-        _horizontalCounterLow = new Ttl74160Chip();
-        _horizontalCounterHigh = new Ttl74161Chip();
-        _lineCounterLow = new Ttl74161Chip();
-        _lineCounterHigh = new Ttl74161Chip();
+        InitializeVideoTiming();
 
         Cpu.Res = false;
         Cpu.Res = true;
@@ -109,9 +106,9 @@ public sealed partial class AppleISystem : EmulatedSystem
 
     public override void Tick()
     {
-        // Drives Cpu.Phi0 off the real horizontal/vertical counter chain and,
-        // on its rising edge, calls DoCpuMemoryAccess() - see
-        // AppleISystem.VideoTiming.cs.
+        // One master-oscillator tick. Drives Cpu.Phi0 off the real
+        // character clock and, on its rising edge, calls DoCpuMemoryAccess()
+        // - see AppleISystem.VideoTiming.cs.
         TickVideoTiming();
     }
 

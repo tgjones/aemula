@@ -21,7 +21,7 @@ public class AppleISystemInputTests
     // is the sign the reset vector ran end to end.
     private const ushort NextCharLoop = 0xFF29;
 
-    private const int MasterTicksPerFrame = 256 * 65 * 14;
+    private const int MasterTicksPerFrame = 262 * 65 * 14;
 
     private static ConsoleControl Control(AppleISystem system, string mnemonic) =>
         system.ConsoleControls.Single(c => c.Mnemonic == mnemonic);

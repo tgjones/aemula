@@ -150,14 +150,25 @@ public class AppleISystemVideoTimingTests
         await Assert.That(system.RingPositionForTests).IsEqualTo(startRingPosition);
     }
 
+    // The frame: ICD8/ICD9 count 256 lines, but ICD15 - the vertical-sync
+    // counter, released only while the line count reads 224-231 - drops
+    // VINH (its QB) for pairs of line-clocks as it counts 10..15,0..8, and
+    // VINH gates the line counter's CEP, so six of those clocks don't
+    // advance the count: 262 lines. ICD15's QD (_S1_160) is low for the
+    // eight line-clocks it reads 0-7, and ICC15:C/ICC13 turn that into an
+    // unserrated eight-line vertical sync pulse - see
+    // AppleISystem.VideoTiming.cs.
     [Test]
-    public async Task VSyncPulsesOnceEveryTwoHundredFiftySixLines()
+    public async Task FrameIsTwoHundredSixtyTwoLinesWithAnEightLineVSync()
     {
+        const int LinesPerFrame = 262;
+        const int VSyncLines = 8;
+
         var system = new AppleISystem();
         system.LoadProgram("");
 
         // Run past the counters' power-up transient before measuring.
-        for (var i = 0; i < MasterTicksPerLine * 2; i++)
+        for (var i = 0; i < MasterTicksPerLine * LinesPerFrame; i++)
         {
             system.Tick();
         }
@@ -165,14 +176,17 @@ public class AppleISystemVideoTimingTests
         var lastVSync = system.VSync;
         var risingEdges = 0;
         var ticksSinceLastEdge = 0;
+        var ticksSinceRisingEdge = 0;
         var measuredPeriods = new System.Collections.Generic.List<int>();
+        var measuredWidths = new System.Collections.Generic.List<int>();
 
         // A bit over two frames' worth of lines.
-        for (var i = 0; i < MasterTicksPerLine * 256 * 2 + MasterTicksPerLine; i++)
+        for (var i = 0; i < MasterTicksPerLine * LinesPerFrame * 2 + MasterTicksPerLine; i++)
         {
             system.Tick();
 
             ticksSinceLastEdge++;
+            ticksSinceRisingEdge++;
 
             if (system.VSync && !lastVSync)
             {
@@ -184,6 +198,11 @@ public class AppleISystemVideoTimingTests
                 }
 
                 ticksSinceLastEdge = 0;
+                ticksSinceRisingEdge = 0;
+            }
+            else if (!system.VSync && lastVSync && risingEdges > 0)
+            {
+                measuredWidths.Add(ticksSinceRisingEdge);
             }
 
             lastVSync = system.VSync;
@@ -193,7 +212,59 @@ public class AppleISystemVideoTimingTests
 
         foreach (var period in measuredPeriods)
         {
-            await Assert.That(period).IsEqualTo(MasterTicksPerLine * 256);
+            await Assert.That(period).IsEqualTo(MasterTicksPerLine * LinesPerFrame);
+        }
+
+        await Assert.That(measuredWidths.Count).IsGreaterThanOrEqualTo(2);
+
+        foreach (var width in measuredWidths)
+        {
+            await Assert.That(width).IsEqualTo(MasterTicksPerLine * VSyncLines);
+        }
+    }
+
+    // HSYNC (ICC9:B) is OR(H4, H6): low only while the tens digit of the
+    // horizontal counter reads 10, i.e. character-times 100-109 - ten of the
+    // line's 65, 9.8us. Wide for NTSC, but that is what the decode gives.
+    [Test]
+    public async Task HSyncIsTenCharacterTimesWide()
+    {
+        const int MasterTicksPerCharacterTime = 14;
+
+        var system = new AppleISystem();
+        system.LoadProgram("");
+
+        for (var i = 0; i < MasterTicksPerLine * 2; i++)
+        {
+            system.Tick();
+        }
+
+        var lastHSync = system.HSync;
+        var ticksHigh = 0;
+        var measuredWidths = new System.Collections.Generic.List<int>();
+
+        for (var i = 0; i < MasterTicksPerLine * 5; i++)
+        {
+            system.Tick();
+
+            if (system.HSync)
+            {
+                ticksHigh++;
+            }
+            else if (lastHSync)
+            {
+                measuredWidths.Add(ticksHigh);
+                ticksHigh = 0;
+            }
+
+            lastHSync = system.HSync;
+        }
+
+        await Assert.That(measuredWidths.Count).IsGreaterThanOrEqualTo(4);
+
+        foreach (var width in measuredWidths)
+        {
+            await Assert.That(width).IsEqualTo(10 * MasterTicksPerCharacterTime);
         }
     }
 }

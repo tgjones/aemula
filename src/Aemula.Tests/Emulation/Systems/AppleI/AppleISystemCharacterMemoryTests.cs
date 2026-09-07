@@ -13,7 +13,7 @@ public class AppleISystemCharacterMemoryTests
     // AppleISystem.CharacterMemory.cs), so a write can take up to a full
     // frame to reach the cursor's ring position - 256 lines * 65
     // character-times * 14 master ticks.
-    private const int MasterTicksPerFrame = 256 * 65 * 14;
+    private const int MasterTicksPerFrame = 262 * 65 * 14;
 
     private static void PressKey(AppleISystem system, char key)
     {
@@ -240,80 +240,116 @@ public class AppleISystemCharacterMemoryTests
         await Assert.That(sawOff).IsTrue();
     }
 
-    // Advances to the next VSync rising edge (a frame boundary) and returns
-    // the ring position there. While nothing scrolls this is a fixed
-    // constant frame to frame (see
-    // AppleISystemVideoTimingTests.CharacterRingCompletesExactlyOneRotationPerFrame);
-    // a scroll shows up here as a step in that constant.
-    private static int RingPositionAtFrameBoundary(AppleISystem system)
+    private static bool RunUntil(AppleISystem system, System.Func<bool> condition, int frameBudget)
     {
-        var lastVSync = system.VSync;
-
-        while (true)
+        for (var i = 0; i < MasterTicksPerFrame * frameBudget; i++)
         {
             system.Tick();
 
-            if (system.VSync && !lastVSync)
+            if (condition())
             {
-                return system.RingPositionForTests;
+                return true;
             }
-
-            lastVSync = system.VSync;
         }
+
+        return false;
     }
 
-    // Fill the screen, keep typing, and the display scrolls up. Ken
-    // Shirriff's teardown describes the mechanism as "the scroll feature
-    // delays the shift register timing by one line rather than explicitly
-    // moving the bits" - so the observable is that the ring/scan phase steps
-    // on by exactly one screen row's worth of positions (40) across the
-    // frame the scroll fires in.
+    // Six display bits reach the rings (PB5 skipped): 'A' ($C1 echoed, $41
+    // after the display DDR) stores as 0x21, 'X' ($58) as 0x38, 'Y' ($59)
+    // as 0x39.
+    private const byte ACode = 0x21;
+    private const byte XCode = 0x38;
+    private const byte YCode = 0x39;
+
+    private const int VisibleColumns = 40;
+    private const int VisibleRows = 24;
+    private const int LastVisiblePosition = VisibleColumns * VisibleRows - 1;
+    private const int BottomRowStart = VisibleColumns * (VisibleRows - 1);
+
+    // Ring slots are numbered as the screen shows them (see
+    // AppleISystem.CharacterMemory.cs's _ringPosition), so a scroll is
+    // directly observable as every stored character moving 40 slots down
+    // the numbering. Ken Shirriff's teardown describes the mechanism as
+    // "the scroll feature delays the shift register timing by one line
+    // rather than explicitly moving the bits": ICC9:C pulls the line
+    // counter's load pin while a write commits with the beam in vertical
+    // blank, and it reloads to 191 (see AppleISystem.VideoTiming.cs) -
+    // which the test hook reports as the counters reading line 192,
+    // character-time 95, with the preset net high, going into that edge.
     [Test]
     public async Task TypingPastTheBottomRowScrollsTheDisplayUpOneRow()
     {
-        const int VisibleColumns = 40;
-        const int VisibleRows = 24;
-        const int FirstOffScreenPosition = VisibleColumns * VisibleRows;
-
         var system = new AppleISystem();
         system.LoadProgram("");
 
         await Assert.That(RunToNextCharLoop(system)).IsTrue();
 
-        // Settle past the reset transient, same as RunToCursorPosition.
-        for (var i = 0; i < MasterTicksPerFrame * 3; i++)
-        {
-            system.Tick();
-        }
+        // Something recognisable on row 1 (the reset echo's CR leaves the
+        // cursor at its column 0), then wait for the cursor to have moved on
+        // from it - a write's cursor re-seat lands one ring clock after the
+        // character, and parking the cursor before that would leave two.
+        PressKey(system, 'A');
+        await Assert.That(RunUntil(system, () => system.PeekCharacterCodeForTests(VisibleColumns) == ACode, 3)).IsTrue();
+        await Assert.That(RunToCursorPosition(system)).IsEqualTo(VisibleColumns + 1);
 
-        var baseline = RingPositionAtFrameBoundary(system);
-        await Assert.That(RingPositionAtFrameBoundary(system)).IsEqualTo(baseline);
-
-        // Park the cursor one row below the last visible line and type a
-        // character. WozMon echoes it; it commits at that off-screen ring
-        // position, which is in vertical blank, so ICC9:C pulls the vertical
-        // counter's load line and the scroll reload fires.
-        system.SetCursorLogicalPositionForTests(FirstOffScreenPosition);
+        // Park the cursor on the last visible cell and type. The write
+        // commits there; the cursor's next cell is off the bottom, and the
+        // commit itself happens as the beam enters vertical blank, so the
+        // scroll reload fires in the same frame.
+        system.SetCursorLogicalPositionForTests(LastVisiblePosition);
         PressKey(system, 'X');
+        await Assert.That(RunUntil(system, () => system.ScrollReloadCountForTests == 1, 3)).IsTrue();
+        await Assert.That(system.LastScrollReloadForTests).IsEqualTo((192, 95, true));
 
-        var committed = false;
-        for (var i = 0; i < MasterTicksPerFrame * 3 && !committed; i++)
-        {
-            system.Tick();
-            committed = system.PeekCharacterCodeForTests(FirstOffScreenPosition) != 0;
-        }
-
-        await Assert.That(committed).IsTrue();
-
-        // Let the scroll frame finish.
-        for (var i = 0; i < MasterTicksPerFrame; i++)
+        // Let the scrolled frame complete so the slot numbering has re-synced.
+        for (var i = 0; i < MasterTicksPerFrame + 65 * 14; i++)
         {
             system.Tick();
         }
 
-        var scrolled = RingPositionAtFrameBoundary(system);
-        var advance = ((scrolled - baseline) % 1024 + 1024) % 1024;
+        await Assert.That(system.PeekCharacterCodeForTests(0)).IsEqualTo(ACode);
+        await Assert.That(system.PeekCharacterCodeForTests(VisibleColumns)).IsEqualTo((byte)0);
+        await Assert.That(system.PeekCharacterCodeForTests(LastVisiblePosition - VisibleColumns)).IsEqualTo(XCode);
 
-        await Assert.That(advance).IsEqualTo(VisibleColumns);
+        // And the cursor is at the start of the (new, blank) bottom row.
+        await Assert.That(RunToCursorPosition(system)).IsEqualTo(BottomRowStart);
+    }
+
+    // A Return on the bottom row must scroll in the frame it commits, not
+    // wait for the next character: the 64 ring slots that sit in vertical
+    // blank are re-written from the CLEAR-strobed write mux every pass, and
+    // that strobe also forces the cursor ring's input to /WC2, so a cursor
+    // left idle off the bottom would be wiped and nothing could ever be
+    // typed again. WozMon answers an empty line by going straight back to
+    // GETLINE, which echoes a CR of its own first, so a Return on the
+    // bottom row is two scrolls. Idle for a few frames after that, then
+    // type, and the character lands at the start of the bottom row without
+    // another scroll.
+    [Test]
+    public async Task ReturnOnTheBottomRowScrollsAtOnceAndTypingStillWorksAfterIdling()
+    {
+        var system = new AppleISystem();
+        system.LoadProgram("");
+
+        await Assert.That(RunToNextCharLoop(system)).IsTrue();
+
+        // Let the reset echo's own CR finish re-seating the cursor first.
+        await Assert.That(RunToCursorPosition(system)).IsEqualTo(VisibleColumns);
+
+        system.SetCursorLogicalPositionForTests(BottomRowStart);
+        PressKey(system, '\r');
+        await Assert.That(RunUntil(system, () => system.ScrollReloadCountForTests == 2, 6)).IsTrue();
+
+        for (var i = 0; i < MasterTicksPerFrame * 4; i++)
+        {
+            system.Tick();
+        }
+
+        await Assert.That(RunToCursorPosition(system)).IsEqualTo(BottomRowStart);
+
+        PressKey(system, 'Y');
+        await Assert.That(RunUntil(system, () => system.PeekCharacterCodeForTests(BottomRowStart) == YCode, 3)).IsTrue();
+        await Assert.That(system.ScrollReloadCountForTests).IsEqualTo(2);
     }
 }

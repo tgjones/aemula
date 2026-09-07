@@ -17,7 +17,7 @@ public class AppleISystemTests
     // that genuinely blocks until the character rings accept each byte, and
     // the video counters only start turning at reset (not at power-on), so
     // the first echo can stall for up to a full frame-long ring rotation.
-    private const int MasterTicksPerFrame = 256 * 65 * 14;
+    private const int MasterTicksPerFrame = 262 * 65 * 14;
 
     [Test]
     public async Task RunsResetVectorIntoWozMonNextCharLoop()

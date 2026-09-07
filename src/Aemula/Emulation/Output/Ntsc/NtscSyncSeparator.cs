@@ -34,8 +34,16 @@ public sealed class NtscSyncSeparator
     // that bracket real vertical blanking - those fall below
     // HSyncToleranceLowerFraction and are simply ignored (this class doesn't
     // need to specifically recognize them, only to not misclassify them).
+    // The upper bound has to admit the Apple I, whose HSYNC is ten
+    // character-times - 9.8µs, 140 samples, just over twice the ~4.7µs the
+    // estimate starts at (see AppleISystem.VideoTiming.cs); a real set's
+    // horizontal AFC locks to the pulse's edge and doesn't care that it's
+    // wide, and once accepted the estimate simply settles on the real
+    // width. Nothing in a standard signal is between 1.5x and 3x an HSYNC
+    // pulse (serrations are ~27µs, equalizing pulses ~2.3µs), so widening
+    // this costs no discrimination elsewhere.
     private const float HSyncToleranceLowerFraction = 0.5f;
-    private const float HSyncToleranceUpperFraction = 1.5f;
+    private const float HSyncToleranceUpperFraction = 2.5f;
 
     // A real vertical sync (broad) pulse is roughly 27.1µs - about 5.8x a
     // normal ~4.7µs HSYNC pulse - so "way longer than a normal HSYNC pulse"
