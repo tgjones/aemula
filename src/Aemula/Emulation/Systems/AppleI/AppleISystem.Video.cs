@@ -41,7 +41,12 @@ public sealed partial class AppleISystem
             _characterGenerator.Address6 = _lineBuffer.Out3;
             _characterGenerator.Address7 = _lineBuffer.Out4;
             _characterGenerator.Address8 = _lineBuffer.Out5;
-            _characterGenerator.Address9 = _lineBuffer.Out6;
+
+            // The RD7 bit-plane reaches the line buffer through ICC10:A, a
+            // NOR (see AppleISystem.CharacterMemory.cs), so Out6 is that code
+            // bit inverted. The Apple I's own 2513 is masked to match; the
+            // shared ROM image isn't, so flip it back here.
+            _characterGenerator.Address9 = !_lineBuffer.Out6;
             _characterGenerator.Address1 = (scanline & 0x01) != 0;
             _characterGenerator.Address2 = (scanline & 0x02) != 0;
             _characterGenerator.Address3 = (scanline & 0x04) != 0;

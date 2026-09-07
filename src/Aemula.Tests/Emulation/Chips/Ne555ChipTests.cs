@@ -81,6 +81,63 @@ public class Ne555ChipTests
     }
 
     [Test]
+    public async Task FreeRunningTimerOscillatesWithoutAnyTrigger()
+    {
+        // LowTicks non-zero => astable: 3 ticks high, then 2 ticks low, then
+        // high again, forever, with no trigger ever applied.
+        var chip = new Ne555Chip { PulseTicks = 3, LowTicks = 2 };
+
+        chip.TriggerBar = true;
+        chip.TriggerBar = false; // kick it into the high phase
+
+        await Assert.That(chip.Out).IsTrue();
+
+        chip.Tick();
+        chip.Tick();
+        await Assert.That(chip.Out).IsTrue();
+
+        chip.Tick(); // 3rd high tick - falls low
+        await Assert.That(chip.Out).IsFalse();
+
+        chip.Tick();
+        await Assert.That(chip.Out).IsFalse();
+
+        chip.Tick(); // 2nd low tick - returns high on its own
+        await Assert.That(chip.Out).IsTrue();
+
+        chip.Tick();
+        chip.Tick();
+        chip.Tick();
+        await Assert.That(chip.Out).IsFalse();
+    }
+
+    [Test]
+    public async Task FreeRunningTimerHeldInResetStaysLowThenResumes()
+    {
+        var chip = new Ne555Chip { PulseTicks = 3, LowTicks = 2 };
+
+        chip.TriggerBar = true;
+        chip.TriggerBar = false;
+        await Assert.That(chip.Out).IsTrue();
+
+        chip.ResetBar = false;
+        await Assert.That(chip.Out).IsFalse();
+
+        // No oscillation while reset is held.
+        for (var i = 0; i < 20; i++)
+        {
+            chip.Tick();
+        }
+        await Assert.That(chip.Out).IsFalse();
+
+        // Released, it starts timing the low phase and comes back.
+        chip.ResetBar = true;
+        chip.Tick();
+        chip.Tick();
+        await Assert.That(chip.Out).IsTrue();
+    }
+
+    [Test]
     public async Task RisingEdgeOnTriggerDoesNothing()
     {
         var chip = new Ne555Chip { PulseTicks = 4 };

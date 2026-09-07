@@ -37,6 +37,17 @@ namespace Aemula.Emulation.Systems.AppleI;
 // of line ICC8:A drops _S1_169, /WC1 pulses low, /WC2 follows, the cursor is
 // re-seated at the start of the next line and the latch self-clears.
 //
+// The cursor flash is a free-running 555 (ICD13) gated onto that one cell.
+// ICC12:A ANDs the 555 output with _S1_96 (high only while the cursor sits
+// idle at the write point) to make _S1_139; ICC10:A NORs _S1_139 with the
+// RD7 bit-plane's data to make _S1_110, which is that plane's own 2519
+// line-buffer input. While _S1_139 is low _S1_110 just passes the plane bit
+// through inverted; while it is high it forces that code bit, so the cursor
+// cell alternates between '@' and blank at the 555 rate. The inversion is
+// undone at the character generator's address pin (AppleISystem.Video.cs) -
+// on real hardware the 2513's mask has that one bit flipped to match this
+// wiring; the shared ROM image here doesn't, so the compensation is explicit.
+//
 // One reading taken on trust: the extracted netlist puts ICC14's spare
 // channel's two data pins (CURS, GND) the opposite way round from what's
 // used here. As drawn it would feed the cursor ring a constant 1 while idle
@@ -103,11 +114,30 @@ public sealed partial class AppleISystem
     // character-time from TickLineBufferClock.
     private readonly Ttl7400Chip _line0Gate = new();
 
-    // ICC10:C (7402): _S1_0 = NOR(ICD6.Qd, /VBL). During active video /VBL
-    // is high so _S1_0 is 0 and doesn't gate MEM0; during vertical blank it
-    // follows !ICD6.Qd, which is what trims the blanked-row contribution to
-    // 8 character-times per line.
-    private readonly Ttl7402Chip _memBlankingGate = new();
+    // ICC10 (7402, quad 2-input NOR). Gate C: _S1_0 = NOR(ICD6.Qd, /VBL) -
+    // during active video /VBL is high so _S1_0 is 0 and doesn't gate MEM0;
+    // during vertical blank it follows !ICD6.Qd, which trims the blanked-row
+    // contribution to 8 character-times per line. Gate A: _S1_110 =
+    // NOR(_S1_139, RD7-plane data) - the RD7 bit-plane's own 2519 line-buffer
+    // input, carrying the cursor-blink modulation (see the cursor-blink wiring
+    // in TickCharacterMemory).
+    private readonly Ttl7402Chip _icc10 = new();
+
+    // ICD13 - the free-running 555 that flashes the cursor. Wired as a
+    // standard astable off R10 (10k), R11 (10k) and C7 (22uF): Out high for
+    // 0.693*(R10+R11)*C7, low for 0.693*R11*C7 - about a 2.2Hz square-ish
+    // wave. Sampled once per character-time (the rate TickCharacterMemory
+    // runs at), so the on/off times are those seconds scaled by that clock.
+    private const double CharacterClockHz = 14_318_180.0 / 14.0;
+    private static readonly uint CursorBlinkHighTicks =
+        (uint)(0.693 * (10_000.0 + 10_000.0) * 22e-6 * CharacterClockHz);
+    private static readonly uint CursorBlinkLowTicks =
+        (uint)(0.693 * 10_000.0 * 22e-6 * CharacterClockHz);
+    private readonly Ne555Chip _cursorBlinkOscillator = new()
+    {
+        PulseTicks = CursorBlinkHighTicks,
+        LowTicks = CursorBlinkLowTicks,
+    };
 
     // ICC5 (7427, triple 3-input NOR). Gate A: MEM0 = NOR(_S1_0, LINE0,
     // _S1_97), the ring shift clock. Gate B: _S1_89 = NOR(RD7, RD6, _S1_71).
@@ -219,6 +249,7 @@ public sealed partial class AppleISystem
 
     internal bool CursorOutForTests => !_cursorBit.Out;
     internal int RingPositionForTests => _ringPosition;
+    internal bool CursorBlinkOnForTests => _cursorBlinkOscillator.Out;
 
     // A pure recirculating register has no power-on state of its own to
     // fall back on (see Signetics2504Chip.Poke's remarks) - real hardware
@@ -239,6 +270,11 @@ public sealed partial class AppleISystem
         _clearScreenKeyDown = false;
         _verticalCounterLoadBar = true;
         _ringPosition = 0;
+
+        // Kick the free-running cursor 555 into its output-high phase, the
+        // level a real astable settles to first from a discharged timing cap.
+        _cursorBlinkOscillator.TriggerBar = true;
+        _cursorBlinkOscillator.TriggerBar = false;
 
         // ICC7: /RDA (Q3) and /WC2 (Q6) idle high; the rest idle low.
         _writeAckRegister.D3 = true;
@@ -402,7 +438,22 @@ public sealed partial class AppleISystem
         _lineBuffer.In3 = _characterBits[2].Out;
         _lineBuffer.In4 = _characterBits[3].Out;
         _lineBuffer.In5 = _characterBits[4].Out;
-        _lineBuffer.In6 = _characterBits[5].Out;
+
+        // ICD13 (555) -> ICC12:A  _S1_139 = AND(555 out, _S1_96). _S1_96 is
+        // set only while the cursor sits idle at the write point, so the
+        // blink can never touch any cell but that one.
+        _icc12.A1 = _cursorBlinkOscillator.Out;
+        _icc12.B1 = s1_96;
+        var s1_139 = _icc12.Y1;
+
+        // ICC10:A  _S1_110 = NOR(_S1_139, RD7-plane data) - the RD7 plane's
+        // own 2519 line-buffer input. With the blink term low this is just
+        // the plane bit inverted (undone at the character generator - see the
+        // file header); with it high the code bit is forced, flashing the
+        // cursor cell between '@' and blank.
+        _icc10.A2 = s1_139;
+        _icc10.B2 = _characterBits[5].Out;
+        _lineBuffer.In6 = _icc10.Y2;
 
         TickLineBufferClock();
 
@@ -433,6 +484,10 @@ public sealed partial class AppleISystem
         _writeAckOneShot.ABar2 = _writeAckRegister.Q3;
         _writeAckOneShot.Tick();
         Pia.Cb1 = _writeAckOneShot.Qn2;
+
+        // ICD13 free-runs off its own RC network - one character-time per
+        // call, the granularity the blink is sampled at anyway.
+        _cursorBlinkOscillator.Tick();
 
         // DA drives PB7 (PIA.PortB's one input-configured bit): WozMon's
         // ECHO spins while bit 7 reads 1 and writes once it reads 0.
@@ -493,9 +548,9 @@ public sealed partial class AppleISystem
     // loads $BF into the V0-V7 counter.
     private bool EvaluateMemBlanking()
     {
-        _memBlankingGate.A1 = _horizontalCounterLow.Qd;
-        _memBlankingGate.B1 = NotVerticalBlank;
-        return _memBlankingGate.Y1;
+        _icc10.A1 = _horizontalCounterLow.Qd;
+        _icc10.B1 = NotVerticalBlank;
+        return _icc10.Y1;
     }
 
     // One MEM0-gated ring advance. Routed through ICC11A (DS0025) so its

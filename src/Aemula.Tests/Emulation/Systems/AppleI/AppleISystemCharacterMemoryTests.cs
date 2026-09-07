@@ -208,6 +208,38 @@ public class AppleISystemCharacterMemoryTests
         await Assert.That(cursorPosition).IsEqualTo(VisibleColumns);
     }
 
+    // The cursor-flash 555 (ICD13) free-runs off its own RC network the
+    // moment the system is reset - roughly 2.2Hz, output high for about
+    // two-thirds of each cycle. Sampling it across a second or so of emulated
+    // time should catch it both high and low, proving it's actually clocked
+    // (nothing types here, so this is purely the oscillator turning over).
+    [Test]
+    public async Task CursorBlinkOscillatorFreeRuns()
+    {
+        var system = new AppleISystem();
+        system.LoadProgram("");
+
+        var sawOn = false;
+        var sawOff = false;
+
+        for (var i = 0; i < MasterTicksPerFrame * 25 && !(sawOn && sawOff); i++)
+        {
+            system.Tick();
+
+            if (system.CursorBlinkOnForTests)
+            {
+                sawOn = true;
+            }
+            else
+            {
+                sawOff = true;
+            }
+        }
+
+        await Assert.That(sawOn).IsTrue();
+        await Assert.That(sawOff).IsTrue();
+    }
+
     // Advances to the next VSync rising edge (a frame boundary) and returns
     // the ring position there. While nothing scrolls this is a fixed
     // constant frame to frame (see
