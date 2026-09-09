@@ -478,6 +478,16 @@ public sealed partial class Z80Chip
         {
             _machineCycle = 1;
 
+            // A genuine instruction boundary (not a 0xCB / 0xED / 0xDD / 0xFD
+            // escape's second M1): latch Q - the F byte just produced, or 0 if
+            // the finished instruction left F alone - for the next SCF / CCF to
+            // read, then clear the tracker for the instruction now starting.
+            if (_prefix == Z80Prefix.None)
+            {
+                _q = _flagsModified ? Flags.AsByte() : (byte)0;
+                _flagsModified = false;
+            }
+
             // The end-of-instruction /INT sample belongs here - real silicon
             // latches /INT on the last T-state of an instruction - and is wired in
             // once instruction decode exists.
@@ -517,6 +527,8 @@ public sealed partial class Z80Chip
         _halted = false;
         _prefix = Z80Prefix.None;
         _displacement = 0;
+        _q = 0;
+        _flagsModified = false;
     }
 
     // --- Test hooks ------------------------------------------------------

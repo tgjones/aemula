@@ -30,11 +30,13 @@ namespace Aemula.Tests.Emulation.Chips.Z80;
 // board-level ULA contention, not anything the CPU does, so they are parsed but
 // not asserted.
 //
-// Only the opcodes implemented so far are exercised - the unprefixed group made
-// of the 8-bit loads, the 16-bit loads, the stack ops (PUSH/POP), the register
-// exchanges and JP nn. InScopeOpcodes lists them; later phases widen it as they
-// add microcode (add the newly implemented opcode bytes, and drop the
-// corresponding prefix guard once CB/ED/DD/FD decode exists).
+// Only the opcodes implemented so far are exercised. Every unprefixed opcode is
+// now decoded - the 8-bit and 16-bit loads, the stack ops, the register
+// exchanges, the 8-bit and 16-bit ALU, the accumulator rotates, all the jumps
+// and calls, and base-page IN/OUT - so InScopeOpcodes is the full byte range
+// minus the four escape bytes (0xCB / 0xED / 0xDD / 0xFD), whose tables are
+// added in later phases. Drop an escape byte from the exclusion set once its
+// prefixed decode exists.
 public class Z80ChipBusTimingTests
 {
     private static readonly string AssetsPath =
@@ -45,31 +47,18 @@ public class Z80ChipBusTimingTests
 
     private static HashSet<int> BuildInScopeOpcodes()
     {
-        var set = new HashSet<int>
-        {
-            0x00,             // NOP
-            0x08,             // EX AF,AF'
-            0xD9,             // EXX
-            0xEB,             // EX DE,HL
-            0xE3,             // EX (SP),HL
-            0xF9,             // LD SP,HL
-            0xC3,             // JP nn
-            0x01, 0x11, 0x21, 0x31, // LD dd,nn
-            0x02, 0x12,       // LD (BC)/(DE),A
-            0x0A, 0x1A,       // LD A,(BC)/(DE)
-            0x22, 0x2A,       // LD (nn),HL / LD HL,(nn)
-            0x32, 0x3A,       // LD (nn),A / LD A,(nn)
-            0x36,             // LD (HL),n
-            0x06, 0x0E, 0x16, 0x1E, 0x26, 0x2E, 0x3E, // LD r,n
-            0xC1, 0xD1, 0xE1, 0xF1, // POP qq
-            0xC5, 0xD5, 0xE5, 0xF5, // PUSH qq
-        };
+        var set = new HashSet<int>();
 
-        // LD r,r' / LD r,(HL) / LD (HL),r / HALT.
-        for (var op = 0x40; op <= 0x7F; op++)
+        for (var op = 0x00; op <= 0xFF; op++)
         {
             set.Add(op);
         }
+
+        // The prefix escapes - their opcode tables land in later phases.
+        set.Remove(0xCB);
+        set.Remove(0xED);
+        set.Remove(0xDD);
+        set.Remove(0xFD);
 
         return set;
     }
@@ -190,8 +179,16 @@ public class Z80ChipBusTimingTests
                 ram[lastWriteAddress] = lastWriteValue;
             }
 
+            // The FUSE port-read convention: an unseeded port returns the high
+            // byte of its address.
+            if (!cpu.IoRq && !cpu.Rd)
+            {
+                cpu.Data = (byte)(cpu.Address >> 8);
+            }
+
             // A machine cycle's transfer is timestamped at the T-state it ends
-            // on: T4 of an M1, T3 of a 3-T read or write.
+            // on: T4 of an M1, T3 of a 3-T read or write. A port access is logged
+            // one T-state into its I/O machine cycle, the edge FUSE records.
             switch ((cpu.CurrentMachineCycle, cpu.CurrentState))
             {
                 case (Z80Chip.MachineCycleType.OpcodeFetch, Z80Chip.TState.T4):
@@ -204,6 +201,14 @@ public class Z80ChipBusTimingTests
 
                 case (Z80Chip.MachineCycleType.MemoryWrite, Z80Chip.TState.T3):
                     trace.Add(new FuseBusEvent(t, "MW", lastWriteAddress, lastWriteValue));
+                    break;
+
+                case (Z80Chip.MachineCycleType.IoRead, Z80Chip.TState.T1):
+                    trace.Add(new FuseBusEvent(t, "PR", cpu.Address, (byte)(cpu.Address >> 8)));
+                    break;
+
+                case (Z80Chip.MachineCycleType.IoWrite, Z80Chip.TState.T1):
+                    trace.Add(new FuseBusEvent(t, "PW", cpu.Address, cpu.Data));
                     break;
             }
 
