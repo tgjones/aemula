@@ -58,6 +58,29 @@ public sealed partial class Z80Chip
     // Instruction register - the opcode latched off the data bus on M1's T3.
     private byte _ir;
 
+    // Scratch byte for microcode that has to carry a value from one machine
+    // cycle to a later one - LD (HL),n stashing the immediate here between its
+    // read cycle and its write cycle, for instance.
+    private byte _tmp;
+
+    // Set by HALT (0x76): the CPU keeps running 4-T opcode-fetch M1s with the
+    // program counter frozen and /HALT asserted. Clearing it (on an interrupt)
+    // is handled with the rest of the interrupt logic.
+    private bool _halted;
+
+    // Which decode table the current opcode belongs to. Unprefixed opcodes
+    // decode straight from _ir; a 0xCB / 0xED / 0xDD / 0xFD escape byte latches
+    // one of these and runs another M1 before the real opcode is decoded. Only
+    // None is exercised so far; the rest are wired ahead of the prefixed tables.
+    private Z80Prefix _prefix;
+
+    // The signed displacement byte d captured for a (IX+d) / (IY+d) operand and
+    // for the DD CB d / FD CB d double-prefix form. Wired now; first read when
+    // the index prefixes are decoded.
+#pragma warning disable CS0414
+    private sbyte _displacement;
+#pragma warning restore CS0414
+
     // Wait states hard-wired into the current machine cycle, independent of the
     // /WAIT pin: 1 for an I/O cycle, 2 for interrupt acknowledge, 0 otherwise.
     // A real Z80 I/O cycle always gives a peripheral a full extra clock to
@@ -225,6 +248,25 @@ public sealed partial class Z80Chip
 
     internal int CombinedCycleKey => CombineCycleKey(_machineCycleType, _state);
 
+    /// <summary>
+    /// True only in the gap between one instruction's final CLK falling edge and
+    /// the next opcode fetch's first rising edge: microcode has staged the next
+    /// M1 but it has not started, so PC still points at the next opcode and no
+    /// register has been touched for it. A clock-stepping test harness uses this
+    /// to halt exactly on an instruction boundary.
+    /// </summary>
+    internal bool AtInstructionBoundary => _pendingMachineCycleType == MachineCycleType.OpcodeFetch;
+
+    /// <summary>
+    /// Whether a HALT (0x76) has parked the CPU. It keeps fetching M1s with PC
+    /// frozen and /HALT low until this is cleared (by the interrupt logic).
+    /// </summary>
+    internal bool Halted
+    {
+        get => _halted;
+        set => _halted = value;
+    }
+
     // --- Construction ------------------------------------------------------
 
     public Z80Chip()
@@ -267,11 +309,16 @@ public sealed partial class Z80Chip
         {
             case OpcodeFetchT1:
                 // /M1 low and the address bus = PC on T1 rising; PC increments now
-                // so the I:R refresh address can take the bus at T3.
+                // so the I:R refresh address can take the bus at T3. While halted
+                // the same 4-T M1 repeats forever with PC held still - the fetched
+                // byte is discarded and the CPU behaves as if executing NOPs.
                 M1 = false;
                 Rfsh = true;
                 Address = PC.Value;
-                PC.Value++;
+                if (!_halted)
+                {
+                    PC.Value++;
+                }
                 break;
 
             case OpcodeFetchT3:
@@ -316,6 +363,11 @@ public sealed partial class Z80Chip
                 }
                 break;
         }
+
+        // Opcode-specific microcode. Runs after the generic pin sequencing so it
+        // sees the freshly latched _ir (and, on a machine-cycle boundary, the
+        // just-applied cycle transition).
+        HandleInstruction(CombineCycleKey(_machineCycleType, _state));
     }
 
     private void OnClkFalling()
@@ -368,6 +420,12 @@ public sealed partial class Z80Chip
                 Wr = true;
                 break;
         }
+
+        // The falling-edge microcode dispatch. The cycle key carries ClkFallingFlag
+        // so microcode can tell the two half-cycles of a T-state apart; the
+        // unprefixed loads and stack ops do all their register work on the rising
+        // edge, so nothing consumes it yet.
+        HandleInstruction(CombineCycleKey(_machineCycleType, _state) | ClkFallingFlag);
     }
 
     /// <summary>
@@ -455,6 +513,10 @@ public sealed partial class Z80Chip
         _builtInWaitStatesRemaining = 0;
         _waitSampledLow = false;
         _ir = 0;
+        _tmp = 0;
+        _halted = false;
+        _prefix = Z80Prefix.None;
+        _displacement = 0;
     }
 
     // --- Test hooks ------------------------------------------------------
@@ -483,6 +545,23 @@ public sealed partial class Z80Chip
         InterruptAck,
     }
 
+    /// <summary>
+    /// Which decode table an opcode belongs to. A leading 0xCB / 0xED / 0xDD /
+    /// 0xFD byte is a prefix that selects one of these; 0xDD/0xFD followed by
+    /// 0xCB gives the DDCB / FDCB double prefix. Only <see cref="None"/> is
+    /// decoded so far.
+    /// </summary>
+    public enum Z80Prefix : byte
+    {
+        None,
+        CB,
+        ED,
+        DD,
+        FD,
+        DDCB,
+        FDCB,
+    }
+
     public enum TState : byte
     {
         T1,
@@ -506,6 +585,11 @@ public sealed partial class Z80Chip
     {
         return ((byte)machineCycleType << 8) | (byte)tState;
     }
+
+    // OR'd into the cycle key passed to HandleInstruction from the CLK falling
+    // edge. Set above the byte the machine-cycle type and T-state occupy, so a
+    // plain "case OpcodeFetchT4:" label matches the rising-edge dispatch only.
+    private const int ClkFallingFlag = 1 << 16;
 
     private const int OpcodeFetchT1 = ((byte)MachineCycleType.OpcodeFetch << 8) | (byte)TState.T1;
     private const int OpcodeFetchT2 = ((byte)MachineCycleType.OpcodeFetch << 8) | (byte)TState.T2;
