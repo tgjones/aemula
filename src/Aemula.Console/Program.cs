@@ -5,8 +5,8 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Aemula;
 using Aemula.Emulation.Systems;
-using Aemula.Emulation.Systems.AppleI;
 
 namespace Aemula.Console;
 
@@ -31,23 +31,18 @@ public static class Program
 
     private static void Run(string[] args)
     {
-        var (systemName, framesRequested, romPath, screenshotPath, screenshotEvery, inputSpec, traceTiming, cassetteIn, cassetteOut) = ParseArgs(args);
+        var (systemName, framesRequested, romPath, screenshotPath, screenshotEvery, inputSpec, traceTiming) = ParseArgs(args);
 
         var descriptor = EmulatedSystems.FindById(systemName)
             ?? throw new ArgumentException($"Unknown system '{systemName}'. Supported systems: {string.Join(", ", EmulatedSystems.All.Select(d => d.Id))}.");
 
-        var system = descriptor.Create();
-        var television = system.Television;
+        using var rig = descriptor.Build();
+        var television = rig.Television;
 
-        var cassetteSystem = system as AppleISystem;
-        if ((cassetteIn != null || cassetteOut != null) && cassetteSystem is not { HasCassetteInterface: true })
-        {
-            throw new ArgumentException("--cassette-in / --cassette-out need the 'applei-aci' system.");
-        }
-
-        // Parsed after the system exists so the script's control tokens can be
-        // validated against that system's InputKeyBindings.
-        var inputScript = inputSpec != null ? InputScript.Parse(inputSpec, system) : null;
+        // Parsed after the rig exists so the script's control tokens can be
+        // validated against its InputKeyBindings and console controls (the
+        // cassette deck's tape-play / tape-rewind included).
+        var inputScript = inputSpec != null ? InputScript.Parse(inputSpec, rig) : null;
 
         // ScreenshotWriter reads Sample.Region (via ComputeActiveVideoRowRange)
         // and Sample.Color out of SampleBuffer; Region is only populated when
@@ -82,7 +77,7 @@ public static class Program
         // be constant but isn't).
         void OnFrameCompleted(int framesCompleted, ulong ticksThisFrame)
         {
-            inputScript?.ApplyForFrame(system, framesCompleted);
+            inputScript?.ApplyForFrame(rig, framesCompleted);
             WritePeriodicScreenshot(framesCompleted);
 
             if (traceTiming)
@@ -97,29 +92,17 @@ public static class Program
 
         var stopwatch = Stopwatch.StartNew();
 
-        system.LoadProgram(romPath);
-
-        if (cassetteIn != null)
-        {
-            cassetteSystem!.InsertCassette(cassetteIn);
-        }
-
-        if (cassetteOut != null)
-        {
-            cassetteSystem!.StartRecordingCassette();
-        }
+        // A .wav romPath is routed to the cassette deck (see Rig.LoadProgram);
+        // an --input script presses tape-play and types the load command, the
+        // same way it would drive any other console control.
+        rig.LoadProgram(romPath);
 
         // Frame 0 fires before the run so "0:reset+" and friends take effect
         // from the very first emulated frame.
-        inputScript?.ApplyForFrame(system, 0);
-        var result = FrameRunner.Run(system, framesRequested, OnFrameCompleted);
+        inputScript?.ApplyForFrame(rig, 0);
+        var result = FrameRunner.Run(rig.System, framesRequested, OnFrameCompleted);
 
         stopwatch.Stop();
-
-        if (cassetteOut != null)
-        {
-            cassetteSystem!.StopRecordingCassette(cassetteOut);
-        }
 
         // The final screenshot is written to the exact --screenshot path (no
         // frame number inserted) after all periodic ones, whether or not
@@ -160,7 +143,7 @@ public static class Program
         return string.IsNullOrEmpty(directory) ? numberedFileName : Path.Combine(directory, numberedFileName);
     }
 
-    private static (string SystemName, int FramesRequested, string RomPath, string? ScreenshotPath, int? ScreenshotEvery, string? InputSpec, bool TraceTiming, string? CassetteIn, string? CassetteOut) ParseArgs(string[] args)
+    private static (string SystemName, int FramesRequested, string RomPath, string? ScreenshotPath, int? ScreenshotEvery, string? InputSpec, bool TraceTiming) ParseArgs(string[] args)
     {
         string? systemName = null;
         int? framesRequested = null;
@@ -169,8 +152,6 @@ public static class Program
         int? screenshotEvery = null;
         string? inputSpec = null;
         var traceTiming = false;
-        string? cassetteIn = null;
-        string? cassetteOut = null;
 
         var i = 0;
         while (i < args.Length)
@@ -236,24 +217,6 @@ public static class Program
                     i++;
                     break;
 
-                case "--cassette-in":
-                    if (i + 1 >= args.Length)
-                    {
-                        throw new ArgumentException("--cassette-in requires a value.");
-                    }
-                    cassetteIn = args[i + 1];
-                    i += 2;
-                    break;
-
-                case "--cassette-out":
-                    if (i + 1 >= args.Length)
-                    {
-                        throw new ArgumentException("--cassette-out requires a value.");
-                    }
-                    cassetteOut = args[i + 1];
-                    i += 2;
-                    break;
-
                 default:
                     if (systemName != null)
                     {
@@ -271,7 +234,7 @@ public static class Program
                 "Usage: aemula-console <system> --frames <n> [--rom <path>] " +
                 "[--screenshot <path>] [--screenshot-every <n>] " +
                 "[--input \"<frame>:<token>+/-  or  <frame>:\\\"typed text\\\", ...\"] " +
-                "[--trace-timing] [--cassette-in <file.wav>] [--cassette-out <file.wav>]");
+                "[--trace-timing]");
         }
 
         if (framesRequested == null)
@@ -284,6 +247,6 @@ public static class Program
             throw new ArgumentException("--screenshot-every requires --screenshot.");
         }
 
-        return (systemName, framesRequested.Value, romPath, screenshotPath, screenshotEvery, inputSpec, traceTiming, cassetteIn, cassetteOut);
+        return (systemName, framesRequested.Value, romPath, screenshotPath, screenshotEvery, inputSpec, traceTiming);
     }
 }

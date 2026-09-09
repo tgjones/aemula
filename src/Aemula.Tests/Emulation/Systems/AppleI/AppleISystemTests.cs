@@ -95,6 +95,37 @@ public class AppleISystemTests
     }
 
     [Test]
+    public async Task E000BlockIsOpenBusWithoutTheRamExpansion()
+    {
+        // The bare board leaves CSE ($E000-$EFFF) unpopulated - reads float
+        // high and writes go nowhere.
+        var system = new AppleISystem();
+        system.LoadProgram("");
+
+        system.WriteByteDebug(0xE000, 0x4C);
+
+        await Assert.That(system.ReadByteDebug(0xE000)).IsEqualTo((byte)0xFF);
+    }
+
+    [Test]
+    public async Task RamExpansionAtE000IsReadWriteWhenFitted()
+    {
+        var system = new AppleISystem(new AppleISystemOptions(cassetteCard: false, ramExpansionAtE000: true));
+        system.LoadProgram("");
+
+        system.WriteByteDebug(0xE000, 0x4C); // BASIC's cold-start JMP would land here.
+        system.WriteByteDebug(0xEFFF, 0xA5);
+
+        await Assert.That(system.ReadByteDebug(0xE000)).IsEqualTo((byte)0x4C);
+        await Assert.That(system.ReadByteDebug(0xEFFF)).IsEqualTo((byte)0xA5);
+
+        // It's its own 4K block - writing it must not leak into the PIA block
+        // below it, and the Monitor ROM above it still reads as ROM.
+        system.WriteByteDebug(0xE042, 0x99);
+        await Assert.That(system.ReadByteDebug(0xF000)).IsEqualTo(system.ReadByteDebug(0xFF00));
+    }
+
+    [Test]
     public async Task RomMirrorsAcrossWholeChipSelectBlock()
     {
         // ICA1/ICA2 only decode A0-A7 - CSF (the 74154's Y15, $F000-$FFFF)

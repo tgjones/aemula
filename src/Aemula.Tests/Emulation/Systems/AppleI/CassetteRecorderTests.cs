@@ -1,7 +1,7 @@
 using System.IO;
 using System.Threading.Tasks;
 using Aemula.Emulation.Output.Wav;
-using Aemula.Emulation.Systems.AppleI.Cassette;
+using Aemula.Emulation.Peripherals.Cassette;
 
 namespace Aemula.Tests.Emulation.Systems.AppleI;
 

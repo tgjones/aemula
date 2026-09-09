@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using Aemula;
+using Aemula.Emulation.Systems;
 using Hexa.NET.SDL3;
 
 namespace Aemula.Console;
@@ -17,15 +19,16 @@ namespace Aemula.Console;
 //
 //   - a control token with a trailing '+' (press / switch closed) or '-'
 //     (release / switch open). Every token name is supplied by the running
-//     system, so InputScript itself knows nothing about any particular
-//     machine's controls:
+//     rig, so InputScript itself knows nothing about any particular machine's
+//     controls:
 //       - joystick / button names from EmulatedSystem.InputKeyBindings,
 //         delivered as the exact SDL key events EmulationWindow sends (the
 //         Atari 2600, say, binds up/down/left/right/fire)
-//       - console-panel names from the ConsoleControl.Mnemonic of each
-//         EmulatedSystem.ConsoleControls entry (the Atari 2600's reset,
-//         select, tv-type, left-diff, right-diff; the Apple I's reset,
-//         clear-screen)
+//       - console-panel names from the ConsoleControl.Mnemonic of each entry
+//         in Rig.AllControls - the system's own panel switches (the Atari
+//         2600's reset, select, tv-type, left-diff, right-diff; the Apple I's
+//         reset, clear-screen) and every connected peripheral's controls (the
+//         cassette deck's tape-play, tape-rewind)
 //
 //   - a double-quoted string, typed one character per frame into the
 //     system's keyboard through the same OnKeyEvent path the UI uses (the
@@ -56,10 +59,12 @@ public sealed class InputScript
         _typedKeys = typedKeys;
     }
 
-    public static InputScript Parse(string spec, EmulatedSystem system)
+    public static InputScript Parse(string spec, Rig rig)
     {
-        var knownTokens = system.InputKeyBindings.Keys
-            .Concat(system.ConsoleControls.Select(c => c.Mnemonic))
+        var knownTokens = rig.System.InputKeyBindings.Keys
+            .Concat(rig.AllControls
+                .Where(c => c.Kind != ConsoleControl.ControlKind.Readout)
+                .Select(c => c.Mnemonic))
             .ToArray();
         var events = new List<ScheduledEvent>();
         var typedKeys = new List<TypedKey>();
@@ -171,13 +176,13 @@ public sealed class InputScript
     }
 
     // Applies every event scheduled for exactly this completed-frame count.
-    public void ApplyForFrame(EmulatedSystem system, int framesCompleted)
+    public void ApplyForFrame(Rig rig, int framesCompleted)
     {
         foreach (var scheduled in _events)
         {
             if (scheduled.Frame == framesCompleted)
             {
-                Apply(system, scheduled.Token, scheduled.Press);
+                Apply(rig, scheduled.Token, scheduled.Press);
             }
         }
 
@@ -185,14 +190,14 @@ public sealed class InputScript
         {
             if (typed.Frame == framesCompleted)
             {
-                TypeCharacter(system, typed.Character);
+                TypeCharacter(rig.System, typed.Character);
             }
         }
     }
 
-    private static void Apply(EmulatedSystem system, string token, bool press)
+    private static void Apply(Rig rig, string token, bool press)
     {
-        var control = system.ConsoleControls.FirstOrDefault(c => c.Mnemonic == token);
+        var control = rig.AllControls.FirstOrDefault(c => c.Mnemonic == token);
         if (control != null)
         {
             // A Toggle latches to press; a Momentary button is closed only
@@ -205,10 +210,10 @@ public sealed class InputScript
         // SDL key event EmulationWindow sends, using the keycode this system
         // binds the token to (see EmulatedSystem.InputKeyBindings). Parse has
         // already checked the token is one of the two known sets.
-        system.OnKeyEvent(new SDLKeyboardEvent
+        rig.System.OnKeyEvent(new SDLKeyboardEvent
         {
             Type = press ? SDLEventType.KeyDown : SDLEventType.KeyUp,
-            Key = system.InputKeyBindings[token],
+            Key = rig.System.InputKeyBindings[token],
         });
     }
 

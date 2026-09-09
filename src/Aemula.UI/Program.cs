@@ -1,7 +1,9 @@
 using System;
+using System.Linq;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Threading;
+using Aemula;
 using Hexa.NET.SDL3;
 using Debugger = Aemula.Debugging.Debugger;
 using Stopwatch = System.Diagnostics.Stopwatch;
@@ -81,7 +83,7 @@ public static unsafe class Program
         var debuggerHost = new DebuggerHost(gpuDevice, mainScale);
 
         // --- system lifecycle ---
-        EmulatedSystem? system = null;
+        Rig? rig = null;
         Debugger? debugger = null;
         var currentEntry = SystemCatalog.Default;
         var done = false;
@@ -109,26 +111,26 @@ public static unsafe class Program
 
         void LoadSystem(SystemCatalogEntry entry, string? filePath)
         {
-            system?.Dispose();
+            rig?.Dispose();
 
-            var newSystem = entry.Create();
-            newSystem.LoadProgram(filePath ?? "");
-            var newDebugger = newSystem.CreateDebugger();
+            var newRig = entry.Build();
+            newRig.LoadProgram(filePath ?? "");
+            var newDebugger = newRig.System.CreateDebugger();
             if (newDebugger != null)
             {
                 newDebugger.Ticked += () => debuggerTickedCycles++;
             }
 
-            system = newSystem;
+            rig = newRig;
             debugger = newDebugger;
             currentEntry = entry;
 
             lastTotalCycles = 0;
             debuggerTickedCycles = 0;
-            perfNominalMHz = newSystem.CyclesPerSecond / 1_000_000.0;
+            perfNominalMHz = newRig.System.CyclesPerSecond / 1_000_000.0;
 
-            emulationWindow.SetSystem(newSystem);
-            debuggerHost.SetSystem(newSystem, newDebugger);
+            emulationWindow.SetRig(newRig);
+            debuggerHost.SetSystem(newRig.System, newDebugger);
         }
 
         void ChooseSystem(SystemCatalogEntry entry)
@@ -279,7 +281,7 @@ public static unsafe class Program
             if (pendingReset)
             {
                 pendingReset = false;
-                system?.Reset();
+                rig?.Reset();
             }
 
             if (pendingOpenRomEntry is { } romEntry)
@@ -292,7 +294,22 @@ public static unsafe class Program
             var pending = Interlocked.Exchange(ref _pendingLoad, null);
             if (pending != null)
             {
-                LoadSystem(pending.Entry, pending.FilePath);
+                // Picking a file a peripheral of the running rig can take (a
+                // .wav for the cassette deck) is loading media, not swapping
+                // machines - drop it in place, leaving the CPU (and whatever's
+                // already typed at the prompt) untouched. Everything else
+                // rebuilds.
+                if (pending.FilePath is { } picked
+                    && pending.Entry.Id == currentEntry.Id
+                    && rig is { } currentRig
+                    && currentRig.Peripherals.Any(p => p.TryLoadMedia(picked)))
+                {
+                    // handled by the peripheral
+                }
+                else
+                {
+                    LoadSystem(pending.Entry, pending.FilePath);
+                }
             }
 
             if (emulationContext.IsMinimized && !debuggerHost.Visible)
@@ -309,7 +326,7 @@ public static unsafe class Program
             }
             else
             {
-                system!.RunForDuration(deltaTimeSpan); // free-run
+                rig!.RunForDuration(deltaTimeSpan); // free-run
             }
 
             var emulatorTime = new EmulatorTime(elapsed, deltaTimeSpan);
@@ -329,8 +346,8 @@ public static unsafe class Program
 
             var updateDuration = stopwatch.Elapsed - elapsed;
 
-            var executedCycles = system!.TotalCycles - lastTotalCycles + debuggerTickedCycles;
-            lastTotalCycles = system.TotalCycles;
+            var executedCycles = rig!.System.TotalCycles - lastTotalCycles + debuggerTickedCycles;
+            lastTotalCycles = rig.System.TotalCycles;
             debuggerTickedCycles = 0;
 
             perfWindowTime += realDeltaTimeSpan;
@@ -357,7 +374,7 @@ public static unsafe class Program
         emulationWindow.Dispose();
         debuggerHost.Dispose();
         emulationContext.Dispose();
-        system?.Dispose();
+        rig?.Dispose();
 
         SDL.ReleaseWindowFromGPUDevice(gpuDevice, emuWindow);
         SDL.DestroyGPUDevice(gpuDevice);

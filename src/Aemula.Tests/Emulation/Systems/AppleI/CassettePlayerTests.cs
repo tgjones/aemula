@@ -1,5 +1,5 @@
 using System.Threading.Tasks;
-using Aemula.Emulation.Systems.AppleI.Cassette;
+using Aemula.Emulation.Peripherals.Cassette;
 
 namespace Aemula.Tests.Emulation.Systems.AppleI;
 
@@ -42,6 +42,51 @@ public class CassettePlayerTests
 
         await Assert.That(player.IsPlaying).IsEqualTo(false);
         await Assert.That(player.NextSample()).IsEqualTo(0f);
+    }
+
+    [Test]
+    public async Task StoppedReelHoldsPositionAndLevel()
+    {
+        var player = new CassettePlayer(consumerSampleRate: 1000);
+        player.Insert([0.2f, 0.4f, 0.6f, 0.8f], sourceSampleRate: 1000);
+
+        player.NextSample(); // 0.2, cursor -> 1
+        player.IsRunning = false;
+
+        // Held at the current sample, no advance, for as many reads as you like.
+        for (var i = 0; i < 10; i++)
+        {
+            await Assert.That(player.NextSample()).IsBetween(0.399f, 0.401f);
+        }
+
+        // Resuming picks up from exactly where it stopped: the held sample once
+        // more, then it advances again.
+        player.IsRunning = true;
+        await Assert.That(player.NextSample()).IsBetween(0.399f, 0.401f);
+        await Assert.That(player.NextSample()).IsBetween(0.599f, 0.601f);
+    }
+
+    [Test]
+    public async Task ReportsPositionAndLength()
+    {
+        var player = new CassettePlayer(consumerSampleRate: 1000);
+
+        await Assert.That(player.HasTape).IsEqualTo(false);
+        await Assert.That(player.LengthSeconds).IsEqualTo(0.0);
+
+        // 2000 source samples at 500 Hz -> 4 seconds of tape.
+        player.Insert(new float[2000], sourceSampleRate: 500);
+
+        await Assert.That(player.HasTape).IsEqualTo(true);
+        await Assert.That(player.LengthSeconds).IsEqualTo(4.0);
+        await Assert.That(player.PositionSeconds).IsEqualTo(0.0);
+
+        for (var i = 0; i < 1000; i++) // 1000 consumer cycles = 1 second
+        {
+            player.NextSample();
+        }
+
+        await Assert.That(player.PositionSeconds).IsBetween(0.99, 1.01);
     }
 
     [Test]

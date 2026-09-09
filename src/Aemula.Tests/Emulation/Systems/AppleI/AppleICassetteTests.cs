@@ -3,6 +3,8 @@ using System.IO;
 using System.Net.Http;
 using System.Threading.Tasks;
 using Aemula.Emulation.Output.Wav;
+using Aemula.Emulation.Peripherals.Cassette;
+using Aemula.Emulation.Systems;
 using Aemula.Emulation.Systems.AppleI;
 using Hexa.NET.SDL3;
 
@@ -51,7 +53,9 @@ public class AppleICassetteTests
 
     private static bool RunUntilFetch(AppleISystem system, ushort address, int frameBudget)
     {
-        for (var i = 0; i < MasterTicksPerFrame * frameBudget; i++)
+        // long: BASIC's tape needs a ~20k-frame budget, and 262*65*14 * 20000
+        // overflows int.
+        for (long i = 0; i < (long)MasterTicksPerFrame * frameBudget; i++)
         {
             system.Tick();
 
@@ -64,10 +68,18 @@ public class AppleICassetteTests
         return false;
     }
 
+    // The Apple I as the catalog assembles it: ACI card fitted, a cassette deck
+    // patched to its jacks, $E000 RAM present.
+    private static (AppleISystem System, CassetteDeck Deck) NewAppleIWithCassette()
+    {
+        var rig = EmulatedSystems.FindById("applei")!.Build();
+        return ((AppleISystem)rig.System, rig.GetPeripheral<CassetteDeck>()!);
+    }
+
     [Test]
     public async Task WriteThenReadRoundTripsAMemoryBlockThroughTheTape()
     {
-        var system = new AppleISystem(new AppleISystemOptions(cassetteCard: true));
+        var (system, deck) = NewAppleIWithCassette();
         system.LoadProgram("");
         await Assert.That(RunUntilFetch(system, NextCharLoop, frameBudget: 8)).IsTrue();
 
@@ -85,23 +97,23 @@ public class AppleICassetteTests
         Type(system, "C100R\r");
         await Assert.That(RunUntilFetch(system, AciEntry, frameBudget: 60)).IsTrue();
 
-        system.StartRecordingCassette();
+        deck.StartRecording();
         Type(system, "300.30FW\r");
         await Assert.That(RunUntilFetch(system, WozMonEscape, frameBudget: 1500)).IsTrue();
 
         // Save the recording as a WAV and play it straight back in.
         using var wavStream = new MemoryStream();
-        system.CassetteCardForTests!.Recorder.Stop();
-        system.CassetteCardForTests.Recorder.WriteWav(wavStream);
+        deck.SaveRecording(wavStream);
         wavStream.Position = 0;
         var tape = WavReader.Read(wavStream);
         await Assert.That(tape.Samples.Length).IsGreaterThan(100_000);
 
-        // Back into the ACI; load the tape only once it's sitting in its
-        // keyboard-poll loop, so barely any of the leader is consumed first.
+        // Back into the ACI; mount the tape and press PLAY (it goes in
+        // stopped), then read into a different range.
         Type(system, "C100R\r");
         await Assert.That(RunUntilFetch(system, AciEntry, frameBudget: 60)).IsTrue();
-        system.InsertCassette(tape.Samples, tape.SampleRate);
+        deck.InsertTape(tape.Samples, tape.SampleRate);
+        deck.Play();
 
         Type(system, "400.40FR\r");
         await Assert.That(RunUntilFetch(system, WozMonEscape, frameBudget: 2000)).IsTrue();
@@ -128,13 +140,20 @@ public class AppleICassetteTests
             await File.WriteAllBytesAsync(cachePath, bytes);
         }
 
-        var system = new AppleISystem(new AppleISystemOptions(cassetteCard: true));
+        // BASIC runs from the $E000 RAM expansion, which the assembled machine has.
+        var (system, deck) = NewAppleIWithCassette();
         system.LoadProgram("");
         await Assert.That(RunUntilFetch(system, NextCharLoop, frameBudget: 8)).IsTrue();
 
+        // The operator's workflow: mount the tape (it goes in stopped), press
+        // PLAY, dawdle a second, then type the load command. The recorded
+        // leader tone covers the gap.
+        deck.InsertTape(cachePath);
+        deck.Play();
+        RunFrames(system, 90);
+
         Type(system, "C100R\r");
         await Assert.That(RunUntilFetch(system, AciEntry, frameBudget: 60)).IsTrue();
-        system.InsertCassette(cachePath);
 
         // Integer BASIC loads at $E000-$EFFF.
         Type(system, "E000.EFFFR\r");

@@ -25,10 +25,10 @@ public abstract class EmulatedSystem : IDisposable
     // system with real sound overrides this to return its own AudioOutput /
     // Speaker field - a plain overridden property backed by a field, never a
     // factory call reached from this base constructor, so there is no
-    // virtual-call-before-derived-construction hazard. Every soundless system
-    // falls through to the shared silent singleton, so nothing in the UI ever
+    // virtual-call-before-derived-construction hazard. A soundless system
+    // returns null and the Rig substitutes silence; nothing above the Rig ever
     // has to branch on "does this system have audio?".
-    public virtual IAudioSource Audio => NullAudioSource.Instance;
+    public virtual IAudioSource? Audio => null;
 
     protected void RaiseProgramLoaded()
     {

@@ -1,5 +1,5 @@
+using System;
 using Aemula.Emulation.Chips;
-using Aemula.Emulation.Output;
 using Aemula.Emulation.Systems.AppleI.Roms;
 
 namespace Aemula.Emulation.Systems.AppleI.Cassette;
@@ -25,6 +25,12 @@ namespace Aemula.Emulation.Systems.AppleI.Cassette;
 /// loops; the card has no timing element of its own.
 /// </para>
 /// <para>
+/// The two audio jacks are not modelled here - a <c>CassetteDeck</c> peripheral
+/// is patched to <see cref="CassetteInput"/> and <see cref="CassetteOutput"/> by
+/// whoever assembles the rig. Unpatched, the jacks are dead: the comparator sees
+/// silence and the tape-out signal goes nowhere.
+/// </para>
+/// <para>
 /// The address decode is modelled behaviourally (window compare + the A8 split)
 /// rather than as individual gates - the ACI schematic wasn't transcribed
 /// gate-by-gate - but the 74LS74 and LM311, which is where the interesting
@@ -37,25 +43,19 @@ public sealed class AppleCassetteInterfaceCard : IExpansionCard
     private readonly Ttl7474Chip _flipFlops = new();
     private readonly Lm311Chip _comparator = new();
 
-    /// <summary>The cassette-in "tape": WAV audio played into the comparator.</summary>
-    public CassettePlayer Player { get; }
-
-    /// <summary>The cassette-out "tape": the tape-out square wave, captured for saving.</summary>
-    public CassetteRecorder Recorder { get; }
+    /// <summary>
+    /// The tape-in lead: the incoming tape level for this cycle, sampled into
+    /// the comparator. Set by the rig assembler to a connected deck's playback
+    /// lead; unpatched, returns silence.
+    /// </summary>
+    public Func<float> CassetteInput { get; set; } = static () => 0f;
 
     /// <summary>
-    /// The tape-out flip-flop as an audio source, band-limited for listening on
-    /// the host's speakers (the Apple I itself has no sound; this is the ACI's
-    /// MIC-jack signal made audible).
+    /// The tape-out lead: the tape-out flip-flop level (1 or 0) for this cycle.
+    /// Set by the rig assembler to a connected deck's record lead; unpatched,
+    /// discarded.
     /// </summary>
-    public Speaker TapeOutSpeaker { get; }
-
-    public AppleCassetteInterfaceCard(double phi2Rate)
-    {
-        Player = new CassettePlayer(phi2Rate);
-        Recorder = new CassetteRecorder(phi2Rate);
-        TapeOutSpeaker = new Speaker(phi2Rate);
-    }
+    public Action<float> CassetteOutput { get; set; } = static _ => { };
 
     public ushort Address { private get; set; }
 
@@ -95,7 +95,7 @@ public sealed class AppleCassetteInterfaceCard : IExpansionCard
         // The comparator runs continuously off the tape input; sample the tape
         // one φ2 cycle's worth and re-clock the synchroniser regardless of what
         // the CPU is addressing.
-        _comparator.Input = Player.NextSample();
+        _comparator.Input = CassetteInput();
         _flipFlops.D2 = _comparator.Out;
         _flipFlops.Clk2 = false;
         _flipFlops.Clk2 = true;
@@ -111,7 +111,6 @@ public sealed class AppleCassetteInterfaceCard : IExpansionCard
             _flipFlops.D1 = _flipFlops.Qn1;
             _flipFlops.Clk1 = false;
             _flipFlops.Clk1 = true;
-            TapeOutSpeaker.Level = _flipFlops.Q1;
 
             if (RW)
             {
@@ -129,9 +128,10 @@ public sealed class AppleCassetteInterfaceCard : IExpansionCard
             DrivesData = true;
         }
 
-        TapeOutSpeaker.Tick();
-        Recorder.Level = _flipFlops.Q1;
-        Recorder.Tick();
+        // The tape-out flip-flop only ever moves on an I/O access above, so
+        // pushing its level every cycle is the same signal as pushing it only
+        // when it changes - the deck sees a steady line between toggles.
+        CassetteOutput(_flipFlops.Q1 ? 1f : 0f);
     }
 
     /// <summary>
@@ -161,6 +161,5 @@ public sealed class AppleCassetteInterfaceCard : IExpansionCard
         _flipFlops.Clr2 = false;
         _flipFlops.Clr2 = true;
         _comparator.Reset();
-        TapeOutSpeaker.Reset();
     }
 }

@@ -3,7 +3,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using Aemula.Emulation.Output.Wav;
 
-namespace Aemula.Emulation.Systems.AppleI.Cassette;
+namespace Aemula.Emulation.Peripherals.Cassette;
 
 /// <summary>
 /// The "tape" side of the cassette-out jack: samples the ACI's tape-out

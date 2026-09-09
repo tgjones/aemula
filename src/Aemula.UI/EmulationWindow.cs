@@ -1,5 +1,6 @@
 using System;
 using System.Numerics;
+using Aemula;
 using Aemula.Emulation.Systems;
 using Hexa.NET.ImGui;
 using Hexa.NET.SDL3;
@@ -15,8 +16,8 @@ namespace Aemula.UI;
 // look the way they did on the machine rather than the way the raw raster
 // scans out.
 // It also owns the audio path: an SDL playback device stream, opened per
-// system in SetSystem exactly like the video texture view, topped up each
-// frame from EmulatedSystem.Audio (see PumpAudio) and torn down in Dispose.
+// rig in SetRig exactly like the video texture view, topped up each
+// frame from Rig.Audio (see PumpAudio) and torn down in Dispose.
 public sealed class EmulationWindow : IDisposable
 {
     // What the menu bar needs from Program. Program owns the system lifecycle
@@ -35,7 +36,7 @@ public sealed class EmulationWindow : IDisposable
     private readonly ImGuiWindowContext _context;
     private readonly Callbacks _callbacks;
 
-    private EmulatedSystem? _system;
+    private Rig? _rig;
     private TelevisionTextureView? _textureView;
 
     // The fixed rate every IAudioSource resamples to - AudioOutput and Speaker
@@ -74,20 +75,20 @@ public sealed class EmulationWindow : IDisposable
 
     public ImGuiWindowContext Context => _context;
 
-    // Every system exposes EmulatedSystem.Television and EmulatedSystem.Audio
-    // (both concrete on the base class - Audio falls back to a silent
-    // singleton), so this just grabs them - no per-system branching.
-    public void SetSystem(EmulatedSystem system)
+    // Every rig exposes Rig.Television and Rig.Audio (Audio always non-null -
+    // it mixes the system and peripherals, or falls back to silence), so this
+    // just grabs them - no per-system branching.
+    public void SetRig(Rig rig)
     {
-        _system = system;
+        _rig = rig;
 
         _textureView?.Dispose();
-        _textureView = new TelevisionTextureView(system.Television);
+        _textureView = new TelevisionTextureView(rig.Television);
         _textureView.CreateGraphicsResources(_gpuDevice);
 
-        // Drop any samples the previous system left buffered so nothing stale
+        // Drop any samples the previous rig left buffered so nothing stale
         // crosses the discontinuity as an audible pop.
-        system.Audio.Reset();
+        rig.Audio.Reset();
 
         if (!_audioStream.IsNull)
         {
@@ -122,7 +123,7 @@ public sealed class EmulationWindow : IDisposable
     // caller's job: those events carry no window id.
     public void HandleKeyEvent(SDLKeyboardEvent keyEvent)
     {
-        _system?.OnKeyEvent(keyEvent);
+        _rig?.System.OnKeyEvent(keyEvent);
     }
 
     public void SetPerf(double fps, double msPerFrame, double actualMHz, double nominalMHz)
@@ -159,7 +160,7 @@ public sealed class EmulationWindow : IDisposable
     // queued buffer absorbs the jitter and the trim corrects the slow drift.
     private unsafe void PumpAudio()
     {
-        if (_audioStream.IsNull || _system == null)
+        if (_audioStream.IsNull || _rig == null)
         {
             return;
         }
@@ -168,7 +169,7 @@ public sealed class EmulationWindow : IDisposable
         // Program's 17 ms delta clamp without a latency a player would notice.
         const int targetLatencySamples = 2880;
 
-        var audio = _system.Audio;
+        var audio = _rig.Audio;
 
         var queued = SDL.GetAudioStreamQueued(_audioStream) / sizeof(float);
         var need = targetLatencySamples - queued;
@@ -301,7 +302,7 @@ public sealed class EmulationWindow : IDisposable
     // valid to call inside a frame.
     private float MeasureStatusBarHeight()
     {
-        if (_system is not { ConsoleControls.Count: > 0 })
+        if (_rig is not { ControlGroups.Count: > 0 })
         {
             return 0f;
         }
@@ -337,8 +338,8 @@ public sealed class EmulationWindow : IDisposable
         {
             _textureView.DrawImageRotated(
                 activeVideoOnly: true,
-                _system?.ScreenRotation ?? ScreenRotation.None,
-                _system?.ScreenOverlays ?? []);
+                _rig?.System.ScreenRotation ?? ScreenRotation.None,
+                _rig?.System.ScreenOverlays ?? []);
         }
 
         ImGui.End();
@@ -347,18 +348,21 @@ public sealed class EmulationWindow : IDisposable
         ImGui.PopStyleVar();
     }
 
-    // A single-row bar pinned to the bottom of the work area, one group of
-    // widgets per ConsoleControl the current system exposes: a push button for
-    // a momentary control (held closed only while the mouse is down on it) and
-    // a labelled pair of radio buttons for a latching one.
+    // A single-row bar pinned to the bottom of the work area. The system's own
+    // console controls come first with no heading; each connected peripheral's
+    // controls follow as their own group under the peripheral's name
+    // ("Cassette"). Groups are divided by a heavy vertical rule and the controls
+    // within a group by a light one. A momentary control renders as a push
+    // button (closed only while the mouse is down on it), a latching one as a
+    // stay-down button, a toggle as a labelled pair of radio buttons, a readout
+    // as plain text.
     private void DrawStatusBar()
     {
-        if (_system is not { ConsoleControls.Count: > 0 } system)
+        if (_rig is not { ControlGroups.Count: > 0 } rig)
         {
             return;
         }
 
-        var controls = system.ConsoleControls;
         var viewport = ImGui.GetMainViewport();
         var height = MeasureStatusBarHeight();
 
@@ -382,20 +386,89 @@ public sealed class EmulationWindow : IDisposable
 
         if (ImGui.Begin("##console-controls"u8, flags))
         {
-            for (var i = 0; i < controls.Count; i++)
+            var spacing = ImGui.GetStyle().ItemSpacing.X;
+            var frameHeight = ImGui.GetFrameHeight();
+
+            // Adjacent controls are told apart by a rule rather than by empty
+            // space. Same colour throughout: a short inset one between the
+            // controls inside a group, and a slightly thicker floor-to-ceiling
+            // one to fence off each peripheral's group as its own unit.
+            var thinRule = MathF.Max(1f, MathF.Round(frameHeight * 0.045f));
+            var boldRule = MathF.Max(2f, MathF.Round(frameHeight * 0.09f));
+            var ruleColor = ImGui.GetColorU32(ImGuiCol.Separator);
+
+            var firstGroup = true;
+
+            foreach (var group in rig.ControlGroups)
             {
-                if (i > 0)
+                if (!firstGroup)
                 {
-                    // A wide gap between controls so each group of radio
-                    // buttons reads as one unit rather than running together.
-                    ImGui.SameLine(0f, ImGui.GetStyle().ItemSpacing.X * 5f);
+                    VerticalRule(boldRule, spacing * 1.5f, ruleColor, fullHeight: true);
                 }
 
-                DrawConsoleControl(controls[i]);
+                firstGroup = false;
+
+                if (group.Label != null)
+                {
+                    ImGui.AlignTextToFramePadding();
+                    ImGui.TextDisabled(group.Label);
+                    ImGui.SameLine(0f, spacing);
+                }
+
+                for (var i = 0; i < group.Controls.Count; i++)
+                {
+                    if (i > 0)
+                    {
+                        VerticalRule(thinRule, spacing, ruleColor);
+                    }
+
+                    DrawConsoleControl(group.Controls[i]);
+                }
             }
         }
 
         ImGui.End();
+    }
+
+    // Paints a vertical divider at the cursor and reserves width for it - the
+    // line itself plus `pad` px of clear space on each side - so it can sit
+    // between two items on the status bar's single row. Chains onto the
+    // preceding item and leaves the cursor ready for the next one.
+    //
+    // By default the line is inset from the row's top and bottom so it reads as
+    // a divider between controls, not a border around one. `fullHeight` instead
+    // runs it floor-to-ceiling of the whole bar, for a group boundary that cuts
+    // the entire strip.
+    private static void VerticalRule(float thickness, float pad, uint color, bool fullHeight = false)
+    {
+        var frameHeight = ImGui.GetFrameHeight();
+
+        ImGui.SameLine(0f, 0f);
+        var origin = ImGui.GetCursorScreenPos();
+        var x = MathF.Round(origin.X + pad + thickness * 0.5f);
+
+        float top, bottom;
+        if (fullHeight)
+        {
+            var windowTop = ImGui.GetWindowPos().Y;
+            top = windowTop;
+            bottom = windowTop + ImGui.GetWindowSize().Y;
+        }
+        else
+        {
+            var inset = frameHeight * 0.15f;
+            top = origin.Y + inset;
+            bottom = origin.Y + frameHeight - inset;
+        }
+
+        ImGui.GetWindowDrawList().AddLine(
+            new Vector2(x, top),
+            new Vector2(x, bottom),
+            color,
+            thickness);
+
+        ImGui.Dummy(new Vector2(thickness + pad * 2f, frameHeight));
+        ImGui.SameLine(0f, 0f);
     }
 
     private static void DrawConsoleControl(ConsoleControl control)
@@ -414,6 +487,35 @@ public sealed class EmulationWindow : IDisposable
                 {
                     control.Value = held;
                 }
+                break;
+
+            case ConsoleControl.ControlKind.Latching:
+                var engaged = control.Value;
+                var caption = engaged
+                    ? control.OnLabel ?? control.Label
+                    : control.OffLabel ?? control.Label;
+
+                // Pressed-in tint while engaged, so it reads like a transport
+                // button that stays down (a cassette deck's PLAY).
+                if (engaged)
+                {
+                    ImGui.PushStyleColor(ImGuiCol.Button, ImGui.GetColorU32(ImGuiCol.ButtonActive));
+                }
+
+                if (ImGui.Button($"{caption}###{control.Label}"))
+                {
+                    control.Value = !engaged;
+                }
+
+                if (engaged)
+                {
+                    ImGui.PopStyleColor();
+                }
+                break;
+
+            case ConsoleControl.ControlKind.Readout:
+                ImGui.AlignTextToFramePadding();
+                ImGui.TextUnformatted($"{control.Label}: {control.Text}");
                 break;
 
             case ConsoleControl.ControlKind.Toggle:

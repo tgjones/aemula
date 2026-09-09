@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Aemula.Emulation.Peripherals.Cassette;
 using Aemula.Emulation.Systems.AppleI;
 using Aemula.Emulation.Systems.AppleI.Cassette;
 using Aemula.Emulation.Systems.AppleI.Roms;
@@ -9,6 +10,21 @@ namespace Aemula.Tests.Emulation.Systems.AppleI;
 public class AppleCassetteInterfaceCardTests
 {
     private const double Phi2Rate = 14_318_180.0 / 14.0;
+
+    // The card on its own - both audio leads unplugged. Enough for the address
+    // decode / firmware-read tests.
+    private static AppleCassetteInterfaceCard NewCard() => new();
+
+    // The card with a cassette deck patched to its two jacks, the way the rig
+    // assembler wires them.
+    private static (AppleCassetteInterfaceCard Card, CassetteDeck Deck) NewCardWithDeck()
+    {
+        var card = new AppleCassetteInterfaceCard();
+        var deck = new CassetteDeck(Phi2Rate);
+        card.CassetteInput = deck.ReadPlayback;
+        card.CassetteOutput = deck.WriteCapture;
+        return (card, deck);
+    }
 
     private static byte BusRead(IExpansionCard card, ushort address)
     {
@@ -32,7 +48,7 @@ public class AppleCassetteInterfaceCardTests
     [Test]
     public async Task FirmwareReadsBackAtC100()
     {
-        var card = new AppleCassetteInterfaceCard(Phi2Rate);
+        var card = NewCard();
 
         await Assert.That(BusRead(card, 0xC100)).IsEqualTo(AciRom.Image[0]);
         await Assert.That(BusRead(card, 0xC1FF)).IsEqualTo(AciRom.Image[0xFF]);
@@ -42,7 +58,7 @@ public class AppleCassetteInterfaceCardTests
     [Test]
     public async Task DoesNotDriveTheBusOutsideItsRange()
     {
-        var card = new AppleCassetteInterfaceCard(Phi2Rate);
+        var card = NewCard();
 
         BusRead(card, 0x0200);
         await Assert.That(card.DrivesData).IsEqualTo(false);
@@ -54,8 +70,8 @@ public class AppleCassetteInterfaceCardTests
     [Test]
     public async Task EveryIoAccessTogglesTheTapeOutFlipFlop()
     {
-        var card = new AppleCassetteInterfaceCard(Phi2Rate);
-        card.Recorder.Start();
+        var (card, deck) = NewCardWithDeck();
+        deck.StartRecording();
 
         // Access $C000 once every 60 φ2 cycles - a ~8.5 kHz square wave on the
         // tape-out line - for 200 toggles; other cycles touch RAM, which the
@@ -67,8 +83,8 @@ public class AppleCassetteInterfaceCardTests
             BusAccess(card, cycle % half == 0 ? (ushort)0xC000 : (ushort)0x0000, read: true);
         }
 
-        card.Recorder.Stop();
-        var samples = card.Recorder.Samples;
+        deck.StopRecording();
+        var samples = deck.RecordedSamples;
 
         var edges = 0;
         for (var i = 1; i < samples.Count; i++)
@@ -90,7 +106,7 @@ public class AppleCassetteInterfaceCardTests
     [Test]
     public async Task TapeInputComparatorFlipsTheByteReadFromC081()
     {
-        var card = new AppleCassetteInterfaceCard(Phi2Rate);
+        var (card, deck) = NewCardWithDeck();
 
         // A slow square wave: +/-0.8 for 400 φ2 cycles each half.
         const int half = 400;
@@ -100,7 +116,8 @@ public class AppleCassetteInterfaceCardTests
             tape[i] = (i / half) % 2 == 0 ? 0.8f : -0.8f;
         }
 
-        card.Player.Insert(tape, (int)Phi2Rate);
+        deck.InsertTape(tape, (int)Phi2Rate);
+        deck.Play();
 
         var lowByte = AciRom.Image[0x80];
         var highByte = AciRom.Image[0x81];
@@ -142,7 +159,7 @@ public class AppleCassetteInterfaceCardTests
     [Test]
     public async Task RomReadIsUnaffectedByTapeInput()
     {
-        var card = new AppleCassetteInterfaceCard(Phi2Rate);
+        var (card, deck) = NewCardWithDeck();
 
         var tape = new float[2000];
         for (var i = 0; i < tape.Length; i++)
@@ -150,7 +167,8 @@ public class AppleCassetteInterfaceCardTests
             tape[i] = (i / 50) % 2 == 0 ? 0.9f : -0.9f;
         }
 
-        card.Player.Insert(tape, (int)Phi2Rate);
+        deck.InsertTape(tape, (int)Phi2Rate);
+        deck.Play();
 
         var reads = new HashSet<byte>();
         for (var i = 0; i < tape.Length; i++)

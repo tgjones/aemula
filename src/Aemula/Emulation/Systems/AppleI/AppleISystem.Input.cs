@@ -21,6 +21,9 @@ public sealed partial class AppleISystem
 
     private void InitializeConsoleControls()
     {
+        // Just the two keys on the B4 connector that carry no ASCII code. The
+        // cassette deck's transport buttons are the deck peripheral's own
+        // ConsoleControls, aggregated by the rig - not the system's.
         _consoleControls =
         [
             new ConsoleControl(

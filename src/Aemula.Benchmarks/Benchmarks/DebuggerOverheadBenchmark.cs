@@ -35,7 +35,7 @@ public class DebuggerOverheadBenchmark
     {
         var spec = SystemSpecs.Get(SystemName);
 
-        _system = EmulatedSystems.FindById(SystemName)!.Create();
+        _system = EmulatedSystems.FindById(SystemName)!.Build().System;
         _system.LoadProgram(spec.WorkloadPath());
         for (var i = 0; i < spec.WarmupTicks; i++)
         {

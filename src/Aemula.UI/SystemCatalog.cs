@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Aemula;
 using Aemula.Emulation.Systems;
 
 namespace Aemula.UI;
@@ -33,7 +34,7 @@ public readonly record struct RomFileFilter(string Name, string Pattern);
 public sealed record SystemCatalogEntry(
     string Id,
     string DisplayName,
-    Func<EmulatedSystem> Create,
+    Func<Rig> Build,
     RomRequirement Rom,
     string RomDialogTitle,
     RomFileFilter[] RomFilters);
@@ -54,17 +55,11 @@ public static class SystemCatalog
                 "Select an Apple II ROM image",
                 [new RomFileFilter("ROM images", "rom;bin"), new RomFileFilter("All files", "*")]),
 
-            // The Monitor ROM is a fixed inlined literal (Roms/WozMonitor.cs),
-            // so the bare Apple I has nothing for File > Open ROM to pick.
+            // The Apple I always has the ACI cassette card fitted here. The
+            // Monitor ROM is a fixed inlined literal, so the only file to pick
+            // is a WAV to drop onto the cassette-in jack (the user still types
+            // the WozMon call that reads it) - optional, not required.
             ["applei"] = (
-                RomRequirement.None,
-                "",
-                []),
-
-            // The cassette-equipped Apple I: File > Open picks a WAV to drop
-            // onto the cassette-in jack (the user still types the WozMon call
-            // that reads it), so it's optional, not required.
-            ["applei-aci"] = (
                 RomRequirement.Optional,
                 "Select a cassette WAV",
                 [new RomFileFilter("Cassette audio", "wav"), new RomFileFilter("All files", "*")]),
@@ -89,7 +84,7 @@ public static class SystemCatalog
         .Select(system =>
         {
             var (rom, romDialogTitle, romFilters) = RomInfoById[system.Id];
-            return new SystemCatalogEntry(system.Id, system.DisplayName, system.Create, rom, romDialogTitle, romFilters);
+            return new SystemCatalogEntry(system.Id, system.DisplayName, system.Build, rom, romDialogTitle, romFilters);
         })
         .ToList();
 

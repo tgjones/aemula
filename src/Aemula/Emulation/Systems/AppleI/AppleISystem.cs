@@ -1,4 +1,3 @@
-using System;
 using Aemula.Debugging;
 using Aemula.Emulation.Chips;
 using Aemula.Emulation.Chips.Mos6502;
@@ -35,6 +34,13 @@ public sealed partial class AppleISystem : EmulatedSystem
     // its own DRAM (it doesn't model equivalent bus-buffer/mux chips
     // either).
     private readonly byte[] _ram = new byte[0x2000];
+
+    // The optional 4K RAM expansion jumpered into the CSE block ($E000-$EFFF),
+    // or null on a bare board. On real hardware this hangs off the expansion
+    // connector rather than the onboard sockets; behaviourally it's just
+    // another decoded RAM range. This is where Apple 1 Integer BASIC lives, so
+    // it has to be present to load BASIC off cassette.
+    private readonly byte[]? _ramExpansion;
 
     // The Monitor ROM (WozMon). ICA1/ICA2 only have 8 address pins (A0-A7),
     // so on real hardware the 256-byte image mirrors every page of the CSF
@@ -75,12 +81,17 @@ public sealed partial class AppleISystem : EmulatedSystem
         _characterGenerator = Signetics2513Chip.Load();
         _characterGenerator.ChipEnable = false; // Tied low - always enabled.
 
+        if (options.RamExpansionAtE000)
+        {
+            _ramExpansion = new byte[0x1000];
+        }
+
         if (options.CassetteCard)
         {
-            // CyclesPerSecond / 14: the character clock, which is also the
-            // 6502's phi0 - the rate DoCpuMemoryAccess (and therefore the
-            // card) runs at. See AppleISystem.VideoTiming.cs.
-            _cassetteCard = new AppleCassetteInterfaceCard(CyclesPerSecond / 14.0);
+            // The card carries no timing element of its own; its two audio
+            // jacks are patched to a CassetteDeck peripheral by the rig
+            // assembler. Driven once per CPU bus cycle from DoCpuMemoryAccess.
+            _cassetteCard = new AppleCassetteInterfaceCard();
             _expansionCard = _cassetteCard;
         }
 
@@ -102,18 +113,10 @@ public sealed partial class AppleISystem : EmulatedSystem
 
     public override void LoadProgram(string filePath)
     {
+        // The Monitor ROM is fixed and there is nothing else on the board a
+        // path could name (a cassette WAV goes to the CassetteDeck peripheral,
+        // routed there by the rig, not here). Just a power-on reset.
         Reset();
-
-        // The Monitor ROM is fixed, so the only thing a path can mean here is a
-        // cassette WAV to drop onto the cassette-in jack (when the card is
-        // fitted); the user still types the WozMon call that reads it.
-        if (_cassetteCard != null &&
-            !string.IsNullOrEmpty(filePath) &&
-            filePath.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
-        {
-            InsertCassette(filePath);
-        }
-
         RaiseProgramLoaded();
     }
 
@@ -231,6 +234,11 @@ public sealed partial class AppleISystem : EmulatedSystem
             return _ram[address];
         }
 
+        if (_ramExpansion != null && !_chipSelectDecoder.Y14)
+        {
+            return _ramExpansion[address & 0x0FFF];
+        }
+
         if (!_chipSelectDecoder.Y13)
         {
             // The PIA's own chip-select input beyond RS0/RS1 is just this
@@ -254,6 +262,10 @@ public sealed partial class AppleISystem : EmulatedSystem
         if (!_chipSelectDecoder.Y0 || !_chipSelectDecoder.Y1)
         {
             _ram[address] = value;
+        }
+        else if (_ramExpansion != null && !_chipSelectDecoder.Y14)
+        {
+            _ramExpansion[address & 0x0FFF] = value;
         }
 
         // A PIA write already happened above, as a side effect of Pia.E
