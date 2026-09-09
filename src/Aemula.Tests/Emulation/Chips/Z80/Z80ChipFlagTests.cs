@@ -333,13 +333,74 @@ public class Z80ChipFlagTests
         await Assert.That(cpu.Flags.Carry).IsTrue().Because("old bit 7");
     }
 
-    // --- phase boundary: NEG is an ED opcode -----------------
+    // --- NEG (ED 44) --------------------------------------------
 
     [Test]
-    public async Task NegIsNotDecodedYet()
+    public async Task NegSubtractsFromZeroAndSetsBorrowFlags()
     {
-        // NEG is ED 44 - it belongs with the ED table, not the unprefixed core.
-        await Assert.That(() => RunOne(c => { c.AF.A = 0x01; }, 0xED, 0x44))
-            .Throws<NotImplementedException>();
+        // 0x00 - 0x01: borrow out of both bit 3 and bit 7, N set, no overflow.
+        var cpu = RunOne(c => { c.AF.A = 0x01; SetFlags(c, 0x00); }, 0xED, 0x44);
+
+        await Assert.That(cpu.AF.A).IsEqualTo((byte)0xFF);
+        await Assert.That(cpu.Flags.Sign).IsTrue();
+        await Assert.That(cpu.Flags.Zero).IsFalse();
+        await Assert.That(cpu.Flags.HalfCarry).IsTrue();
+        await Assert.That(cpu.Flags.ParityOverflow).IsFalse();
+        await Assert.That(cpu.Flags.Subtract).IsTrue();
+        await Assert.That(cpu.Flags.Carry).IsTrue().Because("A was non-zero");
+    }
+
+    [Test]
+    public async Task NegOfZeroClearsCarryAndNegOf0x80Overflows()
+    {
+        var zero = RunOne(c => { c.AF.A = 0x00; SetFlags(c, 0xFF); }, 0xED, 0x44);
+        await Assert.That(zero.AF.A).IsEqualTo((byte)0x00);
+        await Assert.That(zero.Flags.Zero).IsTrue();
+        await Assert.That(zero.Flags.Carry).IsFalse().Because("A was zero");
+        await Assert.That(zero.Flags.ParityOverflow).IsFalse();
+
+        var min = RunOne(c => { c.AF.A = 0x80; SetFlags(c, 0x00); }, 0xED, 0x44);
+        await Assert.That(min.AF.A).IsEqualTo((byte)0x80);
+        await Assert.That(min.Flags.ParityOverflow).IsTrue().Because("0 - 0x80 overflows");
+        await Assert.That(min.Flags.Carry).IsTrue();
+        await Assert.That(min.Flags.Subtract).IsTrue();
+    }
+
+    // --- ED nibble rotates ------------------------------------
+
+    [Test]
+    public async Task RrdRotatesNibblesAndSetsParityFromA()
+    {
+        // A=0x12, (HL)=0x34 -> (HL)=0x23, A=0x14; H/N cleared, C kept.
+        var ram = new byte[0x10000];
+        ram[0] = 0xED;
+        ram[1] = 0x67;
+        ram[0x40] = 0x34;
+
+        var cpu = new Z80Chip();
+        cpu.AF.A = 0x12;
+        cpu.HL.Value = 0x0040;
+        cpu.Flags.SetFromByte(0x01); // C set, to prove it survives
+
+        var completed = 0;
+        var wasAtBoundary = true;
+        for (var guard = 0; guard < 200 && completed < 1; guard++)
+        {
+            cpu.Clk = true;
+            cpu.Clk = false;
+            if (!cpu.MReq && !cpu.Rd) cpu.Data = ram[cpu.Address];
+            if (!cpu.MReq && !cpu.Wr) ram[cpu.Address] = cpu.Data;
+            if (cpu.AtInstructionBoundary && !wasAtBoundary) completed++;
+            wasAtBoundary = cpu.AtInstructionBoundary;
+        }
+
+        cpu.AF.F = cpu.Flags.AsByte();
+        await Assert.That(cpu.AF.A).IsEqualTo((byte)0x14);
+        await Assert.That(ram[0x40]).IsEqualTo((byte)0x23);
+        await Assert.That(cpu.Flags.HalfCarry).IsFalse();
+        await Assert.That(cpu.Flags.Subtract).IsFalse();
+        await Assert.That(cpu.Flags.Carry).IsTrue().Because("RRD leaves C alone");
+        await Assert.That(cpu.Flags.ParityOverflow).IsEqualTo(Z80Chip.ParityTable[0x14]);
+        await Assert.That(cpu.WZ.Value).IsEqualTo((ushort)0x0041).Because("WZ = HL + 1");
     }
 }

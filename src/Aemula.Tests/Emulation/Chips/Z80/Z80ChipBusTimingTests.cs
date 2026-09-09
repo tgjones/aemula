@@ -31,37 +31,15 @@ namespace Aemula.Tests.Emulation.Chips.Z80;
 // not asserted.
 //
 // Only the opcodes implemented so far are exercised. Every unprefixed opcode is
-// now decoded - the 8-bit and 16-bit loads, the stack ops, the register
-// exchanges, the 8-bit and 16-bit ALU, the accumulator rotates, all the jumps
-// and calls, and base-page IN/OUT - so InScopeOpcodes is the full byte range
-// minus the four escape bytes (0xCB / 0xED / 0xDD / 0xFD), whose tables are
-// added in later phases. Drop an escape byte from the exclusion set once its
-// prefixed decode exists.
+// decoded, and now the whole CB page (rotate/shift and BIT/RES/SET) and the ED
+// page (16-bit loads, ADC/SBC HL, NEG, IM, LD A,I/R, RRD/RLD, RETN/RETI, the
+// IN/OUT and block instructions) as well. DD / FD (and DD CB / FD CB) re-aim
+// operands at IX/IY and are still to come, so a case whose name starts "dd" or
+// "fd" stays out of scope; drop that guard once the index decode exists.
 public class Z80ChipBusTimingTests
 {
     private static readonly string AssetsPath =
         Path.Combine("Emulation", "Chips", "Z80", "Assets");
-
-    // Unprefixed opcode bytes with working microcode as of this phase.
-    private static readonly HashSet<int> InScopeOpcodes = BuildInScopeOpcodes();
-
-    private static HashSet<int> BuildInScopeOpcodes()
-    {
-        var set = new HashSet<int>();
-
-        for (var op = 0x00; op <= 0xFF; op++)
-        {
-            set.Add(op);
-        }
-
-        // The prefix escapes - their opcode tables land in later phases.
-        set.Remove(0xCB);
-        set.Remove(0xED);
-        set.Remove(0xDD);
-        set.Remove(0xFD);
-
-        return set;
-    }
 
     public static IEnumerable<string> InScopeCases()
     {
@@ -69,19 +47,19 @@ public class Z80ChipBusTimingTests
 
         foreach (var name in data.Names.Order(StringComparer.Ordinal))
         {
-            var baseOpcode = ParseBaseOpcode(name);
-            if (baseOpcode is not null && InScopeOpcodes.Contains(baseOpcode.Value))
+            if (IsInScope(name))
             {
                 yield return name;
             }
         }
     }
 
-    // FUSE names an unprefixed-opcode case by its hex byte, optionally with a
-    // "_n" suffix for a variant (e.g. "02_1" checks MEMPTR after LD (BC),A).
-    // Anything longer (cb.., dd.., ed.., fd..) is a prefixed opcode - out of
-    // scope for now.
-    private static int? ParseBaseOpcode(string name)
+    // FUSE names an unprefixed-opcode case by its hex byte and a CB/ED/DD/FD one
+    // by the prefix letters plus the opcode byte, either optionally carrying a
+    // "_n" suffix for a variant (e.g. "02_1" checks MEMPTR after LD (BC),A,
+    // "edb0_2" the final pass of LDIR). The unprefixed, CB and ED pages are all
+    // decoded; DD and FD (including the "ddcb" / "fdcb" doubles) are not.
+    private static bool IsInScope(string name)
     {
         var stem = name;
         var underscore = stem.IndexOf('_');
@@ -90,11 +68,18 @@ public class Z80ChipBusTimingTests
             stem = stem[..underscore];
         }
 
-        return stem.Length == 2
-            && int.TryParse(stem, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var value)
-            ? value
-            : null;
+        return stem.Length switch
+        {
+            2 => IsHexByte(stem),
+            4 => (stem.StartsWith("cb", StringComparison.Ordinal)
+                    || stem.StartsWith("ed", StringComparison.Ordinal))
+                && IsHexByte(stem[2..]),
+            _ => false,
+        };
     }
+
+    private static bool IsHexByte(string text) =>
+        int.TryParse(text, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out _);
 
     [Test]
     [MethodDataSource(nameof(InScopeCases))]
@@ -212,9 +197,14 @@ public class Z80ChipBusTimingTests
                     break;
             }
 
-            if (t > 200)
+            // A generous bound over the case's own T-state budget catches a
+            // microcode path that never returns to an instruction boundary
+            // (the repeating block instructions are the long ones - LDIR over a
+            // full BC runs into the hundreds).
+            if (t > input.TStates + 200)
             {
-                Assert.Fail($"{caseName}: instruction did not complete within 200 T-states");
+                Assert.Fail(
+                    $"{caseName}: instruction did not complete within {input.TStates + 200} T-states");
             }
         }
 

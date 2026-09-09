@@ -285,6 +285,277 @@ public sealed partial class Z80Chip
         _flagsModified = true;
     }
 
+    // --- CB-prefixed rotates and shifts -------------------------------------
+    //
+    // Unlike the accumulator rotates (RLCA/RRCA/RLA/RRA), the CB rotate/shift
+    // group sets S, Z and P/V from the result and takes bits 5/3 from it too;
+    // H and N are cleared and C is the bit shifted out. rot[y]: 0 RLC, 1 RRC,
+    // 2 RL, 3 RR, 4 SLA, 5 SRA, 6 SLL, 7 SRL (z80.info decode). SLL (a.k.a.
+    // SL1) is undocumented: a left shift that feeds a 1 into bit 0.
+    private byte AluRotateShift(int op, byte v)
+    {
+        bool carryOut;
+        byte r;
+
+        switch (op)
+        {
+            case 0: // RLC
+                carryOut = (v & 0x80) != 0;
+                r = (byte)((v << 1) | (carryOut ? 1 : 0));
+                break;
+            case 1: // RRC
+                carryOut = (v & 0x01) != 0;
+                r = (byte)((v >> 1) | (carryOut ? 0x80 : 0));
+                break;
+            case 2: // RL
+                carryOut = (v & 0x80) != 0;
+                r = (byte)((v << 1) | (Flags.Carry ? 1 : 0));
+                break;
+            case 3: // RR
+                carryOut = (v & 0x01) != 0;
+                r = (byte)((v >> 1) | (Flags.Carry ? 0x80 : 0));
+                break;
+            case 4: // SLA
+                carryOut = (v & 0x80) != 0;
+                r = (byte)(v << 1);
+                break;
+            case 5: // SRA - arithmetic: bit 7 is replicated
+                carryOut = (v & 0x01) != 0;
+                r = (byte)((v >> 1) | (v & 0x80));
+                break;
+            case 6: // SLL - undocumented: bit 0 becomes 1
+                carryOut = (v & 0x80) != 0;
+                r = (byte)((v << 1) | 1);
+                break;
+            default: // 7: SRL
+                carryOut = (v & 0x01) != 0;
+                r = (byte)(v >> 1);
+                break;
+        }
+
+        Flags.Sign = (r & 0x80) != 0;
+        Flags.Zero = r == 0;
+        Flags.Y = (r & 0x20) != 0;
+        Flags.HalfCarry = false;
+        Flags.X = (r & 0x08) != 0;
+        Flags.ParityOverflow = ParityTable[r];
+        Flags.Subtract = false;
+        Flags.Carry = carryOut;
+        _flagsModified = true;
+        return r;
+    }
+
+    // --- CB-prefixed BIT / RES / SET --------------------------------------
+    //
+    // BIT tests one bit: Z and P/V both reflect the bit being clear, H is set,
+    // N cleared, C untouched. S is only meaningful for bit 7 (it takes the
+    // tested bit). Bits 5/3 come from the operand for BIT b,r; for BIT b,(HL)
+    // they come from the high byte of MEMPTR, which the instruction leaves
+    // unchanged ("The Undocumented Z80 Documented", Sean Young).
+    private void AluBit(int bit, byte v, byte undocumentedSource)
+    {
+        var masked = (byte)(v & (1 << bit));
+
+        Flags.Sign = (masked & 0x80) != 0;
+        Flags.Zero = masked == 0;
+        Flags.ParityOverflow = masked == 0;
+        Flags.HalfCarry = true;
+        Flags.Subtract = false;
+        Flags.Y = (undocumentedSource & 0x20) != 0;
+        Flags.X = (undocumentedSource & 0x08) != 0;
+        _flagsModified = true;
+    }
+
+    // --- NEG (ED 44 and its undocumented mirrors) -----------------------
+    //
+    // A := 0 - A, with the flags of a subtraction from zero: H and C are the
+    // borrows, N is set, P/V is set only when A was 0x80, C only when A was
+    // non-zero.
+    private void Neg()
+    {
+        AF.A = Alu8Sub(0, AF.A, 0);
+    }
+
+    // --- ED-prefixed 16-bit ADC HL,ss / SBC HL,ss --------------------------
+    //
+    // Full flags, unlike ADD HL,ss: S and Z from the 16-bit result, H from a
+    // carry/borrow out of bit 11, P/V is signed overflow, N is 0 for ADC and 1
+    // for SBC, C from bit 15, and bits 5/3 from the result's high byte. WZ is
+    // latched to HL + 1 before the operation.
+    private void Adc16ToHl(ushort src)
+    {
+        var hl = HL.Value;
+        WZ.Value = (ushort)(hl + 1);
+
+        var carryIn = Flags.Carry ? 1 : 0;
+        var result = hl + src + carryIn;
+        var r = (ushort)result;
+
+        Flags.Sign = (r & 0x8000) != 0;
+        Flags.Zero = r == 0;
+        Flags.Y = (r & 0x2000) != 0;
+        Flags.HalfCarry = ((hl & 0x0FFF) + (src & 0x0FFF) + carryIn) > 0x0FFF;
+        Flags.X = (r & 0x0800) != 0;
+        Flags.ParityOverflow = ((hl ^ src ^ 0x8000) & (hl ^ r) & 0x8000) != 0;
+        Flags.Subtract = false;
+        Flags.Carry = result > 0xFFFF;
+        _flagsModified = true;
+
+        HL.Value = r;
+    }
+
+    private void Sbc16FromHl(ushort src)
+    {
+        var hl = HL.Value;
+        WZ.Value = (ushort)(hl + 1);
+
+        var carryIn = Flags.Carry ? 1 : 0;
+        var result = hl - src - carryIn;
+        var r = (ushort)result;
+
+        Flags.Sign = (r & 0x8000) != 0;
+        Flags.Zero = r == 0;
+        Flags.Y = (r & 0x2000) != 0;
+        Flags.HalfCarry = ((hl & 0x0FFF) - (src & 0x0FFF) - carryIn) < 0;
+        Flags.X = (r & 0x0800) != 0;
+        Flags.ParityOverflow = ((hl ^ src) & (hl ^ r) & 0x8000) != 0;
+        Flags.Subtract = true;
+        Flags.Carry = result < 0;
+        _flagsModified = true;
+
+        HL.Value = r;
+    }
+
+    // --- ED-prefixed RRD / RLD ------------------------------------------
+    //
+    // A nibble rotate through (HL) and the low nibble of A. RRD shifts the
+    // 12-bit quantity [A.lo : (HL)] right by four; RLD shifts it left by four.
+    // S, Z, P/V (parity) and bits 5/3 come from A afterwards; H and N are
+    // cleared, C is untouched. WZ is set to HL + 1.
+    private byte Rrd(byte memory)
+    {
+        WZ.Value = (ushort)(HL.Value + 1);
+        var newMemory = (byte)((AF.A << 4) | (memory >> 4));
+        AF.A = (byte)((AF.A & 0xF0) | (memory & 0x0F));
+        SetRrdRldFlags();
+        return newMemory;
+    }
+
+    private byte Rld(byte memory)
+    {
+        WZ.Value = (ushort)(HL.Value + 1);
+        var newMemory = (byte)((memory << 4) | (AF.A & 0x0F));
+        AF.A = (byte)((AF.A & 0xF0) | (memory >> 4));
+        SetRrdRldFlags();
+        return newMemory;
+    }
+
+    // LD A,I / LD A,R: S and Z from the byte loaded, bits 5/3 from it too, H
+    // and N cleared, C untouched, and P/V loaded from IFF2. (A maskable
+    // interrupt landing on the internal T-state of this instruction resets P/V
+    // instead - that corner is handled with the interrupt sequences.)
+    private void SetLdAInterruptRegisterFlags(byte value)
+    {
+        Flags.Sign = (value & 0x80) != 0;
+        Flags.Zero = value == 0;
+        Flags.Y = (value & 0x20) != 0;
+        Flags.HalfCarry = false;
+        Flags.X = (value & 0x08) != 0;
+        Flags.ParityOverflow = IFF2;
+        Flags.Subtract = false;
+        _flagsModified = true;
+    }
+
+    private void SetRrdRldFlags()
+    {
+        Flags.Sign = (AF.A & 0x80) != 0;
+        Flags.Zero = AF.A == 0;
+        Flags.Y = (AF.A & 0x20) != 0;
+        Flags.HalfCarry = false;
+        Flags.X = (AF.A & 0x08) != 0;
+        Flags.ParityOverflow = ParityTable[AF.A];
+        Flags.Subtract = false;
+        _flagsModified = true;
+    }
+
+    // --- ED-prefixed IN r,(C) / IN (C) --------------------------------
+    //
+    // S, Z and P/V (parity) come from the byte read; H and N are cleared and C
+    // is untouched. The same flag rule serves IN (C) (the y == 6 form) which
+    // discards the byte and only writes the flags.
+    private void SetInputFlags(byte value)
+    {
+        Flags.Sign = (value & 0x80) != 0;
+        Flags.Zero = value == 0;
+        Flags.Y = (value & 0x20) != 0;
+        Flags.HalfCarry = false;
+        Flags.X = (value & 0x08) != 0;
+        Flags.ParityOverflow = ParityTable[value];
+        Flags.Subtract = false;
+        _flagsModified = true;
+    }
+
+    // --- ED-prefixed block-transfer / block-compare flags ---------------
+    //
+    // LDI/LDD/LDIR/LDDR: after the byte moves, P/V is set while BC is still
+    // non-zero, H and N are cleared, and - the undocumented part - bits 5/3
+    // come from A plus the moved byte: bit 1 of that sum lands in flag Y (bit
+    // 5) and bit 3 in flag X. S, Z and C are left alone. ("The Undocumented
+    // Z80 Documented", ch. 4.)
+    private void SetBlockLoadFlags(byte moved, bool bcStillNonZero)
+    {
+        var n = (byte)(AF.A + moved);
+        Flags.Y = (n & 0x02) != 0;
+        Flags.HalfCarry = false;
+        Flags.X = (n & 0x08) != 0;
+        Flags.ParityOverflow = bcStillNonZero;
+        Flags.Subtract = false;
+        _flagsModified = true;
+    }
+
+    // CPI/CPD/CPIR/CPDR: a compare of A against (HL) that does not store. S, Z
+    // and H are the compare's, N is set, P/V tracks BC still non-zero, C is
+    // untouched. Bits 5/3 come from (A - (HL) - H): bit 1 of that into flag Y,
+    // bit 3 into flag X.
+    private void SetBlockCompareFlags(byte memory, bool bcStillNonZero)
+    {
+        var diff = AF.A - memory;
+        var r = (byte)diff;
+        var halfBorrow = ((AF.A & 0x0F) - (memory & 0x0F)) < 0;
+
+        Flags.Sign = (r & 0x80) != 0;
+        Flags.Zero = r == 0;
+        Flags.HalfCarry = halfBorrow;
+        Flags.ParityOverflow = bcStillNonZero;
+        Flags.Subtract = true;
+
+        var n = (byte)(r - (halfBorrow ? 1 : 0));
+        Flags.Y = (n & 0x02) != 0;
+        Flags.X = (n & 0x08) != 0;
+        _flagsModified = true;
+    }
+
+    // INI/IND/OUTI/OUTD and their repeating forms. The final iteration's flags
+    // are the observable ones (each repeat overwrites F): S, Z and bits 5/3
+    // follow B after its decrement, N is bit 7 of the transferred byte, and a
+    // synthetic sum k = byte + kAddend drives H and C (k > 0xFF) while P/V is
+    // the parity of (k & 7) XOR B. For IN* kAddend is (C +/- 1); for OUT* it is
+    // the post-step value of L. ("The Undocumented Z80 Documented", ch. 5.)
+    private void SetBlockIoFlags(byte transferred, byte b, int kAddend)
+    {
+        var k = transferred + (kAddend & 0xFF);
+
+        Flags.Sign = (b & 0x80) != 0;
+        Flags.Zero = b == 0;
+        Flags.Y = (b & 0x20) != 0;
+        Flags.X = (b & 0x08) != 0;
+        Flags.HalfCarry = k > 0xFF;
+        Flags.Carry = k > 0xFF;
+        Flags.ParityOverflow = ParityTable[(k & 0x07) ^ b];
+        Flags.Subtract = (transferred & 0x80) != 0;
+        _flagsModified = true;
+    }
+
     private bool EvaluateCondition(int cc)
     {
         return cc switch

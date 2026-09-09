@@ -10,11 +10,12 @@ namespace Aemula.Emulation.Chips.Z80.Debugging;
 /// <c>Do0</c> / <c>Do1</c> / <c>Do2</c> helpers for the 0-, 1- and 2-operand-byte
 /// forms, and <c>OnReset</c> seeding the reset vector at 0x0000.
 ///
-/// Only the base (unprefixed) table is filled in. The 0xCB / 0xED / 0xDD / 0xFD
-/// bytes are shown as one-byte "prefix" placeholders so the linear sweep does
-/// not throw; their real tables (rotate/shift and BIT/RES/SET for CB, block ops
-/// and 16-bit loads for ED, IX/IY re-aiming for DD/FD, and the DD CB / FD CB
-/// double prefix) are added alongside the matching microcode.
+/// The base (unprefixed) table, the CB table (rotate/shift and BIT/RES/SET) and
+/// the ED table (block ops, 16-bit loads, ADC/SBC HL, NEG, IM, LD A,I/R,
+/// RRD/RLD, RETN/RETI, IN/OUT) are filled in. The 0xDD / 0xFD bytes are still
+/// shown as one-byte "prefix" placeholders so the linear sweep does not throw;
+/// their IX/IY re-aiming table and the DD CB / FD CB double prefix are added
+/// alongside the matching microcode.
 /// </summary>
 public class Z80Disassembler : Disassembler
 {
@@ -125,7 +126,7 @@ public class Z80Disassembler : Disassembler
             0xC8 => Do0("RET Z"),
             0xC9 => Do0("RET", hasNext: false),
             0xCA => Do2("JP Z, 0x", jumpType: JumpType.Jump),
-            0xCB => Prefix("CB"),
+            0xCB => DecodeCb(),
             0xCC => Do2("CALL Z, 0x", jumpType: JumpType.Call),
             0xCD => Do2("CALL 0x", jumpType: JumpType.Call),
             0xCE => Do1("ADC A, 0x"),
@@ -161,7 +162,7 @@ public class Z80Disassembler : Disassembler
             0xEA => Do2("JP PE, 0x", jumpType: JumpType.Jump),
             0xEB => Do0("EX DE, HL"),
             0xEC => Do2("CALL PE, 0x", jumpType: JumpType.Call),
-            0xED => Prefix("ED"),
+            0xED => DecodeEd(),
             0xEE => Do1("XOR 0x"),
             0xEF => Do0("RST 0x28", hasNext: false),
 
@@ -194,6 +195,102 @@ public class Z80Disassembler : Disassembler
             6 => "(HL)",
             _ => "A",
         };
+
+        // CB page: [x x][y y y][z z z]. x picks the family, z the r[] operand.
+        DisassembledInstruction DecodeCb()
+        {
+            var sub = MemoryCallbacks.Read((ushort)(address + 1));
+            var x = sub >> 6;
+            var y = (sub >> 3) & 0x7;
+            var z = sub & 0x7;
+
+            var rot = new[] { "RLC", "RRC", "RL", "RR", "SLA", "SRA", "SLL", "SRL" };
+            var text = x switch
+            {
+                0 => $"{rot[y]} {Reg(z)}",
+                1 => $"BIT {y}, {Reg(z)}",
+                2 => $"RES {y}, {Reg(z)}",
+                _ => $"SET {y}, {Reg(z)}",
+            };
+
+            return DoHelper(text, 2, $"{opcode:X2} {sub:X2}", true, null);
+        }
+
+        // ED page. rp[] here is BC DE HL SP; a two-byte address operand follows
+        // the LD (nn),dd / LD dd,(nn) forms.
+        DisassembledInstruction DecodeEd()
+        {
+            var sub = MemoryCallbacks.Read((ushort)(address + 1));
+            var x = sub >> 6;
+            var y = (sub >> 3) & 0x7;
+            var z = sub & 0x7;
+            var p = y >> 1;
+            var q = y & 1;
+
+            var rp = new[] { "BC", "DE", "HL", "SP" };
+            var im = new[] { "0", "0", "1", "2", "0", "0", "1", "2" };
+
+            if (x == 1)
+            {
+                switch (z)
+                {
+                    case 0:
+                        return EdShort(y == 6 ? "IN (C)" : $"IN {Reg(y)}, (C)");
+                    case 1:
+                        return EdShort(y == 6 ? "OUT (C), 0" : $"OUT (C), {Reg(y)}");
+                    case 2:
+                        return EdShort($"{(q == 0 ? "SBC" : "ADC")} HL, {rp[p]}");
+                    case 3:
+                        return q == 0
+                            ? EdAbsolute($"LD (0x", $"), {rp[p]}")
+                            : EdAbsolute($"LD {rp[p]}, (0x", ")");
+                    case 4:
+                        return EdShort("NEG");
+                    case 5:
+                        return EdShort(y == 1 ? "RETI" : "RETN", hasNext: false);
+                    case 6:
+                        return EdShort($"IM {im[y]}");
+                    default: // z == 7
+                        return EdShort(y switch
+                        {
+                            0 => "LD I, A",
+                            1 => "LD R, A",
+                            2 => "LD A, I",
+                            3 => "LD A, R",
+                            4 => "RRD",
+                            5 => "RLD",
+                            _ => "NOP*",
+                        });
+                }
+            }
+
+            if (x == 2 && y >= 4 && z <= 3)
+            {
+                var stem = z switch { 0 => "LD", 1 => "CP", 2 => "IN", _ => "OT" };
+                var dir = (y & 1) == 0 ? "I" : "D";
+                var rep = y >= 6 ? "R" : "";
+                // OUTI/OUTD break the "OT" stem pattern the repeats use.
+                var name = z == 3 && y < 6 ? $"OUT{dir}" : $"{stem}{dir}{rep}";
+                return EdShort(name);
+            }
+
+            return EdShort($"DB 0xED, 0x{sub:X2}");
+
+            DisassembledInstruction EdShort(string text, bool hasNext = true) =>
+                DoHelper(text, 2, $"{opcode:X2} {sub:X2}", hasNext, null);
+
+            DisassembledInstruction EdAbsolute(string prefix, string suffix)
+            {
+                var lo = MemoryCallbacks.Read((ushort)(address + 2));
+                var hi = MemoryCallbacks.Read((ushort)(address + 3));
+                return DoHelper(
+                    $"{prefix}{hi:X2}{lo:X2}{suffix}",
+                    4,
+                    $"{opcode:X2} {sub:X2} {lo:X2} {hi:X2}",
+                    true,
+                    null);
+            }
+        }
 
         DisassembledInstruction Do0(string text, bool hasNext = true)
         {

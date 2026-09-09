@@ -36,30 +36,29 @@ namespace Aemula.Tests.Emulation.Chips.Z80;
 //     suite ships only as ZX Spectrum tape images - there is no CP/M .com build
 //     of it anywhere - hence the TAP shim.
 //
-// None of these run to completion yet, and every row below is [Skip]ped with
-// that reason: the exercisers' own runner code and the z80test driver both use
-// ED-prefixed block moves (LDIR) and FD-prefixed stack ops (PUSH IY), and the
-// bodies they exercise cover the whole CB/ED/DD/FD instruction set, none of
-// which is decoded yet. The unprefixed core is instead gated by
+// None of these run to completion yet, and every row below is [Skip]ped. The
+// unprefixed, CB and ED instruction groups are all decoded now - and gated by
 // Z80ChipBusTimingTests (the FUSE per-instruction bus + register + flag +
-// MEMPTR vectors) and Z80ChipFlagTests (hand-written flag-edge cases).
-//
-// Milestone order for switching these on:
-//   * after the CB and ED decode groups land: zexdoc.com to a full pass, then
-//     zexall.com (adds the undocumented Y/X flags); z80flags.tap / z80doc.tap /
-//     z80docflags.tap should pass here too.
-//   * after the DD/FD (index) group lands: z80full.tap, z80ccf.tap
-//     (the SCF/CCF bit 3/5 corner) and z80memptr.tap (WZ observed through
-//     BIT n,(IX+d)).
+// MEMPTR vectors, every unprefixed / cb xx / ed xx case) and Z80ChipFlagTests
+// (hand-written flag-edge cases). What still blocks every ROM here is the
+// DD/FD (IX/IY) group: it is not just the test bodies that use it - the
+// zexdoc/zexall scaffolding sets up each subtest with FD-prefixed loads, and
+// the z80test driver pushes IY, so neither harness reaches its first "OK"
+// line without index-prefix decode. Switch these on once DD/FD lands:
+//   * zexdoc.com to a full pass, then zexall.com (the undocumented Y/X flags);
+//     z80flags.tap / z80doc.tap / z80docflags.tap should pass too.
+//   * z80full.tap, z80ccf.tap (the SCF/CCF bit 3/5 corner) and z80memptr.tap
+//     (WZ observed through BIT n,(IX+d)).
 // When a ROM passes, drop its [Skip], and add an exact total-T-state assertion
-// captured from a reference core as the timing ratchet.
+// captured from a reference core as the timing ratchet. The maxTStates caps
+// below are already generous-but-bounded for a full conformance run.
 public class Z80ChipTests
 {
     private static readonly string AssetsPath =
         Path.Combine("Emulation", "Chips", "Z80", "Assets");
 
     [Test]
-    [Skip("Needs the CB and ED decode groups: the exerciser's runner copies test descriptors with LDIR (ED B0) before the first subtest.")]
+    [Skip("Needs the DD/FD decode group: the exerciser scaffolds every subtest with FD-prefixed loads, so it throws before the first 'OK'. CB and ED are done (covered by Z80ChipBusTimingTests).")]
     [Arguments("zexdoc.com")]
     [Arguments("zexall.com")]
     public async Task CpmExerciser(string fileName)
@@ -73,7 +72,7 @@ public class Z80ChipTests
     }
 
     [Test]
-    [Skip("Needs the ED and DD/FD decode groups: the z80test driver uses PUSH IY (FD E5) and LDIR (ED B0), and every subtest body covers CB/ED/DD/FD opcodes.")]
+    [Skip("Needs the DD/FD decode group: the z80test driver uses PUSH IY (FD E5) and every subtest body covers IX/IY opcodes. ED (LDIR etc.) is done (covered by Z80ChipBusTimingTests).")]
     [Arguments("z80docflags.tap")]
     [Arguments("z80flags.tap")]
     [Arguments("z80doc.tap")]

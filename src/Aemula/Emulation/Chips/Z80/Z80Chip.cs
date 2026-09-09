@@ -255,7 +255,8 @@ public sealed partial class Z80Chip
     /// register has been touched for it. A clock-stepping test harness uses this
     /// to halt exactly on an instruction boundary.
     /// </summary>
-    internal bool AtInstructionBoundary => _pendingMachineCycleType == MachineCycleType.OpcodeFetch;
+    internal bool AtInstructionBoundary =>
+        _pendingMachineCycleType == MachineCycleType.OpcodeFetch && _prefix == Z80Prefix.None;
 
     /// <summary>
     /// Whether a HALT (0x76) has parked the CPU. It keeps fetching M1s with PC

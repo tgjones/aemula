@@ -45,10 +45,39 @@ public sealed partial class Z80Chip
 {
     private void HandleInstruction(int cycleKey)
     {
-        if (_prefix != Z80Prefix.None)
+        // A 0xCB / 0xED / 0xDD / 0xFD byte fetched with no prefix in force is an
+        // escape: it runs as a full 4-T M1 (refresh and all) that decodes to
+        // nothing except latching the prefix and starting another M1 for the
+        // real opcode. Hardware treats a DD/FD chain the same way, each link its
+        // own M1 re-latching the prefix.
+        if (_prefix == Z80Prefix.None)
         {
-            throw new NotImplementedException(
-                $"Z80 prefixed opcode (prefix {_prefix}, 0x{_ir:X2}) is not implemented yet.");
+            switch (_ir)
+            {
+                case 0xCB: HandlePrefixEscape(cycleKey, Z80Prefix.CB); return;
+                case 0xED: HandlePrefixEscape(cycleKey, Z80Prefix.ED); return;
+                case 0xDD: HandlePrefixEscape(cycleKey, Z80Prefix.DD); return;
+                case 0xFD: HandlePrefixEscape(cycleKey, Z80Prefix.FD); return;
+            }
+        }
+        else
+        {
+            switch (_prefix)
+            {
+                case Z80Prefix.CB: HandleCbPrefixed(cycleKey); return;
+                case Z80Prefix.ED: HandleEdPrefixed(cycleKey); return;
+
+                // DD / FD (and the DD CB / FD CB double prefix) re-aim HL-class
+                // operands at IX / IY and splice in a displacement fetch. That
+                // decode is not built yet; the escape path above still routes
+                // here so it slots straight in.
+                case Z80Prefix.DD:
+                case Z80Prefix.FD:
+                case Z80Prefix.DDCB:
+                case Z80Prefix.FDCB:
+                    throw new NotImplementedException(
+                        $"Z80 index-prefixed opcode (prefix {_prefix}, 0x{_ir:X2}) is not implemented yet.");
+            }
         }
 
         var x = _ir >> 6;
@@ -77,6 +106,20 @@ public sealed partial class Z80Chip
         }
 
         throw new NotImplementedException($"Z80 opcode 0x{_ir:X2} is not implemented yet.");
+    }
+
+    // The escape M1 itself does no decode: on its final T-state it latches the
+    // prefix and stages the M1 that will fetch the real opcode. Q is not
+    // touched here - it was latched from the instruction before the escape when
+    // this M1's own cycle transition ran (with _prefix still None), and the
+    // real opcode's completion latches it again once _prefix is cleared.
+    private void HandlePrefixEscape(int cycleKey, Z80Prefix prefix)
+    {
+        if (cycleKey == OpcodeFetchT4)
+        {
+            _prefix = prefix;
+            SetNextCycle(MachineCycleType.OpcodeFetch);
+        }
     }
 
     private void HandleUnprefixedX0(int cycleKey, int y, int z, int p, int q)
