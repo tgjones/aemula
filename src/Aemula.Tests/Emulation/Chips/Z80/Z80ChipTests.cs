@@ -41,18 +41,20 @@ namespace Aemula.Tests.Emulation.Chips.Z80;
 // MEMPTR vectors, every unprefixed / cb / ed / dd / fd / ddcb / fdcb case) and
 // Z80ChipFlagTests (hand-written flag-edge cases).
 //
-// zexdoc / zexall and z80test's z80doc / z80docflags now run to a full pass.
-// z80test's z80flags / z80full / z80ccf / z80memptr each fail exactly the four
-// self-modifying block-repeat subtests 089/090 (LDIR/LDDR ->NOP) and 102/103
-// (INIR/INDR ->NOP): these overwrite the opcode with the byte being moved so
-// that the repeat fetches a NOP, then check the undocumented Y/X (and, for
-// z80memptr, WZ) that the aborted repeat left. The LDIR/LDDR pair is fixed
-// (Y/X from PC bits 13/11); the INIR/INDR pair is left as future work because
-// the value it wants is in tension with FUSE's own edb2_1 vector (which stops
-// on an INIR repeat tail and expects the plain B-derived Y/X) - reconciling
-// the two needs the maskable-interrupt phase and a reference decision, not the
-// index group. Those four ROMs stay skipped until then; the two that pass have
-// their [Skip] dropped.
+// zexdoc / zexall and z80test's z80doc / z80docflags run to a full pass.
+// z80test's z80flags / z80full / z80ccf / z80memptr each fail exactly the two
+// self-modifying block-repeat subtests 102/103 (INIR->NOP' / INDR->NOP'):
+// these overwrite the opcode with the byte just moved so the repeat fetches a
+// NOP, then CRC the undocumented flags (and, for z80memptr, WZ) that the
+// aborted repeat left. LDIR->NOP' / LDDR->NOP' (089/090) is fixed - Y/X from
+// PC bits 13/11 on the 5-T repeat tail. The INIR/INDR pair is a documented
+// dead end: the values raxoft wants come from the "block-I/O interrupted"
+// formula (Y/X from PC>>8; H and P/V rebuilt from (B -+ 1)&7 when carry is
+// set), but that formula flips flag X 1->0 on FUSE's edb2_1 vector, which
+// stops precisely on an INIR repeat tail and pins F = 0x0C. Passing 102/103
+// and keeping Z80ChipBusTimingTests at 1356/1356 are therefore mutually
+// exclusive; FUSE is kept green and those four ROMs stay [Skip]ped on the
+// Z80TestBlockRepeatCorner row.
 //
 // The maxTStates caps are generous-but-bounded for a full conformance run
 // (ZEXALL is a few minutes even at Release). A future pass should pin the exact
@@ -81,7 +83,16 @@ public class Z80ChipTests
     public Task Z80Test(string fileName) => RunZ80Test(fileName);
 
     [Test]
-    [Skip("Fails only raxoft z80test subtests 102/103 (INIR/INDR ->NOP): the undocumented Y/X - and, for z80memptr, WZ - an aborted INIR/INDR repeat leaves. The value raxoft expects is in tension with FUSE's edb2_1 vector (which stops on an INIR repeat tail and wants the plain B-derived Y/X), so reconciling it needs the maskable-interrupt phase and a reference decision. LDIR/LDDR ->NOP (089/090) is fixed, so z80doc/z80docflags pass.")]
+    [Skip("Fails only raxoft z80test subtests 102/103 (INIR->NOP' / INDR->NOP'), " +
+          "which check the undocumented S/Y/H/X/P/V/N/C an NMOS Z80 leaves when an " +
+          "INIR/INDR repeat is aborted mid-flight. Those values need the " +
+          "'block-I/O interrupted' formula (MAME z80.cpp block_io_interrupted_flags: " +
+          "Y/X <- PC>>8; with carry set H and P/V are rebuilt from (B-+1)&7). Applying " +
+          "it regresses the FUSE edb2_1 vector, which stops exactly on an INIR repeat " +
+          "tail and pins F = 0x0C - i.e. X taken from B (0x09) and P/V from the plain " +
+          "base parity - so keeping Z80ChipBusTimingTests at 1356/1356 and passing " +
+          "102/103 are mutually exclusive. FUSE is kept green; z80doc/z80docflags " +
+          "(documented flags only) pass, as do LDIR->NOP'/LDDR->NOP' (089/090).")]
     [Arguments("z80flags.tap")]
     [Arguments("z80full.tap")]
     [Arguments("z80ccf.tap")]

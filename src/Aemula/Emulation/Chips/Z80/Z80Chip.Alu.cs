@@ -456,14 +456,14 @@ public sealed partial class Z80Chip
     // and N cleared, C untouched, and P/V loaded from IFF2. (A maskable
     // interrupt landing on the internal T-state of this instruction resets P/V
     // instead - that corner is handled with the interrupt sequences.)
-    private void SetLdAInterruptRegisterFlags(byte value)
+    private void SetLdAInterruptRegisterFlags(byte value, bool interruptTaken = false)
     {
         Flags.Sign = (value & 0x80) != 0;
         Flags.Zero = value == 0;
         Flags.Y = (value & 0x20) != 0;
         Flags.HalfCarry = false;
         Flags.X = (value & 0x08) != 0;
-        Flags.ParityOverflow = IFF2;
+        Flags.ParityOverflow = IFF2 && !interruptTaken;
         Flags.Subtract = false;
         _flagsModified = true;
     }

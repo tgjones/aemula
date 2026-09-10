@@ -312,7 +312,14 @@ public sealed partial class Z80Chip
 
                     case InternalT1:
                         AF.A = y == 2 ? I : R;
-                        SetLdAInterruptRegisterFlags(AF.A);
+
+                        // "The Undocumented Z80 Documented": if an interrupt is
+                        // accepted during this internal T-state, the P/V <- IFF2
+                        // copy is lost and P/V comes out clear. This T-state is
+                        // the instruction's last, so a latched /NMI edge or a
+                        // /INT that IFF1 would honour hits exactly here.
+                        var interruptTaken = _nmiPending || (_intSampledLow && IFF1);
+                        SetLdAInterruptRegisterFlags(AF.A, interruptTaken);
                         FinishPrefixedInstruction();
                         break;
                 }

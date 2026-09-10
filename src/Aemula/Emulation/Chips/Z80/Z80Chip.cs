@@ -169,8 +169,30 @@ public sealed partial class Z80Chip
     /// <summary>/INT - maskable interrupt request (input). Active low, level-sensitive.</summary>
     public bool Int { internal get; set; } = true;
 
-    /// <summary>/NMI - non-maskable interrupt request (input). Active low, edge-triggered.</summary>
-    public bool Nmi { internal get; set; } = true;
+    /// <summary>
+    /// /NMI - non-maskable interrupt request (input). Active low, edge-triggered:
+    /// the high->low transition is latched here the moment it happens and
+    /// acknowledged at the next instruction boundary, so a line held low does not
+    /// re-trigger - a fresh falling edge is needed for a second NMI.
+    /// </summary>
+    public bool Nmi
+    {
+        internal get => _nmiPin;
+        set
+        {
+            if (_nmiPin == value)
+            {
+                return;
+            }
+
+            _nmiPin = value;
+
+            if (!value)
+            {
+                _nmiPending = true;
+            }
+        }
+    }
 
     /// <summary>/BUSRQ - bus request (input). Active low.</summary>
     public bool BusRq { internal get; set; } = true;
@@ -294,6 +316,38 @@ public sealed partial class Z80Chip
             return;
         }
 
+        // /BUSRQ: the CPU relinquishes the bus at the next machine-cycle
+        // boundary - UM0080 has it finish the machine cycle in progress first -
+        // and holds it, /BUSAK low with the address, data and /MREQ //IORQ //RD
+        // //WR outputs released, until /BUSRQ is deasserted. It is deliberately
+        // not sampled between the M-cycles of an instruction; the next-boundary
+        // model is enough for a stand-alone core.
+        if (_busGranted)
+        {
+            if (BusRq)
+            {
+                _busGranted = false;
+                BusAk = true;
+            }
+            else
+            {
+                return;
+            }
+        }
+        else if (_pendingMachineCycleType.HasValue && !BusRq)
+        {
+            _busGranted = true;
+            BusAk = false;
+            M1 = MReq = IoRq = Rd = Wr = Rfsh = true;
+            return;
+        }
+
+        // /INT is level-sensitive; sample it on this edge too so the instruction
+        // boundary that ApplyPendingCycleTransition may be about to hit reads the
+        // freshest level (the last sample before the boundary is the one that
+        // counts).
+        _intSampledLow = !Int;
+
         // A CLK rising edge is the T-state boundary. Apply whatever machine-cycle
         // transition was staged during the previous T-state, or advance to the
         // next T-state of the current machine cycle if nothing was staged.
@@ -312,11 +366,13 @@ public sealed partial class Z80Chip
                 // /M1 low and the address bus = PC on T1 rising; PC increments now
                 // so the I:R refresh address can take the bus at T3. While halted
                 // the same 4-T M1 repeats forever with PC held still - the fetched
-                // byte is discarded and the CPU behaves as if executing NOPs.
+                // byte is discarded and the CPU behaves as if executing NOPs. An
+                // NMI acknowledge borrows this same M1 cycle but leaves PC alone:
+                // the byte it reads is discarded and PC is the return address.
                 M1 = false;
                 Rfsh = true;
                 Address = PC.Value;
-                if (!_halted)
+                if (!_halted && _interruptSequence != InterruptSequence.Nmi)
                 {
                     PC.Value++;
                 }
@@ -363,6 +419,38 @@ public sealed partial class Z80Chip
                     Wr = false;
                 }
                 break;
+
+            case InterruptAckT1:
+                // The interrupt-acknowledge cycle is a special M1: /M1 low with
+                // the address bus on PC (which is not incremented - it is the
+                // return address). /MREQ and /RD stay high; the acknowledge
+                // strobe is /IORQ, driven later.
+                M1 = false;
+                Rfsh = true;
+                Address = PC.Value;
+                break;
+
+            case InterruptAckT2:
+                // /IORQ falls on T2 (with /M1 still low, so the device sees the
+                // M1 * IORQ acknowledge), half a T-state later than /MREQ would,
+                // which is what the two automatic wait states cover - the device
+                // uses them to place its byte on the data bus.
+                IoRq = false;
+                break;
+
+            case InterruptAckT3:
+                // The jammed byte is read here; /IORQ and /M1 release and the
+                // refresh half of the cycle begins, exactly as on a real M1.
+                IoRq = true;
+                M1 = true;
+                Rfsh = false;
+                Address = (ushort)((I << 8) | R);
+                R = (byte)((R & 0x80) | ((R + 1) & 0x7F));
+                break;
+
+            case InterruptAckT4:
+                MReq = true;
+                break;
         }
 
         // Opcode-specific microcode. Runs after the generic pin sequencing so it
@@ -373,7 +461,7 @@ public sealed partial class Z80Chip
 
     private void OnClkFalling()
     {
-        if (!_resetPin)
+        if (!_resetPin || _busGranted)
         {
             return;
         }
@@ -383,6 +471,11 @@ public sealed partial class Z80Chip
         // AdvanceTState); sampling unconditionally is harmless because the value
         // is consulted only when it is meaningful.
         _waitSampledLow = !Wait;
+
+        // /INT is level-sensitive; the sample that counts is the one taken on the
+        // final CLK falling edge of an instruction, so latch it every falling
+        // edge and let the instruction boundary read the most recent value.
+        _intSampledLow = !Int;
 
         switch (CombineCycleKey(_machineCycleType, _state))
         {
@@ -410,7 +503,9 @@ public sealed partial class Z80Chip
                 break;
 
             case OpcodeFetchT3:
+            case InterruptAckT3:
                 // The refresh /MREQ pulse: low from T3 falling until T4 rising.
+                // The interrupt-acknowledge cycle refreshes exactly like an M1.
                 MReq = false;
                 break;
 
@@ -468,6 +563,30 @@ public sealed partial class Z80Chip
         _machineCycleType = _pendingMachineCycleType!.Value;
         _pendingMachineCycleType = null;
 
+        // A genuine instruction boundary: an opcode fetch with no 0xCB / 0xED /
+        // 0xDD / 0xFD escape in force and no acknowledge sequence already
+        // running. This is where Q is latched and where /NMI and /INT are
+        // recognised - real silicon samples them on the last T-state of the
+        // instruction just finished.
+        if (_machineCycleType == MachineCycleType.OpcodeFetch
+            && _prefix == Z80Prefix.None
+            && _interruptSequence == InterruptSequence.None)
+        {
+            // Latch Q - the F byte the retiring instruction produced, or 0 if it
+            // left F alone - for the next SCF / CCF to read, then clear the
+            // tracker for the instruction now starting.
+            _q = _flagsModified ? Flags.AsByte() : (byte)0;
+            _flagsModified = false;
+
+            // EI and DI each leave a one-instruction window in which /INT is not
+            // sampled; _eiShadowPending, set when they retired, suppresses this
+            // boundary's sample exactly once. /NMI is edge-triggered and unaffected.
+            var intInhibited = _eiShadowPending;
+            _eiShadowPending = false;
+
+            BeginInterruptIfPending(intInhibited);
+        }
+
         _builtInWaitStatesRemaining = _machineCycleType switch
         {
             MachineCycleType.IoRead or MachineCycleType.IoWrite => 1,
@@ -475,23 +594,10 @@ public sealed partial class Z80Chip
             _ => 0,
         };
 
-        if (_machineCycleType == MachineCycleType.OpcodeFetch)
+        if (_machineCycleType == MachineCycleType.OpcodeFetch
+            || _machineCycleType == MachineCycleType.InterruptAck)
         {
             _machineCycle = 1;
-
-            // A genuine instruction boundary (not a 0xCB / 0xED / 0xDD / 0xFD
-            // escape's second M1): latch Q - the F byte just produced, or 0 if
-            // the finished instruction left F alone - for the next SCF / CCF to
-            // read, then clear the tracker for the instruction now starting.
-            if (_prefix == Z80Prefix.None)
-            {
-                _q = _flagsModified ? Flags.AsByte() : (byte)0;
-                _flagsModified = false;
-            }
-
-            // The end-of-instruction /INT sample belongs here - real silicon
-            // latches /INT on the last T-state of an instruction - and is wired in
-            // once instruction decode exists.
         }
         else
         {
@@ -530,6 +636,15 @@ public sealed partial class Z80Chip
         _displacement = 0;
         _q = 0;
         _flagsModified = false;
+
+        _interruptSequence = InterruptSequence.None;
+        _nmiPin = true;
+        _nmiPending = false;
+        _eiShadowPending = false;
+        _intSampledLow = false;
+        _busGranted = false;
+        Halt = true;
+        BusAk = true;
     }
 
     // --- Test hooks ------------------------------------------------------

@@ -45,6 +45,15 @@ public sealed partial class Z80Chip
 {
     private void HandleInstruction(int cycleKey)
     {
+        // While an /NMI or /INT acknowledge is running it stands in for the
+        // opcode: its microcode drives the machine cycles instead of the decode
+        // tables below.
+        if (_interruptSequence != InterruptSequence.None)
+        {
+            HandleInterruptSequence(cycleKey);
+            return;
+        }
+
         // A 0xCB / 0xED / 0xDD / 0xFD byte fetched with no prefix in force is an
         // escape: it runs as a full 4-T M1 (refresh and all) that decodes to
         // nothing except latching the prefix and starting another M1 for the
@@ -895,6 +904,11 @@ public sealed partial class Z80Chip
                 {
                     IFF1 = false;
                     IFF2 = false;
+
+                    // /INT is not sampled at the boundary immediately after DI
+                    // (or EI) - the acceptance point is shared, so the change
+                    // only takes effect for the instruction after next.
+                    _eiShadowPending = true;
                     SetNextCycle(MachineCycleType.OpcodeFetch);
                 }
                 return;
@@ -902,10 +916,14 @@ public sealed partial class Z80Chip
             case 3 when y == 7: // EI
                 if (cycleKey == OpcodeFetchT4)
                 {
-                    // The one-instruction /INT shadow after EI is added with the
-                    // interrupt sequences; the flip-flops themselves set here.
                     IFF1 = true;
                     IFF2 = true;
+
+                    // UM0080: a maskable interrupt is not accepted until after
+                    // the instruction following EI. _eiShadowPending suppresses
+                    // the next boundary's /INT sample exactly once; a second
+                    // EI/DI just refreshes it rather than stacking the delay.
+                    _eiShadowPending = true;
                     SetNextCycle(MachineCycleType.OpcodeFetch);
                 }
                 return;
