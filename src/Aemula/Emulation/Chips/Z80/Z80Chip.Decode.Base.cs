@@ -68,15 +68,13 @@ public sealed partial class Z80Chip
                 case Z80Prefix.ED: HandleEdPrefixed(cycleKey); return;
 
                 // DD / FD (and the DD CB / FD CB double prefix) re-aim HL-class
-                // operands at IX / IY and splice in a displacement fetch. That
-                // decode is not built yet; the escape path above still routes
-                // here so it slots straight in.
+                // operands at IX / IY and splice in a displacement fetch.
                 case Z80Prefix.DD:
                 case Z80Prefix.FD:
                 case Z80Prefix.DDCB:
                 case Z80Prefix.FDCB:
-                    throw new NotImplementedException(
-                        $"Z80 index-prefixed opcode (prefix {_prefix}, 0x{_ir:X2}) is not implemented yet.");
+                    HandleIndexPrefixed(cycleKey);
+                    return;
             }
         }
 
@@ -183,7 +181,7 @@ public sealed partial class Z80Chip
                 switch (cycleKey)
                 {
                     case OpcodeFetchT4:
-                        Add16ToHl(RegisterPair16(p));
+                        Add16(ref HL.Value, RegisterPair16(p));
                         SetNextCycle(MachineCycleType.Internal);
                         break;
 

@@ -10,12 +10,13 @@ namespace Aemula.Emulation.Chips.Z80.Debugging;
 /// <c>Do0</c> / <c>Do1</c> / <c>Do2</c> helpers for the 0-, 1- and 2-operand-byte
 /// forms, and <c>OnReset</c> seeding the reset vector at 0x0000.
 ///
-/// The base (unprefixed) table, the CB table (rotate/shift and BIT/RES/SET) and
+/// The base (unprefixed) table, the CB table (rotate/shift and BIT/RES/SET),
 /// the ED table (block ops, 16-bit loads, ADC/SBC HL, NEG, IM, LD A,I/R,
-/// RRD/RLD, RETN/RETI, IN/OUT) are filled in. The 0xDD / 0xFD bytes are still
-/// shown as one-byte "prefix" placeholders so the linear sweep does not throw;
-/// their IX/IY re-aiming table and the DD CB / FD CB double prefix are added
-/// alongside the matching microcode.
+/// RRD/RLD, RETN/RETI, IN/OUT) and the DD / FD index-register table (with the
+/// DD CB / FD CB double prefix) are filled in. A DD / FD re-aims HL -> IX/IY,
+/// H/L -> IXH/IXL (IYH/IYL) and (HL) -> (IX+d); a DD / FD in front of an opcode
+/// that names none of them is shown as an inert "DD" / "FD" prefix followed by
+/// the opcode decoded on its own.
 /// </summary>
 public class Z80Disassembler : Disassembler
 {
@@ -145,7 +146,7 @@ public class Z80Disassembler : Disassembler
             0xDA => Do2("JP C, 0x", jumpType: JumpType.Jump),
             0xDB => Do1("IN A, (0x", suffix: ")"),
             0xDC => Do2("CALL C, 0x", jumpType: JumpType.Call),
-            0xDD => Prefix("DD"),
+            0xDD => DecodeDdFd(iy: false),
             0xDE => Do1("SBC A, 0x"),
             0xDF => Do0("RST 0x18", hasNext: false),
 
@@ -179,7 +180,7 @@ public class Z80Disassembler : Disassembler
             0xFA => Do2("JP M, 0x", jumpType: JumpType.Jump),
             0xFB => Do0("EI"),
             0xFC => Do2("CALL M, 0x", jumpType: JumpType.Call),
-            0xFD => Prefix("FD"),
+            0xFD => DecodeDdFd(iy: true),
             0xFE => Do1("CP 0x"),
             0xFF => Do0("RST 0x38", hasNext: false),
         };
@@ -292,6 +293,177 @@ public class Z80Disassembler : Disassembler
             }
         }
 
+        // DD / FD page: as the unprefixed table but with HL -> IX/IY,
+        // H/L -> IXH/IXL (IYH/IYL) and (HL) -> (IX+d). A further DD/FD/ED or an
+        // opcode naming none of those leaves the escape inert.
+        DisassembledInstruction DecodeDdFd(bool iy)
+        {
+            var ix = iy ? "IY" : "IX";
+            var ixh = iy ? "IYH" : "IXH";
+            var ixl = iy ? "IYL" : "IXL";
+            var sub = MemoryCallbacks.Read((ushort)(address + 1));
+
+            if (sub == 0xCB)
+            {
+                return DecodeDdFdCb(ix);
+            }
+
+            if (sub is 0xDD or 0xFD or 0xED || !IndexAimsAt(sub))
+            {
+                return DoHelper($"DB 0x{opcode:X2} ({ix} prefix)", 1, $"{opcode:X2}", true, null);
+            }
+
+            var x = sub >> 6;
+            var y = (sub >> 3) & 0x7;
+            var z = sub & 0x7;
+            var d = MemoryCallbacks.Read((ushort)(address + 2));
+            var mem = $"({ix}{Displacement(d)})";
+
+            string Sub(int idx) => idx switch { 4 => ixh, 5 => ixl, _ => Reg(idx) };
+
+            DisassembledInstruction Short(string text, bool hasNext = true) =>
+                DoHelper(text, 2, $"{opcode:X2} {sub:X2}", hasNext, null);
+
+            DisassembledInstruction Disp(string text) =>
+                DoHelper(text, 3, $"{opcode:X2} {sub:X2} {d:X2}", true, null);
+
+            DisassembledInstruction Word(string prefix, string suffix)
+            {
+                var lo = MemoryCallbacks.Read((ushort)(address + 2));
+                var hi = MemoryCallbacks.Read((ushort)(address + 3));
+                return DoHelper(
+                    $"{prefix}{hi:X2}{lo:X2}{suffix}",
+                    4,
+                    $"{opcode:X2} {sub:X2} {lo:X2} {hi:X2}",
+                    true,
+                    null);
+            }
+
+            switch (sub)
+            {
+                case 0x09: return Short($"ADD {ix}, BC");
+                case 0x19: return Short($"ADD {ix}, DE");
+                case 0x29: return Short($"ADD {ix}, {ix}");
+                case 0x39: return Short($"ADD {ix}, SP");
+                case 0x21: return Word($"LD {ix}, 0x", "");
+                case 0x22: return Word("LD (0x", $"), {ix}");
+                case 0x2A: return Word($"LD {ix}, (0x", ")");
+                case 0x23: return Short($"INC {ix}");
+                case 0x2B: return Short($"DEC {ix}");
+                case 0xE1: return Short($"POP {ix}");
+                case 0xE3: return Short($"EX (SP), {ix}");
+                case 0xE5: return Short($"PUSH {ix}");
+                case 0xE9: return Short($"JP ({ix})", hasNext: false);
+                case 0xF9: return Short($"LD SP, {ix}");
+            }
+
+            if (x == 0 && z == 4)
+            {
+                return y == 6 ? Disp($"INC {mem}") : Short($"INC {Sub(y)}");
+            }
+
+            if (x == 0 && z == 5)
+            {
+                return y == 6 ? Disp($"DEC {mem}") : Short($"DEC {Sub(y)}");
+            }
+
+            if (x == 0 && z == 6)
+            {
+                if (y == 6)
+                {
+                    var n = MemoryCallbacks.Read((ushort)(address + 3));
+                    return DoHelper(
+                        $"LD {mem}, 0x{n:X2}",
+                        4,
+                        $"{opcode:X2} {sub:X2} {d:X2} {n:X2}",
+                        true,
+                        null);
+                }
+
+                var imm = MemoryCallbacks.Read((ushort)(address + 2));
+                return DoHelper(
+                    $"LD {Sub(y)}, 0x{imm:X2}",
+                    3,
+                    $"{opcode:X2} {sub:X2} {imm:X2}",
+                    true,
+                    null);
+            }
+
+            if (x == 1)
+            {
+                if (z == 6)
+                {
+                    return Disp($"LD {Reg(y)}, {mem}");
+                }
+
+                if (y == 6)
+                {
+                    return Disp($"LD {mem}, {Reg(z)}");
+                }
+
+                return Short($"LD {Sub(y)}, {Sub(z)}");
+            }
+
+            if (x == 2)
+            {
+                var alu = new[] { "ADD A,", "ADC A,", "SUB", "SBC A,", "AND", "XOR", "OR", "CP" }[y];
+                return z == 6 ? Disp($"{alu} {mem}") : Short($"{alu} {Sub(z)}");
+            }
+
+            return DoHelper($"DB 0x{opcode:X2} ({ix} prefix)", 1, $"{opcode:X2}", true, null);
+        }
+
+        // DD CB d op / FD CB d op: the CB operation on (IX+d), plus - when the
+        // op byte's z field is a register - the undocumented copy of the result
+        // into that register.
+        DisassembledInstruction DecodeDdFdCb(string ix)
+        {
+            var sub = MemoryCallbacks.Read((ushort)(address + 1));
+            var d = MemoryCallbacks.Read((ushort)(address + 2));
+            var op = MemoryCallbacks.Read((ushort)(address + 3));
+            var x = op >> 6;
+            var y = (op >> 3) & 0x7;
+            var z = op & 0x7;
+            var mem = $"({ix}{Displacement(d)})";
+            var rot = new[] { "RLC", "RRC", "RL", "RR", "SLA", "SRA", "SLL", "SRL" };
+            var copy = z == 6 ? "" : $", {Reg(z)}";
+
+            var text = x switch
+            {
+                0 => $"{rot[y]} {mem}{copy}",
+                1 => $"BIT {y}, {mem}",
+                2 => $"RES {y}, {mem}{copy}",
+                _ => $"SET {y}, {mem}{copy}",
+            };
+
+            return DoHelper(text, 4, $"{opcode:X2} {sub:X2} {d:X2} {op:X2}", true, null);
+        }
+
+        // Signed (IX+d) displacement, e.g. "+0x05" / "-0x03".
+        static string Displacement(byte d)
+        {
+            var signed = (sbyte)d;
+            return signed < 0 ? $"-0x{-signed:X2}" : $"+0x{signed:X2}";
+        }
+
+        // Whether a DD/FD escape re-aims this opcode (names HL, H, L or (HL)).
+        static bool IndexAimsAt(int sub)
+        {
+            var x = sub >> 6;
+            var y = (sub >> 3) & 0x7;
+            var z = sub & 0x7;
+
+            return x switch
+            {
+                0 => sub is 0x09 or 0x19 or 0x29 or 0x39
+                        or 0x21 or 0x22 or 0x2A or 0x23 or 0x2B
+                    || (z is 4 or 5 or 6 && y is 4 or 5 or 6),
+                1 => sub != 0x76 && (y is 4 or 5 or 6 || z is 4 or 5 or 6),
+                2 => z is 4 or 5 or 6,
+                _ => sub is 0xE1 or 0xE3 or 0xE5 or 0xE9 or 0xF9,
+            };
+        }
+
         DisassembledInstruction Do0(string text, bool hasNext = true)
         {
             return DoHelper(text, 1, $"{opcode:X2}", hasNext, null);
@@ -329,13 +501,6 @@ public class Z80Disassembler : Disassembler
                 $"{opcode:X2} {operandLo:X2} {operandHi:X2}",
                 hasNext,
                 jumpTarget);
-        }
-
-        // A lone prefix byte. The real decode consumes the following byte(s); as
-        // a placeholder it is shown on its own so the sweep keeps going.
-        DisassembledInstruction Prefix(string name)
-        {
-            return DoHelper($"DB 0x{opcode:X2} ({name} prefix)", 1, $"{opcode:X2}", true, null);
         }
 
         DisassembledInstruction DoHelper(

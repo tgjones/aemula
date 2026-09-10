@@ -432,6 +432,15 @@ public sealed partial class Z80Chip
             case InternalT1 when _machineCycle == 6:
                 WZ.Value = (ushort)(PC.Value - 1);
                 PC.Value -= 2;
+                // The 5-T repeat cycle overwrites the undocumented Y/X flags an
+                // LDIR/LDDR pass left: they are reloaded from bits 13 and 11 of
+                // PC, which now points back at the 0xED prefix. Observable on
+                // real NMOS silicon whenever the instruction repeats (an
+                // interrupt taken between passes, or - as raxoft's z80test
+                // arranges - the copied byte overwriting the opcode so the
+                // repeat fetches a NOP).
+                Flags.Y = (PC.Value & 0x2000) != 0;
+                Flags.X = (PC.Value & 0x0800) != 0;
                 FinishPrefixedInstruction();
                 break;
         }

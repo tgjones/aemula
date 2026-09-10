@@ -75,11 +75,11 @@ public sealed partial class Z80Chip
     private Z80Prefix _prefix;
 
     // The signed displacement byte d captured for a (IX+d) / (IY+d) operand and
-    // for the DD CB d / FD CB d double-prefix form. Wired now; first read when
-    // the index prefixes are decoded.
-#pragma warning disable CS0414
+    // for the DD CB d / FD CB d double-prefix form: fetched from PC after the
+    // opcode (after the CB byte, for the double prefix), then added to IX / IY
+    // to form the effective address during the internal address-calculation
+    // machine cycle.
     private sbyte _displacement;
-#pragma warning restore CS0414
 
     // Wait states hard-wired into the current machine cycle, independent of the
     // /WAIT pin: 1 for an I/O cycle, 2 for interrupt acknowledge, 0 otherwise.

@@ -30,12 +30,12 @@ namespace Aemula.Tests.Emulation.Chips.Z80;
 // board-level ULA contention, not anything the CPU does, so they are parsed but
 // not asserted.
 //
-// Only the opcodes implemented so far are exercised. Every unprefixed opcode is
-// decoded, and now the whole CB page (rotate/shift and BIT/RES/SET) and the ED
-// page (16-bit loads, ADC/SBC HL, NEG, IM, LD A,I/R, RRD/RLD, RETN/RETI, the
-// IN/OUT and block instructions) as well. DD / FD (and DD CB / FD CB) re-aim
-// operands at IX/IY and are still to come, so a case whose name starts "dd" or
-// "fd" stays out of scope; drop that guard once the index decode exists.
+// Every opcode group is decoded now: the whole unprefixed table, the CB page
+// (rotate/shift and BIT/RES/SET), the ED page (16-bit loads, ADC/SBC HL, NEG,
+// IM, LD A,I/R, RRD/RLD, RETN/RETI, the IN/OUT and block instructions) and the
+// DD / FD index-register page including the DD CB / FD CB double prefix and the
+// inert DD FD chain. Every FUSE case is therefore in scope except the ones the
+// interrupt phase is still needed for.
 public class Z80ChipBusTimingTests
 {
     private static readonly string AssetsPath =
@@ -54,11 +54,13 @@ public class Z80ChipBusTimingTests
         }
     }
 
-    // FUSE names an unprefixed-opcode case by its hex byte and a CB/ED/DD/FD one
-    // by the prefix letters plus the opcode byte, either optionally carrying a
+    // FUSE names an unprefixed-opcode case by its hex byte, a single-escape one
+    // (CB / ED / DD / FD) by the escape letters plus the opcode byte, and a
+    // double-escape one (DD CB / FD CB, and the inert DD FD chain) by both
+    // escape pairs plus the opcode byte - any of them optionally carrying a
     // "_n" suffix for a variant (e.g. "02_1" checks MEMPTR after LD (BC),A,
-    // "edb0_2" the final pass of LDIR). The unprefixed, CB and ED pages are all
-    // decoded; DD and FD (including the "ddcb" / "fdcb" doubles) are not.
+    // "edb0_2" the final pass of LDIR). Every page is decoded, so every shape
+    // is in scope.
     private static bool IsInScope(string name)
     {
         var stem = name;
@@ -71,12 +73,14 @@ public class Z80ChipBusTimingTests
         return stem.Length switch
         {
             2 => IsHexByte(stem),
-            4 => (stem.StartsWith("cb", StringComparison.Ordinal)
-                    || stem.StartsWith("ed", StringComparison.Ordinal))
-                && IsHexByte(stem[2..]),
+            4 => IsEscapePair(stem[..2]) && IsHexByte(stem[2..]),
+            6 => IsEscapePair(stem[..2]) && IsEscapePair(stem[2..4]) && IsHexByte(stem[4..]),
             _ => false,
         };
     }
+
+    private static bool IsEscapePair(string text) =>
+        text is "cb" or "ed" or "dd" or "fd";
 
     private static bool IsHexByte(string text) =>
         int.TryParse(text, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out _);

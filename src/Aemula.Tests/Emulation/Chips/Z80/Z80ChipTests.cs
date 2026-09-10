@@ -36,34 +36,38 @@ namespace Aemula.Tests.Emulation.Chips.Z80;
 //     suite ships only as ZX Spectrum tape images - there is no CP/M .com build
 //     of it anywhere - hence the TAP shim.
 //
-// None of these run to completion yet, and every row below is [Skip]ped. The
-// unprefixed, CB and ED instruction groups are all decoded now - and gated by
+// The unprefixed, CB, ED and DD/FD instruction groups are all decoded and gated by
 // Z80ChipBusTimingTests (the FUSE per-instruction bus + register + flag +
-// MEMPTR vectors, every unprefixed / cb xx / ed xx case) and Z80ChipFlagTests
-// (hand-written flag-edge cases). What still blocks every ROM here is the
-// DD/FD (IX/IY) group: it is not just the test bodies that use it - the
-// zexdoc/zexall scaffolding sets up each subtest with FD-prefixed loads, and
-// the z80test driver pushes IY, so neither harness reaches its first "OK"
-// line without index-prefix decode. Switch these on once DD/FD lands:
-//   * zexdoc.com to a full pass, then zexall.com (the undocumented Y/X flags);
-//     z80flags.tap / z80doc.tap / z80docflags.tap should pass too.
-//   * z80full.tap, z80ccf.tap (the SCF/CCF bit 3/5 corner) and z80memptr.tap
-//     (WZ observed through BIT n,(IX+d)).
-// When a ROM passes, drop its [Skip], and add an exact total-T-state assertion
-// captured from a reference core as the timing ratchet. The maxTStates caps
-// below are already generous-but-bounded for a full conformance run.
+// MEMPTR vectors, every unprefixed / cb / ed / dd / fd / ddcb / fdcb case) and
+// Z80ChipFlagTests (hand-written flag-edge cases).
+//
+// zexdoc / zexall and z80test's z80doc / z80docflags now run to a full pass.
+// z80test's z80flags / z80full / z80ccf / z80memptr each fail exactly the four
+// self-modifying block-repeat subtests 089/090 (LDIR/LDDR ->NOP) and 102/103
+// (INIR/INDR ->NOP): these overwrite the opcode with the byte being moved so
+// that the repeat fetches a NOP, then check the undocumented Y/X (and, for
+// z80memptr, WZ) that the aborted repeat left. The LDIR/LDDR pair is fixed
+// (Y/X from PC bits 13/11); the INIR/INDR pair is left as future work because
+// the value it wants is in tension with FUSE's own edb2_1 vector (which stops
+// on an INIR repeat tail and expects the plain B-derived Y/X) - reconciling
+// the two needs the maskable-interrupt phase and a reference decision, not the
+// index group. Those four ROMs stay skipped until then; the two that pass have
+// their [Skip] dropped.
+//
+// The maxTStates caps are generous-but-bounded for a full conformance run
+// (ZEXALL is a few minutes even at Release). A future pass should pin the exact
+// total T-state count per ROM as a timing ratchet.
 public class Z80ChipTests
 {
     private static readonly string AssetsPath =
         Path.Combine("Emulation", "Chips", "Z80", "Assets");
 
     [Test]
-    [Skip("Needs the DD/FD decode group: the exerciser scaffolds every subtest with FD-prefixed loads, so it throws before the first 'OK'. CB and ED are done (covered by Z80ChipBusTimingTests).")]
     [Arguments("zexdoc.com")]
     [Arguments("zexall.com")]
     public async Task CpmExerciser(string fileName)
     {
-        var result = RunCpmExerciser(Path.Combine(AssetsPath, fileName), maxTStates: 6_000_000_000);
+        var result = RunCpmExerciser(Path.Combine(AssetsPath, fileName), maxTStates: 60_000_000_000);
 
         Context.Current.OutputWriter.Write(result.Output);
 
@@ -72,16 +76,21 @@ public class Z80ChipTests
     }
 
     [Test]
-    [Skip("Needs the DD/FD decode group: the z80test driver uses PUSH IY (FD E5) and every subtest body covers IX/IY opcodes. ED (LDIR etc.) is done (covered by Z80ChipBusTimingTests).")]
-    [Arguments("z80docflags.tap")]
-    [Arguments("z80flags.tap")]
     [Arguments("z80doc.tap")]
+    [Arguments("z80docflags.tap")]
+    public Task Z80Test(string fileName) => RunZ80Test(fileName);
+
+    [Test]
+    [Skip("Fails only raxoft z80test subtests 102/103 (INIR/INDR ->NOP): the undocumented Y/X - and, for z80memptr, WZ - an aborted INIR/INDR repeat leaves. The value raxoft expects is in tension with FUSE's edb2_1 vector (which stops on an INIR repeat tail and wants the plain B-derived Y/X), so reconciling it needs the maskable-interrupt phase and a reference decision. LDIR/LDDR ->NOP (089/090) is fixed, so z80doc/z80docflags pass.")]
+    [Arguments("z80flags.tap")]
     [Arguments("z80full.tap")]
     [Arguments("z80ccf.tap")]
     [Arguments("z80memptr.tap")]
-    public async Task Z80Test(string fileName)
+    public Task Z80TestBlockRepeatCorner(string fileName) => RunZ80Test(fileName);
+
+    private static async Task RunZ80Test(string fileName)
     {
-        var result = RunSpectrumTest(Path.Combine(AssetsPath, fileName), maxTStates: 6_000_000_000);
+        var result = RunSpectrumTest(Path.Combine(AssetsPath, fileName), maxTStates: 4_000_000_000);
 
         Context.Current.OutputWriter.Write(result.Output);
 
@@ -211,7 +220,12 @@ public class Z80ChipTests
             cpu.Clk = false;
             t++;
 
-            var opcodeFetch = !cpu.M1 && !cpu.MReq && !cpu.Rd;
+            // /MREQ+/RD stay low across two T-states of an opcode fetch, so key
+            // the once-per-instruction hooks off T1 (the single T-state on which
+            // the address bus holds the fetch address) rather than the control
+            // pins, which would fire the hook twice.
+            var m1FetchT1 = cpu.CurrentMachineCycle == Z80Chip.MachineCycleType.OpcodeFetch
+                && cpu.CurrentState == Z80Chip.TState.T1;
 
             if (!cpu.MReq && !cpu.Rd)
             {
@@ -232,12 +246,12 @@ public class Z80ChipTests
                     : (byte)(cpu.Address >> 8);
             }
 
-            if (opcodeFetch && cpu.Address == 0x0010)
+            if (m1FetchT1 && cpu.Address == 0x0010)
             {
                 AppendSpectrumChar(output, cpu.AF.A);
             }
 
-            if (opcodeFetch && cpu.Address == sentinel)
+            if (m1FetchT1 && cpu.Address == sentinel)
             {
                 completed = true;
             }

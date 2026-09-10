@@ -224,25 +224,27 @@ public sealed partial class Z80Chip
         _flagsModified = true;
     }
 
-    // ADD HL,ss: H and C come from bit 11 / bit 15, Y/X from the high byte of
-    // the result, N is cleared; S, Z and P/V are untouched. WZ = HL + 1, latched
-    // before the sum.
-    private void Add16ToHl(ushort src)
+    // ADD HL,ss / ADD IX,ss / ADD IY,ss: H and C come from bit 11 / bit 15, Y/X
+    // from the high byte of the result, N is cleared; S, Z and P/V are
+    // untouched. WZ = dst + 1, latched before the sum. The destination is HL for
+    // the unprefixed opcode and the active index register for a DD/FD-prefixed
+    // one (in which case ss's "HL" slot is that same index register).
+    private void Add16(ref ushort dst, ushort src)
     {
-        var hl = HL.Value;
-        WZ.Value = (ushort)(hl + 1);
+        var start = dst;
+        WZ.Value = (ushort)(start + 1);
 
-        var result = hl + src;
+        var result = start + src;
         var r = (ushort)result;
 
-        Flags.HalfCarry = ((hl & 0x0FFF) + (src & 0x0FFF)) > 0x0FFF;
+        Flags.HalfCarry = ((start & 0x0FFF) + (src & 0x0FFF)) > 0x0FFF;
         Flags.Carry = result > 0xFFFF;
         Flags.Subtract = false;
         Flags.Y = (r & 0x2000) != 0;
         Flags.X = (r & 0x0800) != 0;
         _flagsModified = true;
 
-        HL.Value = r;
+        dst = r;
     }
 
     // Accumulator rotates RLCA / RRCA / RLA / RRA: H and N cleared, C from the
