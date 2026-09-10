@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Threading;
 using Aemula;
+using Aemula.Emulation.Systems;
 using Hexa.NET.SDL3;
 using Debugger = Aemula.Debugging.Debugger;
 using Stopwatch = System.Diagnostics.Stopwatch;
@@ -88,6 +90,15 @@ public static unsafe class Program
         var currentEntry = SystemCatalog.Default;
         var done = false;
 
+        // The user's expansion-card picks for the current system: slot id ->
+        // card id, with a null value meaning a deliberately empty slot and an
+        // absent key meaning "take the slot's default". Kept across rebuilds of
+        // the same machine; cleared when the system changes.
+        var slotChoices = new Dictionary<string, string?>();
+
+        ExpansionSlotConfiguration BuildSlotConfiguration() =>
+            new(slotChoices.Select(choice => (choice.Key, choice.Value)));
+
         // Menu items fire while an ImGui frame is mid-build, so a callback must
         // never touch ImGui / GPU / system state directly (creating the
         // debugger context or swapping the system from inside BeginMenu leaves
@@ -111,9 +122,15 @@ public static unsafe class Program
 
         void LoadSystem(SystemCatalogEntry entry, string? filePath)
         {
+            // A different machine starts from its own slot defaults.
+            if (entry.Id != currentEntry.Id)
+            {
+                slotChoices.Clear();
+            }
+
             rig?.Dispose();
 
-            var newRig = entry.Build();
+            var newRig = entry.Build(BuildSlotConfiguration());
             newRig.LoadProgram(filePath ?? "");
             var newDebugger = newRig.System.CreateDebugger();
             if (newDebugger != null)
@@ -147,6 +164,22 @@ public static unsafe class Program
             }
         }
 
+        // The card fitted in slotId right now: an explicit pick if the user made
+        // one, otherwise the slot's default.
+        string? SelectedSlotCard(string slotId) =>
+            slotChoices.TryGetValue(slotId, out var chosen)
+                ? chosen
+                : currentEntry.Slots.FirstOrDefault(slot => slot.Id == slotId)?.DefaultCardId;
+
+        void ChooseSlotCard(string slotId, string? cardId)
+        {
+            slotChoices[slotId] = cardId;
+
+            // Changing a card is a machine rebuild, same as a system swap - and
+            // like one, it has to run between frames, so just request it.
+            _pendingLoad = new PendingLoad { Entry = currentEntry, FilePath = null };
+        }
+
         var callbacks = new EmulationWindow.Callbacks(
             CurrentEntry: () => currentEntry,
             ChooseSystem: ChooseSystem,
@@ -154,7 +187,9 @@ public static unsafe class Program
             ResetSystem: () => pendingReset = true,
             Quit: () => done = true,
             IsDebuggerVisible: () => debuggerHost.Visible,
-            ToggleDebugger: () => pendingDebuggerToggle = true);
+            ToggleDebugger: () => pendingDebuggerToggle = true,
+            SelectedSlotCard: SelectedSlotCard,
+            ChooseSlotCard: ChooseSlotCard);
 
         emulationWindow = new EmulationWindow(gpuDevice, emulationContext, callbacks);
 

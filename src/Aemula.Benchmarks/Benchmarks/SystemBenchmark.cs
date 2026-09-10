@@ -30,14 +30,14 @@ public abstract class SystemBenchmark
     // time into a "% of real-time budget" figure. Comes from the real system's
     // own CyclesPerSecond, not a value tracked here - a fresh instance is cheap
     // (construction only, no ROM/warmup) so there's no reason to cache it.
-    public ulong NominalCyclesPerSecond => EmulatedSystems.FindById(SystemName)!.Build().System.CyclesPerSecond;
+    public ulong NominalCyclesPerSecond => EmulatedSystems.FindById(SystemName)!.Build(ExpansionSlotConfiguration.Empty).System.CyclesPerSecond;
     public int TicksPerInvocation => SystemSpecs.Get(SystemName).TicksPerInvocation;
 
     [GlobalSetup]
     public void Setup()
     {
         _spec = SystemSpecs.Get(SystemName);
-        _system = EmulatedSystems.FindById(SystemName)!.Build().System;
+        _system = EmulatedSystems.FindById(SystemName)!.Build(ExpansionSlotConfiguration.Empty).System;
         _system.LoadProgram(_spec.WorkloadPath());
 
         for (var i = 0; i < _spec.WarmupTicks; i++)

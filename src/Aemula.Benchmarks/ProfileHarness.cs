@@ -26,7 +26,7 @@ internal static class ProfileHarness
         var seconds = args.Length > 2 && double.TryParse(args[2], out var s) ? s : 15.0;
 
         var spec = SystemSpecs.Get(name);
-        var system = EmulatedSystems.FindById(name)!.Build().System;
+        var system = EmulatedSystems.FindById(name)!.Build(ExpansionSlotConfiguration.Empty).System;
         system.LoadProgram(spec.WorkloadPath());
 
         Console.Error.WriteLine($"[profile] {name}: warming {spec.WarmupTicks:N0} ticks...");

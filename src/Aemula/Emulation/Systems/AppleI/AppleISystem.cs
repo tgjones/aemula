@@ -1,7 +1,9 @@
+using System.Collections.Generic;
 using Aemula.Debugging;
 using Aemula.Emulation.Chips;
 using Aemula.Emulation.Chips.Mos6502;
 using Aemula.Emulation.Chips.Mos6820;
+using Aemula.Emulation.Peripherals;
 using Aemula.Emulation.Systems.AppleI.Cassette;
 using Aemula.Emulation.Systems.AppleI.Debugging;
 using Aemula.Emulation.Systems.AppleI.Roms;
@@ -23,24 +25,26 @@ public sealed partial class AppleISystem : EmulatedSystem
 
     public readonly Mos6502Chip Cpu;
 
-    // 8K RAM (both onboard MK4096 banks populated), mapped at $0000-$1FFF -
-    // see the plan's chip inventory (ICA11-18/ICB11-18). Both banks share
-    // one M0-M7 data bus on real hardware (safe since their chip-selects,
-    // CS0/CS1 below, are mutually exclusive), so one flat array already
-    // matches the observable behaviour; the row/column-multiplexing 74157s
-    // (ICB5-ICB8) and the RAS'/CAS' pulses they generate only matter once
-    // DRAM refresh rides on the video scan, so they're not modelled as
-    // separate chip instances here - same reasoning AppleIISystem uses for
-    // its own DRAM (it doesn't model equivalent bus-buffer/mux chips
-    // either).
-    private readonly byte[] _ram = new byte[0x2000];
+    // The two onboard 4K DRAM banks (ICB11-18 and ICA11-18). Bank A is fixed at
+    // $0000-$0FFF. Bank B's jumper block maps it either just above bank A at
+    // $1000-$1FFF, for a contiguous 8K, or up at $E000-$EFFF, the split Integer
+    // BASIC needs - one or the other, so the range not chosen is unpopulated.
+    // Only these two banks exist on the board; more RAM than 8K meant a card on
+    // the expansion connector. Each bank is a flat array behind its chip-select
+    // (the banks share one M0-M7 data bus on real hardware, safe because CS0/CS1
+    // are mutually exclusive); the row/column-multiplexing 74157s (ICB5-ICB8)
+    // and their RAS'/CAS' pulses only matter once DRAM refresh rides on the
+    // video scan, so they're not modelled as chip instances here - same
+    // reasoning AppleIISystem uses for its own DRAM.
+    private readonly byte[] _bankA = new byte[0x1000];
+    private readonly byte[] _bankB = new byte[0x1000];
 
-    // The optional 4K RAM expansion jumpered into the CSE block ($E000-$EFFF),
-    // or null on a bare board. On real hardware this hangs off the expansion
-    // connector rather than the onboard sockets; behaviourally it's just
-    // another decoded RAM range. This is where Apple 1 Integer BASIC lives, so
-    // it has to be present to load BASIC off cassette.
-    private readonly byte[]? _ramExpansion;
+    // Whether bank B answers at $E000-$EFFF (true) or $1000-$1FFF (false).
+    private readonly bool _bankBAtE000;
+
+    // The cabled devices the fitted expansion card brings with it (the ACI
+    // card's cassette deck), or empty. Built and patched by the rig assembler.
+    private readonly IReadOnlyList<PeripheralRequest> _peripheralRequests = [];
 
     // The Monitor ROM (WozMon). ICA1/ICA2 only have 8 address pins (A0-A7),
     // so on real hardware the 256-byte image mirrors every page of the CSF
@@ -68,11 +72,21 @@ public sealed partial class AppleISystem : EmulatedSystem
     private readonly IExpansionCard? _expansionCard;
 
     public AppleISystem()
-        : this(AppleISystemOptions.Default)
+        : this(AppleISystemOptions.Default, ExpansionSlotConfiguration.Empty)
     {
     }
 
     public AppleISystem(AppleISystemOptions options)
+        : this(options, ExpansionSlotConfiguration.Empty)
+    {
+    }
+
+    public AppleISystem(ExpansionSlotConfiguration expansionSlots)
+        : this(AppleISystemOptions.Default, expansionSlots)
+    {
+    }
+
+    public AppleISystem(AppleISystemOptions options, ExpansionSlotConfiguration expansionSlots)
     {
         Cpu = new Mos6502Chip(Mos6502Options.Default);
         Pia = new Mos6820Chip();
@@ -81,18 +95,21 @@ public sealed partial class AppleISystem : EmulatedSystem
         _characterGenerator = Signetics2513Chip.Load();
         _characterGenerator.ChipEnable = false; // Tied low - always enabled.
 
-        if (options.RamExpansionAtE000)
-        {
-            _ramExpansion = new byte[0x1000];
-        }
+        _bankBAtE000 = options.BankB == AppleIBankBMapping.AtE000;
 
-        if (options.CassetteCard)
+        // The one expansion connector: at most one card, chosen through the
+        // "expansion" slot. The card carries no timing element of its own and is
+        // driven once per CPU bus cycle from DoCpuMemoryAccess; anything it
+        // brings cabled to it (the ACI card's cassette deck) is built and
+        // patched later by the rig assembler.
+        var binding = AppleIExpansionSlots.FindBinding(
+            expansionSlots.ResolvedAgainst(AppleIExpansionSlots.Catalog)[AppleIExpansionSlots.ExpansionSlotId]);
+        if (binding != null)
         {
-            // The card carries no timing element of its own; its two audio
-            // jacks are patched to a CassetteDeck peripheral by the rig
-            // assembler. Driven once per CPU bus cycle from DoCpuMemoryAccess.
-            _cassetteCard = new AppleCassetteInterfaceCard();
-            _expansionCard = _cassetteCard;
+            var installation = binding.Install();
+            _expansionCard = installation.Card;
+            _cassetteCard = _expansionCard as AppleCassetteInterfaceCard;
+            _peripheralRequests = installation.Peripherals;
         }
 
         InitializeVideoTiming();
@@ -110,6 +127,8 @@ public sealed partial class AppleISystem : EmulatedSystem
 
         InitializeConsoleControls();
     }
+
+    public override IReadOnlyList<PeripheralRequest> PeripheralRequests => _peripheralRequests;
 
     public override void LoadProgram(string filePath)
     {
@@ -229,14 +248,19 @@ public sealed partial class AppleISystem : EmulatedSystem
 
     private byte ReadByte(ushort address)
     {
-        if (!_chipSelectDecoder.Y0 || !_chipSelectDecoder.Y1)
+        if (!_chipSelectDecoder.Y0)
         {
-            return _ram[address];
+            return _bankA[address & 0x0FFF];
         }
 
-        if (_ramExpansion != null && !_chipSelectDecoder.Y14)
+        if (!_chipSelectDecoder.Y1 && !_bankBAtE000)
         {
-            return _ramExpansion[address & 0x0FFF];
+            return _bankB[address & 0x0FFF];
+        }
+
+        if (!_chipSelectDecoder.Y14 && _bankBAtE000)
+        {
+            return _bankB[address & 0x0FFF];
         }
 
         if (!_chipSelectDecoder.Y13)
@@ -259,13 +283,17 @@ public sealed partial class AppleISystem : EmulatedSystem
 
     private void WriteByte(ushort address, byte value)
     {
-        if (!_chipSelectDecoder.Y0 || !_chipSelectDecoder.Y1)
+        if (!_chipSelectDecoder.Y0)
         {
-            _ram[address] = value;
+            _bankA[address & 0x0FFF] = value;
         }
-        else if (_ramExpansion != null && !_chipSelectDecoder.Y14)
+        else if (!_chipSelectDecoder.Y1 && !_bankBAtE000)
         {
-            _ramExpansion[address & 0x0FFF] = value;
+            _bankB[address & 0x0FFF] = value;
+        }
+        else if (!_chipSelectDecoder.Y14 && _bankBAtE000)
+        {
+            _bankB[address & 0x0FFF] = value;
         }
 
         // A PIA write already happened above, as a side effect of Pia.E

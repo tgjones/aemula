@@ -30,7 +30,12 @@ public sealed class EmulationWindow : IDisposable
         Action ResetSystem,
         Action Quit,
         Func<bool> IsDebuggerVisible,
-        Action ToggleDebugger);
+        Action ToggleDebugger,
+        // The card id fitted in a given slot of the current system (null = the
+        // slot is empty), and a request to fit a different one (null = empty).
+        // Changing a card rebuilds the machine, so this only requests.
+        Func<string, string?> SelectedSlotCard,
+        Action<string, string?> ChooseSlotCard);
 
     private readonly SDLGPUDevicePtr _gpuDevice;
     private readonly ImGuiWindowContext _context;
@@ -223,6 +228,37 @@ public sealed class EmulationWindow : IDisposable
                     {
                         _callbacks.ChooseSystem(entry);
                     }
+                }
+
+                ImGui.EndMenu();
+            }
+
+            if (currentEntry.Slots.Count > 0 && ImGui.BeginMenu("Slots"u8))
+            {
+                foreach (var slot in currentEntry.Slots)
+                {
+                    if (!ImGui.BeginMenu(slot.DisplayName))
+                    {
+                        continue;
+                    }
+
+                    var fitted = _callbacks.SelectedSlotCard(slot.Id);
+
+                    if (ImGui.MenuItem("(empty)"u8, (byte*)null, fitted == null, true) && fitted != null)
+                    {
+                        _callbacks.ChooseSlotCard(slot.Id, null);
+                    }
+
+                    foreach (var card in slot.Cards)
+                    {
+                        var isFitted = fitted == card.Id;
+                        if (ImGui.MenuItem(card.DisplayName, (byte*)null, isFitted, true) && !isFitted)
+                        {
+                            _callbacks.ChooseSlotCard(slot.Id, card.Id);
+                        }
+                    }
+
+                    ImGui.EndMenu();
                 }
 
                 ImGui.EndMenu();

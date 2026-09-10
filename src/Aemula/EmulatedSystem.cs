@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using Aemula.Debugging;
 using Aemula.Emulation.Output;
+using Aemula.Emulation.Peripherals;
 using Aemula.Emulation.Systems;
 using Hexa.NET.SDL3;
 
@@ -29,6 +30,12 @@ public abstract class EmulatedSystem : IDisposable
     // returns null and the Rig substitutes silence; nothing above the Rig ever
     // has to branch on "does this system have audio?".
     public virtual IAudioSource? Audio => null;
+
+    // Cabled devices this system needs wired up: motherboard ports (a built-in
+    // cassette jack) declared here directly, plus anything a fitted expansion
+    // card brings with it, which a slotted system folds in. The rig assembler
+    // builds and patches each one; an empty list means nothing is cabled.
+    public virtual IReadOnlyList<PeripheralRequest> PeripheralRequests => [];
 
     protected void RaiseProgramLoaded()
     {

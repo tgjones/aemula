@@ -72,7 +72,7 @@ public class AppleICassetteTests
     // patched to its jacks, $E000 RAM present.
     private static (AppleISystem System, CassetteDeck Deck) NewAppleIWithCassette()
     {
-        var rig = EmulatedSystems.FindById("applei")!.Build();
+        var rig = EmulatedSystems.FindById("applei")!.Build(ExpansionSlotConfiguration.Empty);
         return ((AppleISystem)rig.System, rig.GetPeripheral<CassetteDeck>()!);
     }
 

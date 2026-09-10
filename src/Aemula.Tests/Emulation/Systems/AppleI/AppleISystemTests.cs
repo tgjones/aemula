@@ -82,35 +82,30 @@ public class AppleISystemTests
     }
 
     [Test]
-    public async Task RamAtBothBanksIsReadWrite()
+    public async Task BothBanksAreReadWriteWithBankBAt1000()
     {
+        // The fully-populated bare board: bank A at $0000-$0FFF, bank B
+        // jumpered right above it at $1000-$1FFF for a contiguous 8K.
         var system = new AppleISystem();
         system.LoadProgram("");
 
-        system.WriteByteDebug(0x0042, 0x11); // Lower bank (ICB11-18, CS0).
-        system.WriteByteDebug(0x1042, 0x22); // Upper bank (ICA11-18, CS1).
+        system.WriteByteDebug(0x0042, 0x11); // Bank A.
+        system.WriteByteDebug(0x1042, 0x22); // Bank B at $1000.
 
         await Assert.That(system.ReadByteDebug(0x0042)).IsEqualTo((byte)0x11);
         await Assert.That(system.ReadByteDebug(0x1042)).IsEqualTo((byte)0x22);
-    }
 
-    [Test]
-    public async Task E000BlockIsOpenBusWithoutTheRamExpansion()
-    {
-        // The bare board leaves CSE ($E000-$EFFF) unpopulated - reads float
-        // high and writes go nowhere.
-        var system = new AppleISystem();
-        system.LoadProgram("");
-
+        // Bank B is not also at $E000 - that range is unpopulated.
         system.WriteByteDebug(0xE000, 0x4C);
-
         await Assert.That(system.ReadByteDebug(0xE000)).IsEqualTo((byte)0xFF);
     }
 
     [Test]
-    public async Task RamExpansionAtE000IsReadWriteWhenFitted()
+    public async Task BankBAtE000MakesE000ReadWriteAndLeaves1000OpenBus()
     {
-        var system = new AppleISystem(new AppleISystemOptions(cassetteCard: false, ramExpansionAtE000: true));
+        // The split configuration Integer BASIC needs: bank B jumpered up to
+        // $E000-$EFFF, which leaves $1000-$1FFF unpopulated.
+        var system = new AppleISystem(AppleISystemOptions.EquippedForBasic);
         system.LoadProgram("");
 
         system.WriteByteDebug(0xE000, 0x4C); // BASIC's cold-start JMP would land here.
@@ -119,8 +114,14 @@ public class AppleISystemTests
         await Assert.That(system.ReadByteDebug(0xE000)).IsEqualTo((byte)0x4C);
         await Assert.That(system.ReadByteDebug(0xEFFF)).IsEqualTo((byte)0xA5);
 
-        // It's its own 4K block - writing it must not leak into the PIA block
-        // below it, and the Monitor ROM above it still reads as ROM.
+        // $1000-$1FFF has nothing behind it now - reads float high, writes go
+        // nowhere.
+        system.WriteByteDebug(0x1042, 0x22);
+        await Assert.That(system.ReadByteDebug(0x1042)).IsEqualTo((byte)0xFF);
+
+        // Bank B at $E000 is its own 4K block - writing it must not leak into
+        // the PIA block below it, and the Monitor ROM above it still reads as
+        // ROM.
         system.WriteByteDebug(0xE042, 0x99);
         await Assert.That(system.ReadByteDebug(0xF000)).IsEqualTo(system.ReadByteDebug(0xFF00));
     }

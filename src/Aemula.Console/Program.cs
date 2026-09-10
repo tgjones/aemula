@@ -31,12 +31,24 @@ public static class Program
 
     private static void Run(string[] args)
     {
-        var (systemName, framesRequested, romPath, screenshotPath, screenshotEvery, inputSpec, traceTiming) = ParseArgs(args);
+        var options = ParseArgs(args);
+
+        if (options.ListSlotsSystem is { } listSlotsSystem)
+        {
+            PrintSlots(listSlotsSystem);
+            return;
+        }
+
+        var (systemName, framesRequested, romPath, screenshotPath, screenshotEvery, inputSpec, traceTiming) =
+            (options.SystemName!, options.FramesRequested!.Value, options.RomPath, options.ScreenshotPath,
+                options.ScreenshotEvery, options.InputSpec, options.TraceTiming);
 
         var descriptor = EmulatedSystems.FindById(systemName)
             ?? throw new ArgumentException($"Unknown system '{systemName}'. Supported systems: {string.Join(", ", EmulatedSystems.All.Select(d => d.Id))}.");
 
-        using var rig = descriptor.Build();
+        // A bad --slot slot/card id throws out of ResolvedAgainst here, into the
+        // top-level catch.
+        using var rig = descriptor.Build(new ExpansionSlotConfiguration(options.SlotChoices));
         var television = rig.Television;
 
         // Parsed after the rig exists so the script's control tokens can be
@@ -143,7 +155,48 @@ public static class Program
         return string.IsNullOrEmpty(directory) ? numberedFileName : Path.Combine(directory, numberedFileName);
     }
 
-    private static (string SystemName, int FramesRequested, string RomPath, string? ScreenshotPath, int? ScreenshotEvery, string? InputSpec, bool TraceTiming) ParseArgs(string[] args)
+    // Prints one system's expansion slots and the cards each accepts, then
+    // exits - `--list-slots <system>` with nothing else required.
+    private static void PrintSlots(string systemName)
+    {
+        var descriptor = EmulatedSystems.FindById(systemName)
+            ?? throw new ArgumentException($"Unknown system '{systemName}'. Supported systems: {string.Join(", ", EmulatedSystems.All.Select(d => d.Id))}.");
+
+        if (descriptor.Slots.Count == 0)
+        {
+            SystemConsole.WriteLine($"{descriptor.Id} ({descriptor.DisplayName}) has no configurable expansion slots.");
+            return;
+        }
+
+        SystemConsole.WriteLine($"{descriptor.Id} ({descriptor.DisplayName}) expansion slots:");
+        foreach (var slot in descriptor.Slots)
+        {
+            var @default = slot.DefaultCardId ?? "none";
+            SystemConsole.WriteLine($"  {slot.Id}  ({slot.DisplayName}) - default: {@default}");
+            SystemConsole.WriteLine("    none  (empty)");
+            foreach (var card in slot.Cards)
+            {
+                var summary = card.Summary is { } s ? $" - {s}" : "";
+                SystemConsole.WriteLine($"    {card.Id}  {card.DisplayName}{summary}");
+            }
+        }
+
+        SystemConsole.WriteLine("");
+        SystemConsole.WriteLine("Select with --slot <slot>=<card> (or --slot <slot>=none), repeatable.");
+    }
+
+    private sealed record ConsoleOptions(
+        string? SystemName,
+        int? FramesRequested,
+        string RomPath,
+        string? ScreenshotPath,
+        int? ScreenshotEvery,
+        string? InputSpec,
+        bool TraceTiming,
+        IReadOnlyList<(string SlotId, string? CardId)> SlotChoices,
+        string? ListSlotsSystem);
+
+    private static ConsoleOptions ParseArgs(string[] args)
     {
         string? systemName = null;
         int? framesRequested = null;
@@ -152,6 +205,8 @@ public static class Program
         int? screenshotEvery = null;
         string? inputSpec = null;
         var traceTiming = false;
+        var slotChoices = new List<(string SlotId, string? CardId)>();
+        string? listSlotsSystem = null;
 
         var i = 0;
         while (i < args.Length)
@@ -217,6 +272,24 @@ public static class Program
                     i++;
                     break;
 
+                case "--slot":
+                    if (i + 1 >= args.Length)
+                    {
+                        throw new ArgumentException("--slot requires a value of the form <slot>=<card> (card may be 'none').");
+                    }
+                    slotChoices.Add(ParseSlotChoice(args[i + 1]));
+                    i += 2;
+                    break;
+
+                case "--list-slots":
+                    if (i + 1 >= args.Length)
+                    {
+                        throw new ArgumentException("--list-slots requires a system name.");
+                    }
+                    listSlotsSystem = args[i + 1];
+                    i += 2;
+                    break;
+
                 default:
                     if (systemName != null)
                     {
@@ -228,13 +301,20 @@ public static class Program
             }
         }
 
+        // --list-slots is a standalone query: it names its own system and needs
+        // nothing else.
+        if (listSlotsSystem != null)
+        {
+            return new ConsoleOptions(null, null, romPath, null, null, null, false, slotChoices, listSlotsSystem);
+        }
+
         if (systemName == null)
         {
             throw new ArgumentException(
                 "Usage: aemula-console <system> --frames <n> [--rom <path>] " +
                 "[--screenshot <path>] [--screenshot-every <n>] " +
                 "[--input \"<frame>:<token>+/-  or  <frame>:\\\"typed text\\\", ...\"] " +
-                "[--trace-timing]");
+                "[--slot <slot>=<card>] [--trace-timing]  |  aemula-console --list-slots <system>");
         }
 
         if (framesRequested == null)
@@ -247,6 +327,22 @@ public static class Program
             throw new ArgumentException("--screenshot-every requires --screenshot.");
         }
 
-        return (systemName, framesRequested.Value, romPath, screenshotPath, screenshotEvery, inputSpec, traceTiming);
+        return new ConsoleOptions(
+            systemName, framesRequested.Value, romPath, screenshotPath, screenshotEvery, inputSpec, traceTiming,
+            slotChoices, null);
+    }
+
+    // "<slot>=<card>", where a card of "none" (or empty) means the empty slot.
+    private static (string SlotId, string? CardId) ParseSlotChoice(string spec)
+    {
+        var eq = spec.IndexOf('=');
+        if (eq <= 0)
+        {
+            throw new ArgumentException($"--slot value '{spec}' must be of the form <slot>=<card> (card may be 'none').");
+        }
+
+        var slotId = spec[..eq];
+        var cardId = spec[(eq + 1)..];
+        return (slotId, cardId is "" or "none" ? null : cardId);
     }
 }

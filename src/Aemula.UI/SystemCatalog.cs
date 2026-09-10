@@ -34,12 +34,13 @@ public readonly record struct RomFileFilter(string Name, string Pattern);
 public sealed record SystemCatalogEntry(
     string Id,
     string DisplayName,
-    Func<Rig> Build,
+    IReadOnlyList<ExpansionSlot> Slots,
+    Func<ExpansionSlotConfiguration, Rig> Build,
     RomRequirement Rom,
     string RomDialogTitle,
     RomFileFilter[] RomFilters);
 
-// The id/display-name/factory triple for each entry comes from
+// The id, display name, expansion slots and factory for each entry come from
 // Aemula.Emulation.Systems.EmulatedSystems, the cross-project list of which
 // systems are wired up end-to-end; this layers on the ROM-picker metadata
 // that's specific to the UI's File > Open ROM / System submenu, keyed by the
@@ -84,7 +85,7 @@ public static class SystemCatalog
         .Select(system =>
         {
             var (rom, romDialogTitle, romFilters) = RomInfoById[system.Id];
-            return new SystemCatalogEntry(system.Id, system.DisplayName, system.Build, rom, romDialogTitle, romFilters);
+            return new SystemCatalogEntry(system.Id, system.DisplayName, system.Slots, system.Build, rom, romDialogTitle, romFilters);
         })
         .ToList();
 
