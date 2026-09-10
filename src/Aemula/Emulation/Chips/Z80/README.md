@@ -24,3 +24,25 @@ and `OUT (C),0` are out of scope.
   semantics, and the origin of the `tests.in` / `tests.expected` bus-timing data.
 * This repo's own `Intel8080/Intel8080Chip.cs` - the pin-style API and
   staged-cycle state-machine pattern (no code is shared).
+
+## Test data & suites
+
+The chip's tests live in `src/Aemula.Tests/Emulation/Chips/Z80/`.
+
+* **`Assets/tests.in` / `Assets/tests.expected`** - the per-instruction
+  bus-timing vectors from the **fuse-emulator** project
+  (`z80/tests/` in its source tree). Plain text, redistributable; no FUSE code
+  is used. Drive `Z80ChipBusTimingTests` (address + byte + T-state stamp of
+  every `MR`/`MW`/`PR`/`PW`; the `MC`/`PC` ULA-contention rows are parsed but
+  not asserted - that is board-level behaviour, not a CPU action).
+* **`zexdoc.com` / `zexall.com`** - Frank Cringle's Z80 instruction exerciser
+  (documented- and all-flags variants). Run to a full pass, with an exact
+  total-T-state-count regression ratchet pinned per ROM.
+* **`z80doc.tap` / `z80docflags.tap`** - Patrik Rak's `z80test` suite (MIT),
+  documented-flags ROMs. Run to a full pass, also T-state-ratcheted.
+* **`z80flags.tap` / `z80full.tap` / `z80ccf.tap` / `z80memptr.tap`** - the
+  remaining `z80test` ROMs. Committed but `[Skip]`ped: each fails only the two
+  self-modifying block-repeat subtests 102/103 (`INIR->NOP'` / `INDR->NOP'`),
+  whose expected undocumented flags need a "block-I/O interrupted" formula that
+  in turn regresses a FUSE `INIR`-repeat-tail bus-timing vector - the two are
+  mutually exclusive on this core, so FUSE is kept green and these stay skipped.

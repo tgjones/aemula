@@ -25,9 +25,14 @@ namespace Aemula.Emulation.Chips.Z80;
 // undocumented block-op and IN/OUT flag formulas are "The Undocumented Z80
 // Documented" (Sean Young), chapters 4-5. Only the last iteration of a
 // repeating block instruction leaves observable flags - each pass overwrites F
-// - so the plain LDI/CPI/INI/OUTI flag rule is applied every pass and the
-// interrupted-mid-repeat flag quirk (which needs the interrupt phase to reach)
-// is left out.
+// - so the plain LDI/CPI/INI/OUTI flag rule is applied on every pass. The extra
+// undocumented flags an NMOS Z80 leaves when a repeat is aborted mid-flight
+// (interrupt, or an opcode that overwrote itself) are handled for the memory
+// repeats - LDIR/LDDR take Y/X from PC bits 13/11 on the 5-T repeat tail - but
+// deliberately not for the block-I/O repeats: raxoft z80test subtests 102/103
+// (INIR->NOP' / INDR->NOP') want the "block-I/O interrupted" formula, and
+// applying it regresses the FUSE edb2_1 bus-timing vector, so the two cannot
+// both be satisfied on this core.
 
 public sealed partial class Z80Chip
 {

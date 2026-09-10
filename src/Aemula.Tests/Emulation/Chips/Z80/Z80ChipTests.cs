@@ -57,17 +57,31 @@ namespace Aemula.Tests.Emulation.Chips.Z80;
 // Z80TestBlockRepeatCorner row.
 //
 // The maxTStates caps are generous-but-bounded for a full conformance run
-// (ZEXALL is a few minutes even at Release). A future pass should pin the exact
-// total T-state count per ROM as a timing ratchet.
+// (ZEXALL is a few minutes even at Release).
+//
+// Each passing ROM also carries an exact total-T-state count, asserted as a
+// regression ratchet (mirrors Intel8080ChipTests.Test8080's expectedCycleCount).
+// The harness counts one T-state per CLK pair from load to the completion trap.
+// The pinned numbers are the counts this core produces for runs whose
+// architectural behaviour is already proven - zexall reports every CRC OK, the
+// z80test ROMs print "all tests passed" - so a change to any of them is a
+// half-cycle-timing regression, not a fix. They are self-captured: the
+// exercisers publish instruction CRCs, not a cycle total, and no reference
+// emulator's figure for these exact harness entry/exit conditions was available
+// to cross-check against. zexdoc and zexall land on the identical count because
+// the two ROMs are the same exerciser and execute a byte-identical instruction
+// stream - they differ only in the expected-CRC tables baked in (zexall's
+// include the undocumented X/Y flag bits) - and that count's ~46.7-billion
+// magnitude is the figure widely quoted for a full ZEXALL run.
 public class Z80ChipTests
 {
     private static readonly string AssetsPath =
         Path.Combine("Emulation", "Chips", "Z80", "Assets");
 
     [Test]
-    [Arguments("zexdoc.com")]
-    [Arguments("zexall.com")]
-    public async Task CpmExerciser(string fileName)
+    [Arguments("zexdoc.com", 46_734_978_647ul)]
+    [Arguments("zexall.com", 46_734_978_647ul)]
+    public async Task CpmExerciser(string fileName, ulong expectedTStates)
     {
         var result = RunCpmExerciser(Path.Combine(AssetsPath, fileName), maxTStates: 60_000_000_000);
 
@@ -75,12 +89,17 @@ public class Z80ChipTests
 
         await Assert.That(result.Completed).IsTrue().Because("exerciser signalled warm boot");
         await Assert.That(result.Output).DoesNotContain("ERROR");
+        await Assert.That((ulong)result.TStates).IsEqualTo(expectedTStates).Because("total T-states");
     }
 
     [Test]
-    [Arguments("z80doc.tap")]
-    [Arguments("z80docflags.tap")]
-    public Task Z80Test(string fileName) => RunZ80Test(fileName);
+    [Arguments("z80doc.tap", 1_139_700_410ul)]
+    [Arguments("z80docflags.tap", 559_087_558ul)]
+    public async Task Z80Test(string fileName, ulong expectedTStates)
+    {
+        var result = await RunZ80Test(fileName);
+        await Assert.That((ulong)result.TStates).IsEqualTo(expectedTStates).Because("total T-states");
+    }
 
     [Test]
     [Skip("Fails only raxoft z80test subtests 102/103 (INIR->NOP' / INDR->NOP'), " +
@@ -99,7 +118,7 @@ public class Z80ChipTests
     [Arguments("z80memptr.tap")]
     public Task Z80TestBlockRepeatCorner(string fileName) => RunZ80Test(fileName);
 
-    private static async Task RunZ80Test(string fileName)
+    private static async Task<RunResult> RunZ80Test(string fileName)
     {
         var result = RunSpectrumTest(Path.Combine(AssetsPath, fileName), maxTStates: 4_000_000_000);
 
@@ -107,6 +126,8 @@ public class Z80ChipTests
 
         await Assert.That(result.Completed).IsTrue().Because("driver returned to its caller");
         await Assert.That(result.Output).Contains("all tests passed");
+
+        return result;
     }
 
     // --- CP/M ".com" harness ------------------------------------------------

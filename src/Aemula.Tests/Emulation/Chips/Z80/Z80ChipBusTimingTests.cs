@@ -24,18 +24,32 @@ namespace Aemula.Tests.Emulation.Chips.Z80;
 //
 // The harness clocks the chip one T-state at a time (Clk = true; Clk = false),
 // services memory off the control pins, and records every completed MR / MW /
-// PR / PW with the T-state count at which its machine cycle ends - which is the
-// convention FUSE's <t> column uses (an M1 read is logged 4 T-states after the
-// cycle starts, a 3-T memory read or write 3 T-states after). MC / PC rows are
-// board-level ULA contention, not anything the CPU does, so they are parsed but
-// not asserted.
+// PR / PW as (time, kind, address, value). The recorded trace is then compared
+// to the expected one as a whole - so for every bus event the assertion pins
+// the address, the byte, AND the FUSE <time> column, not merely the order the
+// events occur in.
 //
-// Every opcode group is decoded now: the whole unprefixed table, the CB page
+// FUSE's <time> is a whole T-state index: tests.expected carries no finer
+// sub-T "half-cycle" number, so there is nothing at that resolution to check
+// against and a reader should not go looking for it. The harness counts one
+// T-state per CLK pair and timestamps each transfer where FUSE logs it - on
+// the falling edge of its machine cycle's last T-state: an M1 opcode read at
+// T4 (4 T-states after the cycle began), a 3-T memory read or write at T3, and
+// a port access one T-state into its I/O machine cycle.
+//
+// The MC (memory contention) and PC (port contention) rows are board-level ZX
+// Spectrum ULA behaviour - the ULA freezes the CPU clock while it is drawing
+// and the CPU touches contended RAM or I/O - not anything a bare Z80 does.
+// Z80Chip
+// neither produces nor models contention, so those rows are parsed (to keep
+// the file format handling honest) but never asserted; modelling them belongs
+// to a future SpectrumSystem.
+//
+// Every opcode group is decoded: the whole unprefixed table, the CB page
 // (rotate/shift and BIT/RES/SET), the ED page (16-bit loads, ADC/SBC HL, NEG,
 // IM, LD A,I/R, RRD/RLD, RETN/RETI, the IN/OUT and block instructions) and the
 // DD / FD index-register page including the DD CB / FD CB double prefix and the
-// inert DD FD chain. Every FUSE case is therefore in scope except the ones the
-// interrupt phase is still needed for.
+// inert DD FD chain - so every FUSE case is in scope and the whole suite runs.
 public class Z80ChipBusTimingTests
 {
     private static readonly string AssetsPath =
@@ -213,10 +227,16 @@ public class Z80ChipBusTimingTests
         }
 
         // --- Bus-event trace -------------------------------------------------
+        // Keep the real bus transfers; drop the MC / PC contention rows (see the
+        // file header - board-level ULA behaviour, not a CPU action).
         var expectedTrace = expected.Events
             .Where(e => e.Kind is "MR" or "MW" or "PR" or "PW")
             .ToList();
 
+        // Format() renders each event as "<time> <kind> <addr> <val>", so this
+        // single whole-string comparison asserts, for every MR / MW / PR / PW:
+        // the kind, the address, the byte, the FUSE <time> T-state stamp, the
+        // order, and that there are no extra or missing events.
         await Assert.That(Format(trace)).IsEqualTo(Format(expectedTrace));
 
         // --- Final register file ------------------------------------------
