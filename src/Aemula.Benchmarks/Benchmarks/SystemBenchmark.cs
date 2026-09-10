@@ -38,7 +38,10 @@ public abstract class SystemBenchmark
     {
         _spec = SystemSpecs.Get(SystemName);
         _system = EmulatedSystems.FindById(SystemName)!.Build(ExpansionSlotConfiguration.Empty).System;
-        _system.LoadProgram(_spec.WorkloadPath());
+        foreach (var (bayId, image) in _spec.Media())
+        {
+            _system.InsertMedia(bayId, image);
+        }
 
         for (var i = 0; i < _spec.WarmupTicks; i++)
         {

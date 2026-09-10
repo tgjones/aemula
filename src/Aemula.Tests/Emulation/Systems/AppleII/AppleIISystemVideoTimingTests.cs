@@ -48,7 +48,6 @@ public class AppleIISystemVideoTimingTests
         // once-per-line double-zero state, with VA carrying in and then
         // holding through the reload.
         var system = new AppleIISystem();
-        system.LoadProgram("");
 
         var states = CollectDistinctScannerStates(system, maxTicks: 5000, maxStates: 2000);
 
@@ -77,7 +76,6 @@ public class AppleIISystemVideoTimingTests
         // 011111010/0000000; 011111010/1000000." (Sather, p.3-15) - once per
         // frame, the vertical section reloads from its terminal count.
         var system = new AppleIISystem();
-        system.LoadProgram("");
 
         // Starting cold at V=0, the vertical section's terminal count
         // (511, not the steady-state modulus of 262) is first reached 511
@@ -123,7 +121,6 @@ public class AppleIISystemVideoTimingTests
         // 16 ticks (the "long cycle"), keeping the dot clock phase-locked
         // to the color subcarrier across scanlines.
         var system = new AppleIISystem();
-        system.LoadProgram("");
 
         var cycleLengths = new List<int>();
         var ticksSinceLastRisingEdge = 0;
@@ -177,7 +174,6 @@ public class AppleIISystemVideoTimingTests
         // HSync is a 4-H-count pulse, immediately followed by the
         // already-implemented ColorBurstGate window.
         var system = new AppleIISystem();
-        system.LoadProgram("");
 
         var hsyncStates = new List<bool>();
         var burstStates = new List<bool>();
@@ -225,7 +221,6 @@ public class AppleIISystemVideoTimingTests
         // enough to pass through the vertical sync region (V=480-483, ~480
         // lines from a cold reset).
         var system = new AppleIISystem();
-        system.LoadProgram("");
 
         var wasPhase0 = system.Phase0;
         var sawHSyncTrue = false;

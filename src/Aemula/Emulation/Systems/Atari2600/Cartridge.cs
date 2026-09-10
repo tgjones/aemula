@@ -20,12 +20,12 @@ internal abstract class Cartridge
     /// </summary>
     public byte? Data => GetBitAsBoolean(Address, 12) ? ReadRom(Address) : null;
 
-    public static Cartridge FromData(byte[] data)
+    public static Cartridge FromData(ReadOnlySpan<byte> data)
     {
         return data.Length switch
         {
-            2048 => new Cartridge2K(data),
-            4096 => new Cartridge4K(data),
+            2048 => new Cartridge2K(data.ToArray()),
+            4096 => new Cartridge4K(data.ToArray()),
             _ => throw new InvalidOperationException("Unknown cartridge type")
         };
     }

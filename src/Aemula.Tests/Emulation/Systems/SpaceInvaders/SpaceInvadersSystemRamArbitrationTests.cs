@@ -46,7 +46,6 @@ public class SpaceInvadersSystemRamArbitrationTests
     public async Task ScanAddressFormulaLandsFirstScannedByteAt0x2400()
     {
         var system = new SpaceInvadersSystem();
-        system.LoadProgram("");
 
         // First visible pixel of the first scanned line - V < 0x20 is never
         // scanned (it's free work RAM, not VRAM - see
@@ -69,7 +68,6 @@ public class SpaceInvadersSystemRamArbitrationTests
     public async Task ScannerClaimsTheBusExactlyThirtyTwoTimesPerActiveLineAndNeverDuringHblank()
     {
         var system = new SpaceInvadersSystem();
-        system.LoadProgram("");
 
         TickToStartOfLine(system, 2);
 
@@ -110,7 +108,6 @@ public class SpaceInvadersSystemRamArbitrationTests
         // (Intel8080Chip.cs) are actually wired together, not just each
         // correct in isolation.
         var system = new SpaceInvadersSystem();
-        system.LoadProgram("");
 
         var sawContention = false;
 

@@ -4,6 +4,7 @@ using System.IO;
 using System.Text;
 using Aemula;
 using Aemula.Emulation.Chips.Ricoh2C02;
+using Aemula.Emulation.Systems;
 using Aemula.Emulation.Systems.Nes;
 
 namespace Aemula.Tests.Emulation.Systems.Nes;
@@ -39,7 +40,7 @@ internal static class NesTestRom
     public static NesSystem Load(string relativeRomPath)
     {
         var nes = new NesSystem { DecodeVideo = false };
-        nes.LoadProgram(Path(relativeRomPath));
+        nes.InsertMedia("cartridge", MediaImage.FromFile(Path(relativeRomPath)));
         return nes;
     }
 
@@ -248,7 +249,7 @@ internal static class NesTestRom
     {
         var nes = new NesSystem { DecodeVideo = false };
         nes.Ppu.RenderFramebuffer = true;
-        nes.LoadProgram(Path(relativeRomPath));
+        nes.InsertMedia("cartridge", MediaImage.FromFile(Path(relativeRomPath)));
 
         var startFrame = nes.Ppu.Frames;
         while (nes.Ppu.Frames - startFrame < (ulong)frames)

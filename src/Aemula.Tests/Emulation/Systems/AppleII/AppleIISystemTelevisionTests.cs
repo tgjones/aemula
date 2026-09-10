@@ -219,7 +219,6 @@ public class AppleIISystemTelevisionTests
         // PLL never locks and its own color killer decodes the whole picture
         // as grayscale - crisp monochrome text, matching real hardware.
         var system = new AppleIISystem(new AppleIISystemOptions(AppleIIRevision.Revision1Plus));
-        system.LoadProgram("");
 
         BootToIdle(system); // The Autostart ROM leaves the machine in TEXT mode.
         FillTextPage1(system, 0xC8);
@@ -241,7 +240,6 @@ public class AppleIISystemTelevisionTests
         // during text mode too and the same 'H' field fringes green/violet
         // on a color receiver - authentic to that revision.
         var system = new AppleIISystem(new AppleIISystemOptions(AppleIIRevision.Revision0));
-        system.LoadProgram("");
 
         BootToIdle(system);
         FillTextPage1(system, 0xC8);
@@ -259,7 +257,6 @@ public class AppleIISystemTelevisionTests
     public async Task HiresGreenLinePatternDecodesToGreen()
     {
         var system = new AppleIISystem();
-        system.LoadProgram("");
 
         BootToIdle(system);
         SetHiresPage1(system);
@@ -275,7 +272,6 @@ public class AppleIISystemTelevisionTests
     public async Task HiresVioletLinePatternDecodesToViolet()
     {
         var system = new AppleIISystem();
-        system.LoadProgram("");
 
         BootToIdle(system);
         SetHiresPage1(system);

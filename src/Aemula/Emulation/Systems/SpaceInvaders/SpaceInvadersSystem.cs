@@ -57,6 +57,30 @@ public sealed partial class SpaceInvadersSystem : EmulatedSystem
         Display = new DisplayBuffer(256, 256);
 
         InitializeConsoleControls();
+
+        LoadRoms();
+    }
+
+    // The four soldered-in program ROMs (invaders.h/g/f/e), read from the build
+    // output. The cabinet had no removable media, so this happens once at
+    // construction and the machine exposes no media bay.
+    private void LoadRoms()
+    {
+        void LoadRom(string fileName, ushort startAddress)
+        {
+            // Resolved against the executable's own directory, not the process's
+            // current working directory - so this doesn't silently break under a
+            // launcher (e.g. `dotnet run`) that sets the working directory to
+            // somewhere other than the build output.
+            var fullPath = Path.Combine(AppContext.BaseDirectory, "Emulation", "Systems", "SpaceInvaders", "Roms", fileName);
+            using var fileStream = File.OpenRead(fullPath);
+            fileStream.ReadExactly(_rom, startAddress, (int)fileStream.Length);
+        }
+
+        LoadRom("invaders.h", 0x0000);
+        LoadRom("invaders.g", 0x0800);
+        LoadRom("invaders.f", 0x1000);
+        LoadRom("invaders.e", 0x1800);
     }
 
     /// <summary>
@@ -72,28 +96,6 @@ public sealed partial class SpaceInvadersSystem : EmulatedSystem
         TickVideoTiming();
         TickVideoShiftRegister();
         TickCompositeVideo();
-    }
-
-    public override void LoadProgram(string filePath)
-    {
-        void LoadRom(string fileName, ushort startAddress)
-        {
-            // Resolved against the executable's own directory, not the process's
-            // current working directory - matches AppleIISystem.LoadProgram, and
-            // means this doesn't silently break under a launcher (e.g. `dotnet run`)
-            // that sets the working directory to somewhere other than the build
-            // output.
-            var fullPath = Path.Combine(AppContext.BaseDirectory, "Emulation", "Systems", "SpaceInvaders", "Roms", fileName);
-            using var fileStream = File.OpenRead(fullPath);
-            fileStream.ReadExactly(_rom, startAddress, (int)fileStream.Length);
-        }
-
-        LoadRom("invaders.h", 0x0000);
-        LoadRom("invaders.g", 0x0800);
-        LoadRom("invaders.f", 0x1000);
-        LoadRom("invaders.e", 0x1800);
-
-        RaiseProgramLoaded();
     }
 
     public override void Tick()

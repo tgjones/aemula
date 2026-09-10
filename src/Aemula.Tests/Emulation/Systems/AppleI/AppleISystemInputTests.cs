@@ -90,7 +90,6 @@ public class AppleISystemInputTests
     public async Task TypedTextEchoesIntoConsecutiveCharacterCells()
     {
         var system = new AppleISystem();
-        system.LoadProgram("");
 
         // Reset echo "\" + CR wraps the cursor to the start of the second row
         // (ring position 40) - see AppleISystemCharacterMemoryTests.
@@ -117,7 +116,6 @@ public class AppleISystemInputTests
     public async Task ClearScreenControlBlanksTheDisplayWhileHeld()
     {
         var system = new AppleISystem();
-        system.LoadProgram("");
 
         // Let the reset "\" + CR echo settle onto the screen.
         RunFrames(system, 3);
@@ -142,7 +140,6 @@ public class AppleISystemInputTests
     public async Task ResetControlReRunsWozMonAndBringsBackThePrompt()
     {
         var system = new AppleISystem();
-        system.LoadProgram("");
 
         // Type a character so there's program state to tear down, then blank
         // the screen, so the restored "\" is unambiguously freshly echoed.

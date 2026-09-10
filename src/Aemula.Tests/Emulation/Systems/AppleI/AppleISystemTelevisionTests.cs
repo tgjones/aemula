@@ -84,7 +84,6 @@ public class AppleISystemTelevisionTests
     public async Task WozMonBootScreenShowsThePromptTopLeftAndTheCursorBlinkingBelowIt()
     {
         var system = new AppleISystem();
-        system.LoadProgram("");
         var television = system.Television;
 
         // Read the raw composite level rather than the decoded colour: the

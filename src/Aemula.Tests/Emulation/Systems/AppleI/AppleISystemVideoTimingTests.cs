@@ -13,7 +13,6 @@ public class AppleISystemVideoTimingTests
     public async Task HSyncPulsesOnceExactlyOncePerLine()
     {
         var system = new AppleISystem();
-        system.LoadProgram("");
 
         // The counters power up at 0, not at the preset - run past that
         // startup transient (a one-off longer "line") before measuring.
@@ -60,7 +59,6 @@ public class AppleISystemVideoTimingTests
     public async Task CpuClockDividesMasterOscillatorByFourteen()
     {
         var system = new AppleISystem();
-        system.LoadProgram("");
 
         var lastPhi0 = system.Phi0ForTests;
         var risingEdges = 0;
@@ -100,7 +98,6 @@ public class AppleISystemVideoTimingTests
     public async Task CharacterRingCompletesExactlyOneRotationPerFrame()
     {
         var system = new AppleISystem();
-        system.LoadProgram("");
 
         // Run past the counters' power-up transient (they start at 0, not
         // their presets, so the first frame is irregular).
@@ -165,7 +162,6 @@ public class AppleISystemVideoTimingTests
         const int VSyncLines = 8;
 
         var system = new AppleISystem();
-        system.LoadProgram("");
 
         // Run past the counters' power-up transient before measuring.
         for (var i = 0; i < MasterTicksPerLine * LinesPerFrame; i++)
@@ -232,7 +228,6 @@ public class AppleISystemVideoTimingTests
         const int MasterTicksPerCharacterTime = 14;
 
         var system = new AppleISystem();
-        system.LoadProgram("");
 
         for (var i = 0; i < MasterTicksPerLine * 2; i++)
         {

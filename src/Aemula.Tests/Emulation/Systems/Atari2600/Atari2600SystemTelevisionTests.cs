@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using Aemula.Emulation.Output;
+using Aemula.Emulation.Systems;
 using Aemula.Emulation.Systems.Atari2600;
 
 namespace Aemula.Tests.Emulation.Systems.Atari2600;
@@ -529,7 +530,7 @@ public class Atari2600SystemTelevisionTests
 
             try
             {
-                system.LoadProgram(path);
+                system.InsertMedia("cartridge", MediaImage.FromFile(path));
                 system.Reset();
 
                 RunFrames(system, 20);
@@ -564,7 +565,7 @@ public class Atari2600SystemTelevisionTests
 
         try
         {
-            system.LoadProgram(path);
+            system.InsertMedia("cartridge", MediaImage.FromFile(path));
             system.Reset();
 
             RunFrames(system, 20);
@@ -624,7 +625,7 @@ public class Atari2600SystemTelevisionTests
 
             try
             {
-                system.LoadProgram(path);
+                system.InsertMedia("cartridge", MediaImage.FromFile(path));
                 system.Reset();
 
                 RunFrames(system, 20);
@@ -673,7 +674,7 @@ public class Atari2600SystemTelevisionTests
 
         try
         {
-            system.LoadProgram(path);
+            system.InsertMedia("cartridge", MediaImage.FromFile(path));
             system.Reset();
 
             RunFrames(system, 20);
@@ -711,7 +712,7 @@ public class Atari2600SystemTelevisionTests
 
         try
         {
-            system.LoadProgram(path);
+            system.InsertMedia("cartridge", MediaImage.FromFile(path));
             system.Reset();
 
             RunFrames(system, 20);
@@ -745,7 +746,7 @@ public class Atari2600SystemTelevisionTests
 
             try
             {
-                system.LoadProgram(path);
+                system.InsertMedia("cartridge", MediaImage.FromFile(path));
                 system.Reset();
                 RunFrames(system, 20);
                 soloDimLuma = AverageLuma(system.Television.SampleBuffer);
@@ -763,7 +764,7 @@ public class Atari2600SystemTelevisionTests
 
             try
             {
-                system.LoadProgram(path);
+                system.InsertMedia("cartridge", MediaImage.FromFile(path));
                 system.Reset();
                 RunFrames(system, 20);
 

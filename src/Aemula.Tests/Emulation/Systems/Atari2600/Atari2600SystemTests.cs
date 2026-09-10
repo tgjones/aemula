@@ -1,21 +1,21 @@
 using System;
 using System.IO;
 using System.Threading.Tasks;
+using Aemula.Emulation.Systems;
 using Aemula.Emulation.Systems.Atari2600;
 
 namespace Aemula.Tests.Emulation.Systems.Atari2600;
 
-// Basic non-video sanity, the same minimal-smoke-test role
-// AppleIISystemTests plays: LoadProgram + ticking doesn't throw, and the
-// CPU is actually fetching/executing cartridge code (not just sitting on
-// its reset vector).
+// Basic non-video sanity, the same minimal-smoke-test role AppleIISystemTests
+// plays: inserting a cartridge and ticking doesn't throw, and the CPU is
+// actually fetching/executing cartridge code (not just sitting on its reset
+// vector).
 public class Atari2600SystemTests
 {
-    // Atari2600System.LoadProgram reads cartridge bytes from disk (unlike
-    // AppleIISystem's LoadProgram("")), so every test here needs a real
-    // temp file - a 2K cartridge whose reset vector points straight back at
-    // an infinite JMP to itself, the smallest cartridge that lets the CPU
-    // run without depending on any TIA/RIOT register behavior.
+    // A 2K cartridge whose reset vector points straight back at an infinite
+    // JMP to itself - the smallest cartridge that lets the CPU run without
+    // depending on any TIA/RIOT register behavior. Written to a temp file so
+    // the tests exercise the MediaImage.FromFile path.
     private static byte[] BuildInfiniteLoopCartridge()
     {
         var rom = new byte[2048];
@@ -76,14 +76,14 @@ public class Atari2600SystemTests
     }
 
     [Test]
-    public async Task LoadProgramAndTickDoesNotThrow()
+    public async Task InsertCartridgeAndTickDoesNotThrow()
     {
         var system = new Atari2600System();
         var path = WriteCartridgeToTempFile(BuildInfiniteLoopCartridge());
 
         try
         {
-            system.LoadProgram(path);
+            system.InsertMedia("cartridge", MediaImage.FromFile(path));
             system.Reset();
 
             for (var i = 0; i < 200_000; i++)
@@ -112,7 +112,7 @@ public class Atari2600SystemTests
 
         try
         {
-            system.LoadProgram(path);
+            system.InsertMedia("cartridge", MediaImage.FromFile(path));
             system.Reset();
 
             var reachedLoop = false;
@@ -171,7 +171,7 @@ public class Atari2600SystemTests
 
         try
         {
-            system.LoadProgram(path);
+            system.InsertMedia("cartridge", MediaImage.FromFile(path));
             system.Reset();
 
             for (var i = 0; i < 200_000; i++)

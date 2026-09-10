@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Threading.Tasks;
+using Aemula.Emulation.Systems;
 using Aemula.Emulation.Systems.Nes;
 using Aemula.Emulation.Systems.Nes.Mappers;
 
@@ -43,17 +44,10 @@ public class NesCartridgePlumbingTests
         return image;
     }
 
-    private static string WriteTempRom(byte[] image)
-    {
-        var path = Path.Combine(Path.GetTempPath(), $"aemula-nes-test-{Guid.NewGuid():N}.nes");
-        File.WriteAllBytes(path, image);
-        return path;
-    }
-
     private static NesSystem LoadImage(byte[] image)
     {
         var nes = new NesSystem { DecodeVideo = false };
-        nes.LoadProgram(WriteTempRom(image));
+        nes.InsertMedia("cartridge", MediaImage.FromBytes("test.nes", image));
         return nes;
     }
 
@@ -101,7 +95,8 @@ public class NesCartridgePlumbingTests
         // nestest.nes is NROM-128; this is the regression guard for moving the
         // cartridge bus onto the connector pins.
         var nes = new NesSystem { DecodeVideo = false };
-        nes.LoadProgram(Path.Combine("Emulation", "Systems", "Nes", "Assets", "nestest.nes"));
+        nes.InsertMedia("cartridge", MediaImage.FromFile(
+            Path.Combine("Emulation", "Systems", "Nes", "Assets", "nestest.nes")));
 
         var startFrame = nes.Ppu.Frames;
         while (nes.Ppu.Frames - startFrame < 3)

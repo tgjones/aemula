@@ -26,7 +26,6 @@ public class AppleIISystemCompositeVideoTests
     public async Task SyncTipSamplesAsZero()
     {
         var system = new AppleIISystem();
-        system.LoadProgram("");
 
         var wasPhase0 = system.Phase0;
         byte? sample = null;
@@ -54,7 +53,6 @@ public class AppleIISystemCompositeVideoTests
         // Blanked, but neither in the sync pulse nor the burst window -
         // video=0, sync=1, no burst.
         var system = new AppleIISystem();
-        system.LoadProgram("");
 
         byte? sample = null;
 
@@ -77,7 +75,6 @@ public class AppleIISystemCompositeVideoTests
     {
         // A genuinely lit HIRES dot during active display - video=1, sync=1.
         var system = new AppleIISystem();
-        system.LoadProgram("");
 
         BootToIdle(system);
 
@@ -110,7 +107,6 @@ public class AppleIISystemCompositeVideoTests
     public async Task ColorBurstSwingsThroughExpectedLevels()
     {
         var system = new AppleIISystem();
-        system.LoadProgram("");
 
         var observed = new HashSet<byte>();
 
@@ -161,7 +157,6 @@ public class AppleIISystemCompositeVideoTests
         // (64*14 + 16 = 912). AppleIISystem.VideoTiming.cs's own comment
         // already had this right ("once-per-scanline 'long cycle'").
         var system = new AppleIISystem();
-        system.LoadProgram("");
 
         var lineLengths = new List<int>();
         var ticksSinceLastHSyncRisingEdge = 0;
@@ -245,7 +240,6 @@ public class AppleIISystemCompositeVideoTests
         // absolute phase, verified here directly against the free-running
         // counter rather than assumed from the formula's own construction.
         var system = new AppleIISystem();
-        system.LoadProgram("");
 
         var wasPhase0 = system.Phase0;
         var recordedRawH = -1;

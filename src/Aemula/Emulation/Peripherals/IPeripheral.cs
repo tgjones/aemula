@@ -13,7 +13,7 @@ namespace Aemula.Emulation.Peripherals;
 /// to a <see cref="EmulatedSystem"/> is done by whoever assembles the rig, not
 /// here.
 /// </summary>
-public interface IPeripheral : IDisposable
+public interface IPeripheral : IDisposable, IMediaBayHost
 {
     /// <summary>
     /// Short label for the peripheral's console-control group in the UI status
@@ -39,11 +39,7 @@ public interface IPeripheral : IDisposable
     /// <summary>Return the peripheral to its power-on state.</summary>
     void Reset();
 
-    /// <summary>
-    /// The rig offers a picked file to each peripheral before falling back to
-    /// <see cref="EmulatedSystem.LoadProgram"/>. Return <see langword="true"/> if
-    /// this peripheral took it - a cassette deck accepts a <c>.wav</c> as a tape.
-    /// The default is to decline.
-    /// </summary>
-    bool TryLoadMedia(string filePath) => false;
+    // A peripheral that accepts removable media (a cassette deck) implements
+    // IMediaBayHost.MediaBays / InsertMedia / EjectMedia; the default is no
+    // bays. The Rig folds any it declares into its own aggregate bay list.
 }

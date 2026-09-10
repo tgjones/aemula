@@ -15,12 +15,11 @@ namespace Aemula.Emulation.Systems.Nes;
 public sealed partial class Cartridge
 {
     /// <summary>
-    /// Loads a cartridge from a .nes file.
+    /// Loads a cartridge from an iNES image.
     /// </summary>
-    public static Cartridge FromFile(string filePath)
+    public static Cartridge FromImage(MediaImage image)
     {
-        using var stream = File.OpenRead(filePath);
-        using var reader = new BinaryReader(stream);
+        using var reader = new BinaryReader(image.OpenRead());
         return new Cartridge(reader);
     }
 

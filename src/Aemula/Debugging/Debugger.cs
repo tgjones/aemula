@@ -38,7 +38,11 @@ public abstract class Debugger
 
         Disassembler = CreateDisassembler();
 
-        System.ProgramLoaded += (sender, e) => Disassembler.Reset();
+        // Whenever the media changes (a cartridge swapped in), the code map is
+        // different - re-walk it. Order-independent: subscribing after the
+        // media is already in just means the first walk waits for the next
+        // change, and lazy per-instruction disassembly covers the gap.
+        System.MediaChanged += (sender, e) => Disassembler.Reset();
 
         ActiveStepModeIndex = 1;
 

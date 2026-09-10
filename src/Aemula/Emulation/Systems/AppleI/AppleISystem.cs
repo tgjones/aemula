@@ -130,15 +130,6 @@ public sealed partial class AppleISystem : EmulatedSystem
 
     public override IReadOnlyList<PeripheralRequest> PeripheralRequests => _peripheralRequests;
 
-    public override void LoadProgram(string filePath)
-    {
-        // The Monitor ROM is fixed and there is nothing else on the board a
-        // path could name (a cassette WAV goes to the CassetteDeck peripheral,
-        // routed there by the rig, not here). Just a power-on reset.
-        Reset();
-        RaiseProgramLoaded();
-    }
-
     public override void Reset()
     {
         // The RESET key (and the UI's Reset command) just pulses the 6502 and

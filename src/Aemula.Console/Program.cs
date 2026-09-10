@@ -39,8 +39,14 @@ public static class Program
             return;
         }
 
-        var (systemName, framesRequested, romPath, screenshotPath, screenshotEvery, inputSpec, traceTiming) =
-            (options.SystemName!, options.FramesRequested!.Value, options.RomPath, options.ScreenshotPath,
+        if (options.ListMediaSystem is { } listMediaSystem)
+        {
+            PrintMedia(listMediaSystem, options.SlotChoices);
+            return;
+        }
+
+        var (systemName, framesRequested, screenshotPath, screenshotEvery, inputSpec, traceTiming) =
+            (options.SystemName!, options.FramesRequested!.Value, options.ScreenshotPath,
                 options.ScreenshotEvery, options.InputSpec, options.TraceTiming);
 
         var descriptor = EmulatedSystems.FindById(systemName)
@@ -50,6 +56,25 @@ public static class Program
         // top-level catch.
         using var rig = descriptor.Build(new ExpansionSlotConfiguration(options.SlotChoices));
         var television = rig.Television;
+
+        // Insert every --media pick (an unknown bay id throws straight into the
+        // top-level catch), then refuse to run if a Required bay was left empty -
+        // a friendly message instead of a garbage screenshot.
+        foreach (var (bayId, path) in options.MediaChoices)
+        {
+            rig.InsertMedia(bayId, MediaImage.FromFile(path));
+        }
+
+        var filledBays = options.MediaChoices.Select(m => m.BayId).ToHashSet();
+        foreach (var bay in rig.MediaBays)
+        {
+            if (bay.Required && !filledBays.Contains(bay.Id))
+            {
+                throw new ArgumentException(
+                    $"System '{systemName}' needs media in its '{bay.Id}' bay ({bay.DisplayName}). " +
+                    $"Pass --media {bay.Id}=<path>.");
+            }
+        }
 
         // Parsed after the rig exists so the script's control tokens can be
         // validated against its InputKeyBindings and console controls (the
@@ -103,11 +128,6 @@ public static class Program
         }
 
         var stopwatch = Stopwatch.StartNew();
-
-        // A .wav romPath is routed to the cassette deck (see Rig.LoadProgram);
-        // an --input script presses tape-play and types the load command, the
-        // same way it would drive any other console control.
-        rig.LoadProgram(romPath);
 
         // Frame 0 fires before the run so "0:reset+" and friends take effect
         // from the very first emulated frame.
@@ -185,28 +205,60 @@ public static class Program
         SystemConsole.WriteLine("Select with --slot <slot>=<card> (or --slot <slot>=none), repeatable.");
     }
 
+    // Prints one system's media bays - built with the given --slot config, so
+    // `--list-media applei --slot expansion=none` correctly shows no cassette
+    // bay - then exits. No system is run.
+    private static void PrintMedia(string systemName, IReadOnlyList<(string SlotId, string? CardId)> slotChoices)
+    {
+        var descriptor = EmulatedSystems.FindById(systemName)
+            ?? throw new ArgumentException($"Unknown system '{systemName}'. Supported systems: {string.Join(", ", EmulatedSystems.All.Select(d => d.Id))}.");
+
+        using var rig = descriptor.Build(new ExpansionSlotConfiguration(slotChoices));
+
+        if (rig.MediaBays.Count == 0)
+        {
+            SystemConsole.WriteLine($"{descriptor.Id} ({descriptor.DisplayName}) accepts no removable media.");
+            return;
+        }
+
+        SystemConsole.WriteLine($"{descriptor.Id} ({descriptor.DisplayName}) media bays:");
+        foreach (var bay in rig.MediaBays)
+        {
+            SystemConsole.WriteLine($"  {bay.Id}  ({bay.DisplayName}) - {(bay.Required ? "required" : "optional")}");
+            foreach (var filter in bay.Filters)
+            {
+                SystemConsole.WriteLine($"    {filter.Name}: {filter.Pattern}");
+            }
+        }
+
+        SystemConsole.WriteLine("");
+        SystemConsole.WriteLine("Insert with --media <bay>=<path>, repeatable.");
+    }
+
     private sealed record ConsoleOptions(
         string? SystemName,
         int? FramesRequested,
-        string RomPath,
         string? ScreenshotPath,
         int? ScreenshotEvery,
         string? InputSpec,
         bool TraceTiming,
         IReadOnlyList<(string SlotId, string? CardId)> SlotChoices,
-        string? ListSlotsSystem);
+        IReadOnlyList<(string BayId, string Path)> MediaChoices,
+        string? ListSlotsSystem,
+        string? ListMediaSystem);
 
     private static ConsoleOptions ParseArgs(string[] args)
     {
         string? systemName = null;
         int? framesRequested = null;
-        var romPath = "";
         string? screenshotPath = null;
         int? screenshotEvery = null;
         string? inputSpec = null;
         var traceTiming = false;
         var slotChoices = new List<(string SlotId, string? CardId)>();
+        var mediaChoices = new List<(string BayId, string Path)>();
         string? listSlotsSystem = null;
+        string? listMediaSystem = null;
 
         var i = 0;
         while (i < args.Length)
@@ -227,12 +279,21 @@ public static class Program
                     i += 2;
                     break;
 
-                case "--rom":
+                case "--media":
                     if (i + 1 >= args.Length)
                     {
-                        throw new ArgumentException("--rom requires a value.");
+                        throw new ArgumentException("--media requires a value of the form <bay>=<path>.");
                     }
-                    romPath = args[i + 1];
+                    mediaChoices.Add(ParseMediaChoice(args[i + 1]));
+                    i += 2;
+                    break;
+
+                case "--list-media":
+                    if (i + 1 >= args.Length)
+                    {
+                        throw new ArgumentException("--list-media requires a system name.");
+                    }
+                    listMediaSystem = args[i + 1];
                     i += 2;
                     break;
 
@@ -301,20 +362,22 @@ public static class Program
             }
         }
 
-        // --list-slots is a standalone query: it names its own system and needs
-        // nothing else.
-        if (listSlotsSystem != null)
+        // --list-slots / --list-media are standalone queries: they name their own
+        // system and need nothing else (--slot may still narrow --list-media).
+        if (listSlotsSystem != null || listMediaSystem != null)
         {
-            return new ConsoleOptions(null, null, romPath, null, null, null, false, slotChoices, listSlotsSystem);
+            return new ConsoleOptions(
+                null, null, null, null, null, false, slotChoices, mediaChoices, listSlotsSystem, listMediaSystem);
         }
 
         if (systemName == null)
         {
             throw new ArgumentException(
-                "Usage: aemula-console <system> --frames <n> [--rom <path>] " +
+                "Usage: aemula-console <system> --frames <n> [--media <bay>=<path>] " +
                 "[--screenshot <path>] [--screenshot-every <n>] " +
                 "[--input \"<frame>:<token>+/-  or  <frame>:\\\"typed text\\\", ...\"] " +
-                "[--slot <slot>=<card>] [--trace-timing]  |  aemula-console --list-slots <system>");
+                "[--slot <slot>=<card>] [--trace-timing]  |  aemula-console --list-slots <system>  " +
+                "|  aemula-console --list-media <system>");
         }
 
         if (framesRequested == null)
@@ -328,8 +391,8 @@ public static class Program
         }
 
         return new ConsoleOptions(
-            systemName, framesRequested.Value, romPath, screenshotPath, screenshotEvery, inputSpec, traceTiming,
-            slotChoices, null);
+            systemName, framesRequested.Value, screenshotPath, screenshotEvery, inputSpec, traceTiming,
+            slotChoices, mediaChoices, null, null);
     }
 
     // "<slot>=<card>", where a card of "none" (or empty) means the empty slot.
@@ -344,5 +407,17 @@ public static class Program
         var slotId = spec[..eq];
         var cardId = spec[(eq + 1)..];
         return (slotId, cardId is "" or "none" ? null : cardId);
+    }
+
+    // "<bay>=<path>".
+    private static (string BayId, string Path) ParseMediaChoice(string spec)
+    {
+        var eq = spec.IndexOf('=');
+        if (eq <= 0 || eq == spec.Length - 1)
+        {
+            throw new ArgumentException($"--media value '{spec}' must be of the form <bay>=<path>.");
+        }
+
+        return (spec[..eq], spec[(eq + 1)..]);
     }
 }

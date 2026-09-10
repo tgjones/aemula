@@ -28,7 +28,6 @@ public class SpaceInvadersSystemVideoTimingTests
         // the starting one), then a reload to 192 and 192->255 again (64
         // states) during HBLANK, then a reload back to 0 for the next line.
         var system = new SpaceInvadersSystem();
-        system.LoadProgram("");
 
         var hStates = new List<byte>();
         var hblankStates = new List<bool>();
@@ -77,7 +76,6 @@ public class SpaceInvadersSystemVideoTimingTests
         // state) to measure one genuine steady-state frame period between
         // them, rather than trusting the first, still-settling pass.
         var system = new SpaceInvadersSystem();
-        system.LoadProgram("");
 
         var visits = new List<int>();
         var pixelClock = 0;
@@ -111,7 +109,6 @@ public class SpaceInvadersSystemVideoTimingTests
         // acknowledged the interrupt yet (gated on its own INTE flag) -
         // this test is only about the video-timing chain that requests it.
         var system = new SpaceInvadersSystem();
-        system.LoadProgram("");
 
         // V=0x80 is reached 128 lines into the very first (cold, unsettled)
         // pass - no reload has happened yet at this point, so this doesn't
@@ -137,7 +134,6 @@ public class SpaceInvadersSystemVideoTimingTests
     public async Task Rst2FiresAtVBlankStart()
     {
         var system = new SpaceInvadersSystem();
-        system.LoadProgram("");
 
         // V's own terminal count (0xFF), and so the first reload to 0xDA,
         // is reached 255 lines into the cold start. RST 1 (0xCF) fires

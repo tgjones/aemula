@@ -1,5 +1,4 @@
 ﻿using System.Collections.Generic;
-using System.IO;
 using Aemula.Debugging;
 using Aemula.Emulation.Chips.Mos6532;
 using Aemula.Emulation.Chips.Tia;
@@ -88,12 +87,53 @@ public sealed partial class Atari2600System : EmulatedSystem
         // TODO
     }
 
-    public override void LoadProgram(string filePath)
-    {
-        var cartridgeData = File.ReadAllBytes(filePath);
-        _cartridge = Cartridge.FromData(cartridgeData);
+    // The 4K cartridge connector. The 6507 has no reset vector to fetch until a
+    // cartridge is in, so completing the insert at power-on (before the first
+    // tick) also completes the reset - see InsertMedia.
+    private static readonly MediaBay CartridgeBay = new(
+        "cartridge",
+        "Cartridge slot",
+        Required: true,
+        [
+            new MediaFileFilter("Atari 2600 cartridges", "a26;bin"),
+            new MediaFileFilter("All files", "*"),
+        ],
+        "Select a cartridge");
 
-        RaiseProgramLoaded();
+    public override IReadOnlyList<MediaBay> MediaBays => [CartridgeBay];
+
+    public override void InsertMedia(string bayId, MediaImage image)
+    {
+        if (bayId != CartridgeBay.Id)
+        {
+            base.InsertMedia(bayId, image);
+            return;
+        }
+
+        _cartridge = Cartridge.FromData(image.Data);
+
+        // Seating a cartridge during power-on pulses the CPU reset line, so the
+        // 6507 vectors off the just-inserted ROM. A later swap leaves the
+        // running CPU alone - pulling a cartridge mid-frame misbehaves exactly
+        // as it did on the hardware.
+        if (TotalCycles == 0)
+        {
+            Reset();
+        }
+
+        RaiseMediaChanged();
+    }
+
+    public override void EjectMedia(string bayId)
+    {
+        if (bayId != CartridgeBay.Id)
+        {
+            base.EjectMedia(bayId);
+            return;
+        }
+
+        _cartridge = null;
+        RaiseMediaChanged();
     }
 
     public override void Tick()

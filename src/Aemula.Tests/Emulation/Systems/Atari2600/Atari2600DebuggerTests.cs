@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using Aemula.Emulation.Systems;
 using Aemula.Emulation.Systems.Atari2600;
 
 namespace Aemula.Tests.Emulation.Systems.Atari2600;
@@ -15,8 +16,8 @@ namespace Aemula.Tests.Emulation.Systems.Atari2600;
 // disassembly walk (which follows every reachable jump/branch target from
 // the reset vector - see Disassembler.DisassembleAddresses) into that same
 // address range with a direct JMP, since that's deterministic at
-// LoadProgram time and doesn't depend on any particular real ROM's runtime
-// control flow, while exercising the exact same
+// cartridge-insert time and doesn't depend on any particular real ROM's
+// runtime control flow, while exercising the exact same
 // Atari2600System.ReadByteDebug -> Mos6532Chip.ReadByteDebug path the
 // live-execution crash went through.
 public class Atari2600DebuggerTests
@@ -45,13 +46,13 @@ public class Atari2600DebuggerTests
         {
             var system = new Atari2600System();
 
-            // Must be created before LoadProgram - the debugger subscribes
-            // to System.ProgramLoaded in its base constructor, and that's
-            // what triggers the disassembler's eager walk (Disassembler.Reset)
-            // this test relies on, the same order Aemula.UI.Program.Main uses.
+            // Created before the cartridge goes in: the debugger subscribes to
+            // System.MediaChanged in its base constructor, and inserting the
+            // cartridge fires it, triggering the disassembler's eager walk
+            // (Disassembler.Reset) this test relies on.
             system.CreateDebugger();
 
-            system.LoadProgram(path);
+            system.InsertMedia("cartridge", MediaImage.FromFile(path));
         }
         finally
         {

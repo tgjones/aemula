@@ -253,16 +253,41 @@ public sealed class CassetteDeck : IPeripheral
         _recorder.WriteWav(stream);
     }
 
-    /// <summary>Accepts a <c>.wav</c> path as a tape (see <see cref="IPeripheral.TryLoadMedia"/>).</summary>
-    public bool TryLoadMedia(string filePath)
+    // --- media bay ---
+
+    private static readonly MediaBay TapeBay = new(
+        "cassette",
+        "Cassette recorder",
+        Required: false,
+        [
+            new MediaFileFilter("Cassette audio", "wav"),
+            new MediaFileFilter("All files", "*"),
+        ],
+        "Select a cassette WAV");
+
+    public IReadOnlyList<MediaBay> MediaBays => [TapeBay];
+
+    /// <summary>Threads a WAV image onto the deck as the tape (see <see cref="InsertTape(float[], int)"/>).</summary>
+    public void InsertMedia(string bayId, MediaImage image)
     {
-        if (!filePath.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
+        if (bayId != TapeBay.Id)
         {
-            return false;
+            throw new ArgumentException($"No media bay '{bayId}'.");
         }
 
-        InsertTape(filePath);
-        return true;
+        var wav = WavReader.Read(image.OpenRead());
+        InsertTape(wav.Samples, wav.SampleRate);
+    }
+
+    /// <summary>Removes the tape (see <see cref="EjectTape"/>).</summary>
+    public void EjectMedia(string bayId)
+    {
+        if (bayId != TapeBay.Id)
+        {
+            throw new ArgumentException($"No media bay '{bayId}'.");
+        }
+
+        EjectTape();
     }
 
     public void Reset()

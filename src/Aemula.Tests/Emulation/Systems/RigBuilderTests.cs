@@ -25,7 +25,6 @@ public class RigBuilderTests
     {
         private readonly FakeDevice _device = new();
         public override ulong CyclesPerSecond => 1_000_000;
-        public override void LoadProgram(string filePath) { }
         public override void Tick() { }
 
         public override IReadOnlyList<PeripheralRequest> PeripheralRequests =>

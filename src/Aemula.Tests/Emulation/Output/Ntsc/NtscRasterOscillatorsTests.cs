@@ -39,7 +39,6 @@ public class NtscRasterOscillatorsTests
     public async Task LocksToAppleIICompositeVideoTiming()
     {
         var system = new AppleIISystem();
-        system.LoadProgram("");
 
         // Enough ticks to wrap the composite-video ring buffer at least
         // once, so every slot holds real steady-state signal (matching

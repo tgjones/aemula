@@ -44,8 +44,23 @@ public readonly struct AppleIISystemOptions
     /// </summary>
     public readonly AppleIIRevision Revision;
 
-    public AppleIISystemOptions(AppleIIRevision revision)
+    /// <summary>
+    /// An optional override for the $D000-$FFFF ROM space: a full 12K set, or a
+    /// shorter diagnostic/monitor image (such as the 2K Apple II Dead Test)
+    /// mapped into the top of that space with the bundled Applesoft image left
+    /// showing through the lower sockets - exactly as a partly-populated socket
+    /// row behaves on real hardware. An image longer than 12K is rejected by the
+    /// <see cref="AppleIISystem"/> constructor with
+    /// <see cref="System.IO.InvalidDataException"/>. <see langword="null"/> uses
+    /// the bundled ROM alone.
+    /// </summary>
+    public readonly byte[]? HighRomOverride;
+
+    public AppleIISystemOptions(
+        AppleIIRevision revision = AppleIIRevision.Revision1Plus,
+        byte[]? highRomOverride = null)
     {
         Revision = revision;
+        HighRomOverride = highRomOverride;
     }
 }

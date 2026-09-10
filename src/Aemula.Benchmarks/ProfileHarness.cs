@@ -27,7 +27,10 @@ internal static class ProfileHarness
 
         var spec = SystemSpecs.Get(name);
         var system = EmulatedSystems.FindById(name)!.Build(ExpansionSlotConfiguration.Empty).System;
-        system.LoadProgram(spec.WorkloadPath());
+        foreach (var (bayId, image) in spec.Media())
+        {
+            system.InsertMedia(bayId, image);
+        }
 
         Console.Error.WriteLine($"[profile] {name}: warming {spec.WarmupTicks:N0} ticks...");
         for (var i = 0; i < spec.WarmupTicks; i++)

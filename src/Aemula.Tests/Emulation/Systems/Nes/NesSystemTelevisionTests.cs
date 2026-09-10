@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Aemula;
 using Aemula.Emulation.Output;
+using Aemula.Emulation.Systems;
 using Aemula.Emulation.Systems.Nes;
 
 namespace Aemula.Tests.Emulation.Systems.Nes;
@@ -247,9 +248,9 @@ public class NesSystemTelevisionTests
     {
         var nes = new NesSystem();
 
-        // Unpatched nestest.nes (iNES header handled by Cartridge.FromFile);
+        // Unpatched nestest.nes (iNES header handled by Cartridge.FromImage);
         // the reset vector is left alone - the ROM boots to its on-screen menu.
-        nes.LoadProgram(Path.Combine("Emulation", "Systems", "Nes", "Assets", "nestest.nes"));
+        nes.InsertMedia("cartridge", MediaImage.FromFile(Path.Combine("Emulation", "Systems", "Nes", "Assets", "nestest.nes")));
 
         var result = RunFrames(nes, 3);
 

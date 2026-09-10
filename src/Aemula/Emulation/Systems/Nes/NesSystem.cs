@@ -1,4 +1,5 @@
-﻿using Aemula.Emulation.Chips.Ricoh2A03;
+﻿using System.Collections.Generic;
+using Aemula.Emulation.Chips.Ricoh2A03;
 using Aemula.Emulation.Chips.Ricoh2C02;
 using Aemula.Emulation.Systems.Nes.Debugging;
 using Aemula.Debugging;
@@ -322,19 +323,52 @@ public sealed partial class NesSystem : EmulatedSystem
         return _ciram[offset];
     }
 
-    public override void LoadProgram(string filePath)
-    {
-        var cartridge = Cartridge.FromFile(filePath);
-        InsertCartridge(cartridge);
+    // The cartridge connector. Until a cartridge is seated there is no reset
+    // vector to fetch, so completing the insert at power-on (before the first
+    // tick) also pulses /RES - see InsertMedia.
+    private static readonly MediaBay CartridgeBay = new(
+        "cartridge",
+        "Cartridge slot",
+        Required: true,
+        [
+            new MediaFileFilter("iNES cartridges", "nes"),
+            new MediaFileFilter("All files", "*"),
+        ],
+        "Select a cartridge");
 
-        Reset();
+    public override IReadOnlyList<MediaBay> MediaBays => [CartridgeBay];
+
+    public override void InsertMedia(string bayId, MediaImage image)
+    {
+        if (bayId != CartridgeBay.Id)
+        {
+            base.InsertMedia(bayId, image);
+            return;
+        }
+
+        _cartridge = Cartridge.FromImage(image);
+
+        // Seating a cartridge during power-on pulses /RES so the CPU and PPU
+        // vector off the just-inserted ROM. A later swap leaves the running
+        // machine alone.
+        if (TotalCycles == 0)
+        {
+            Reset();
+        }
+
+        RaiseMediaChanged();
     }
 
-    private void InsertCartridge(Cartridge cartridge)
+    public override void EjectMedia(string bayId)
     {
-        _cartridge = cartridge;
+        if (bayId != CartridgeBay.Id)
+        {
+            base.EjectMedia(bayId);
+            return;
+        }
 
-        RaiseProgramLoaded();
+        _cartridge = null;
+        RaiseMediaChanged();
     }
 
     public override void Reset()

@@ -9,9 +9,12 @@ using Hexa.NET.SDL3;
 
 namespace Aemula;
 
-public abstract class EmulatedSystem : IDisposable
+public abstract class EmulatedSystem : IDisposable, IMediaBayHost
 {
-    public event EventHandler? ProgramLoaded;
+    // Raised whenever the media in one of this system's bays changes - a
+    // cartridge inserted or ejected. The Debugger listens so it can rebuild
+    // its disassembly from the new code map.
+    public event EventHandler? MediaChanged;
 
     // Every system decodes its composite-video output through a Television,
     // fed one sample at a time from the same tick the analog summing stage
@@ -37,10 +40,21 @@ public abstract class EmulatedSystem : IDisposable
     // builds and patches each one; an empty list means nothing is cabled.
     public virtual IReadOnlyList<PeripheralRequest> PeripheralRequests => [];
 
-    protected void RaiseProgramLoaded()
+    protected void RaiseMediaChanged()
     {
-        ProgramLoaded?.Invoke(this, EventArgs.Empty);
+        MediaChanged?.Invoke(this, EventArgs.Empty);
     }
+
+    // Removable-media receptacles this machine exposes. Empty for a system whose
+    // program is fixed boot ROMs built in the constructor (Space Invaders); a
+    // cartridge console overrides this and the two methods below for its slot.
+    public virtual IReadOnlyList<MediaBay> MediaBays => [];
+
+    public virtual void InsertMedia(string bayId, MediaImage image) =>
+        throw new ArgumentException($"No media bay '{bayId}'.");
+
+    public virtual void EjectMedia(string bayId) =>
+        throw new ArgumentException($"No media bay '{bayId}'.");
 
     public abstract ulong CyclesPerSecond { get; }
 
@@ -51,8 +65,6 @@ public abstract class EmulatedSystem : IDisposable
     public ulong TotalCycles { get; private set; }
 
     public virtual void Reset() { }
-
-    public abstract void LoadProgram(string filePath);
 
     public void RunForDuration(TimeSpan duration)
     {

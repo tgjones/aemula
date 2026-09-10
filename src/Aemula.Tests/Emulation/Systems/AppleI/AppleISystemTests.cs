@@ -23,7 +23,6 @@ public class AppleISystemTests
     public async Task RunsResetVectorIntoWozMonNextCharLoop()
     {
         var system = new AppleISystem();
-        system.LoadProgram("");
 
         var maxCycles = MasterTicksPerFrame * 3;
         var cycles = 0;
@@ -52,7 +51,6 @@ public class AppleISystemTests
         // iteration rather than wandering off - there's no key event fed
         // in here, so KBDCR's ready bit never sets.
         var system = new AppleISystem();
-        system.LoadProgram("");
 
         for (var i = 0; i < MasterTicksPerFrame * 3; i++)
         {
@@ -87,7 +85,6 @@ public class AppleISystemTests
         // The fully-populated bare board: bank A at $0000-$0FFF, bank B
         // jumpered right above it at $1000-$1FFF for a contiguous 8K.
         var system = new AppleISystem();
-        system.LoadProgram("");
 
         system.WriteByteDebug(0x0042, 0x11); // Bank A.
         system.WriteByteDebug(0x1042, 0x22); // Bank B at $1000.
@@ -106,7 +103,6 @@ public class AppleISystemTests
         // The split configuration Integer BASIC needs: bank B jumpered up to
         // $E000-$EFFF, which leaves $1000-$1FFF unpopulated.
         var system = new AppleISystem(AppleISystemOptions.EquippedForBasic);
-        system.LoadProgram("");
 
         system.WriteByteDebug(0xE000, 0x4C); // BASIC's cold-start JMP would land here.
         system.WriteByteDebug(0xEFFF, 0xA5);
@@ -133,7 +129,6 @@ public class AppleISystemTests
         // is the only chip-select input they get, so the 256-byte image
         // repeats at every page of that 4K block, not just at $FF00-$FFFF.
         var system = new AppleISystem();
-        system.LoadProgram("");
 
         await Assert.That(system.ReadByteDebug(0xF000)).IsEqualTo(system.ReadByteDebug(0xFF00));
         await Assert.That(system.ReadByteDebug(0xF0FC)).IsEqualTo(system.ReadByteDebug(0xFFFC));

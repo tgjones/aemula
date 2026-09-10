@@ -12,7 +12,6 @@ public class AppleIISystemTests
     public async Task RunsResetVectorFromRom()
     {
         var system = new AppleIISystem();
-        system.LoadProgram("");
 
         // The Autostart ROM's reset vector, read straight from Apple2_Plus.rom.
         const ushort resetVector = 0xFA62;
@@ -45,7 +44,6 @@ public class AppleIISystemTests
         // code and scan a few frames of video, the text-mode pipeline
         // should have written some lit pixels into Display.
         var system = new AppleIISystem();
-        system.LoadProgram("");
 
         for (var i = 0; i < 2_000_000; i++)
         {
@@ -69,7 +67,6 @@ public class AppleIISystemTests
     public async Task KeyPressReachesKeyboardLatch()
     {
         var system = new AppleIISystem();
-        system.LoadProgram("");
 
         for (var i = 0; i < 500_000; i++)
         {
@@ -108,8 +105,9 @@ public class AppleIISystemTests
         // end to end - and the ROM diverges to a red "ZP/SP ERR" screen
         // instead if any of that is wrong, so the banner only appears on a
         // genuine pass.
-        var system = new AppleIISystem();
-        system.LoadProgram(Path.Combine("Emulation", "Systems", "AppleII", "Assets", "apple2dead.bin"));
+        var system = new AppleIISystem(new AppleIISystemOptions(
+            highRomOverride: File.ReadAllBytes(
+                Path.Combine("Emulation", "Systems", "AppleII", "Assets", "apple2dead.bin"))));
 
         // Apple II text page 1 line bases: line 1 = $0400, line 20 = $05D0,
         // line 23 = $0750. Bytes are stored as screen codes; masking bit 7
@@ -156,31 +154,21 @@ public class AppleIISystemTests
         image[0x7FC] = 0x00;                     // Reset vector low  ($FFFC).
         image[0x7FD] = 0xF8;                     // Reset vector high ($FFFD) -> $F800.
 
-        var path = WriteRomToTempFile(image);
-        try
+        var system = new AppleIISystem(new AppleIISystemOptions(highRomOverride: image));
+
+        await Assert.That(system.ReadByteDebug(0xFC00)).IsEqualTo((byte)0x42);
+
+        // The lower sockets still hold the bundled ROM.
+        var bundled = new AppleIISystem();
+        await Assert.That(system.ReadByteDebug(0xD000)).IsEqualTo(bundled.ReadByteDebug(0xD000));
+
+        for (var i = 0; i < 5_000; i++)
         {
-            var system = new AppleIISystem();
-            system.LoadProgram(path);
-
-            await Assert.That(system.ReadByteDebug(0xFC00)).IsEqualTo((byte)0x42);
-
-            // The lower sockets still hold the bundled ROM.
-            var bundled = new AppleIISystem();
-            bundled.LoadProgram("");
-            await Assert.That(system.ReadByteDebug(0xD000)).IsEqualTo(bundled.ReadByteDebug(0xD000));
-
-            for (var i = 0; i < 5_000; i++)
-            {
-                system.Tick();
-            }
-
-            // The CPU took the overlaid reset vector and is executing the slide.
-            await Assert.That(system.Cpu.Address).IsGreaterThanOrEqualTo((ushort)0xF800);
+            system.Tick();
         }
-        finally
-        {
-            File.Delete(path);
-        }
+
+        // The CPU took the overlaid reset vector and is executing the slide.
+        await Assert.That(system.Cpu.Address).IsGreaterThanOrEqualTo((ushort)0xF800);
     }
 
     [Test]
@@ -193,40 +181,16 @@ public class AppleIISystemTests
         image[0x2FFC] = 0x00;                    // Reset vector low  ($FFFC).
         image[0x2FFD] = 0xD0;                    // Reset vector high ($FFFD) -> $D000.
 
-        var path = WriteRomToTempFile(image);
-        try
-        {
-            var system = new AppleIISystem();
-            system.LoadProgram(path);
+        var system = new AppleIISystem(new AppleIISystemOptions(highRomOverride: image));
 
-            await Assert.That(system.ReadByteDebug(0xD000)).IsEqualTo((byte)0x37);
-            await Assert.That(system.ReadByteDebug(0xE800)).IsEqualTo((byte)0x5A);
-        }
-        finally
-        {
-            File.Delete(path);
-        }
+        await Assert.That(system.ReadByteDebug(0xD000)).IsEqualTo((byte)0x37);
+        await Assert.That(system.ReadByteDebug(0xE800)).IsEqualTo((byte)0x5A);
     }
 
     [Test]
     public async Task RejectsRomImageLargerThanRomSpace()
     {
-        var path = WriteRomToTempFile(new byte[0x3001]);
-        try
-        {
-            var system = new AppleIISystem();
-            await Assert.That(() => system.LoadProgram(path)).ThrowsExactly<InvalidDataException>();
-        }
-        finally
-        {
-            File.Delete(path);
-        }
-    }
-
-    private static string WriteRomToTempFile(byte[] image)
-    {
-        var path = Path.Combine(Path.GetTempPath(), $"aemula-appleii-rom-{Guid.NewGuid():N}.rom");
-        File.WriteAllBytes(path, image);
-        return path;
+        await Assert.That(() => new AppleIISystem(new AppleIISystemOptions(highRomOverride: new byte[0x3001])))
+            .ThrowsExactly<InvalidDataException>();
     }
 }

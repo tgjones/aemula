@@ -80,7 +80,6 @@ public class AppleICassetteTests
     public async Task WriteThenReadRoundTripsAMemoryBlockThroughTheTape()
     {
         var (system, deck) = NewAppleIWithCassette();
-        system.LoadProgram("");
         await Assert.That(RunUntilFetch(system, NextCharLoop, frameBudget: 8)).IsTrue();
 
         // A distinctive pattern the READ can't reproduce by accident; the
@@ -142,7 +141,6 @@ public class AppleICassetteTests
 
         // BASIC runs from the $E000 RAM expansion, which the assembled machine has.
         var (system, deck) = NewAppleIWithCassette();
-        system.LoadProgram("");
         await Assert.That(RunUntilFetch(system, NextCharLoop, frameBudget: 8)).IsTrue();
 
         // The operator's workflow: mount the tape (it goes in stopped), press

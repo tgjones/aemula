@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using Aemula.Emulation.Systems;
 
 namespace Aemula.Benchmarks;
 
@@ -15,7 +16,7 @@ namespace Aemula.Benchmarks;
 // duplicate either.
 internal sealed record SystemSpec(
     string Name,
-    Func<string> WorkloadPath,
+    Func<IReadOnlyList<(string BayId, MediaImage Image)>> Media,
     int WarmupTicks,
     int TicksPerInvocation,
     Func<EmulatedSystem, long> Probe);
@@ -33,14 +34,14 @@ internal static class SystemSpecs
     [
         new SystemSpec(
             "appleii",
-            static () => "", // LoadProgram ignores the path; boots the bundled Apple2_Plus.rom
+            static () => [], // Boots the bundled Apple2_Plus.rom; no removable media
             WarmupTicks: 240_000,          // ≈1 frame: past reset, into the steady text screen
             TicksPerInvocation: 480_000,   // ≈2 frames
             TelevisionRow),
 
         new SystemSpec(
             "applei",
-            static () => "", // LoadProgram ignores the path; the Monitor ROM is fixed
+            static () => [], // The Monitor ROM is fixed; no removable media
             WarmupTicks: 240_000,          // ≈1 frame: past reset, into WozMon's idle prompt loop
             TicksPerInvocation: 480_000,   // ≈2 frames
             TelevisionRow),
@@ -63,7 +64,7 @@ internal static class SystemSpecs
 
         new SystemSpec(
             "spaceinvaders",
-            static () => "", // LoadProgram ignores the path; loads the bundled invaders.[efgh]
+            static () => [], // Loads the bundled invaders.[efgh]; no removable media
             WarmupTicks: 340_000,          // ≈1 frame: into attract mode
             TicksPerInvocation: 680_000,   // ≈2 frames (covers both the mid-screen and VBLANK IRQs)
             TelevisionRow),
@@ -74,37 +75,31 @@ internal static class SystemSpecs
         ?? throw new ArgumentException($"No benchmark spec for system '{name}'. Known: {string.Join(", ", All.Select(s => s.Name))}.");
 }
 
-// ROM images that aren't shipped by the Aemula project itself are materialised
-// to stable temp-file paths here, because every system's LoadProgram takes a
-// file path. The names are fixed (not random) so a run can be inspected or
-// re-fed to Aemula.Console by hand.
+// Cartridge images for the systems whose workload isn't shipped by the Aemula
+// project itself. Built straight into memory as MediaImages and inserted into
+// the "cartridge" bay before warmup.
 internal static class Workloads
 {
-    public static string Atari2600Kernel()
-    {
-        var path = Path.Combine(Path.GetTempPath(), "aemula-bench-atari2600.bin");
-        File.WriteAllBytes(path, Atari2600TestKernel.Image);
-        return path;
-    }
+    public static IReadOnlyList<(string BayId, MediaImage Image)> Atari2600Kernel() =>
+        [("cartridge", MediaImage.FromBytes("aemula-bench-atari2600.bin", Atari2600TestKernel.Image))];
 
     // NES workload ROM. Set AEMULA_BENCH_NES_ROM to point the benchmark at any
     // local .nes file (e.g. a real game, to reproduce a below-real-time report);
     // otherwise the bundled rendering ROM embedded from the Aemula.Tests asset
-    // tree is materialised to a stable temp path.
-    public static string NesRom()
+    // tree is used.
+    public static IReadOnlyList<(string BayId, MediaImage Image)> NesRom()
     {
         var overridePath = Environment.GetEnvironmentVariable("AEMULA_BENCH_NES_ROM");
         if (!string.IsNullOrWhiteSpace(overridePath))
         {
-            return overridePath;
+            return [("cartridge", MediaImage.FromFile(overridePath))];
         }
 
-        var path = Path.Combine(Path.GetTempPath(), "aemula-bench-nes.nes");
         using var stream = Assembly.GetExecutingAssembly()
             .GetManifestResourceStream("nes-workload.nes")
             ?? throw new InvalidOperationException("Embedded nes-workload.nes is missing.");
-        using var file = File.Create(path);
-        stream.CopyTo(file);
-        return path;
+        using var buffer = new MemoryStream();
+        stream.CopyTo(buffer);
+        return [("cartridge", MediaImage.FromBytes("nes-workload.nes", buffer.ToArray()))];
     }
 }

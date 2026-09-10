@@ -85,7 +85,6 @@ public class AppleISystemCharacterMemoryTests
     public async Task TypedCharacterLandsInCharacterMemoryAtCursor()
     {
         var system = new AppleISystem();
-        system.LoadProgram("");
 
         await Assert.That(RunToNextCharLoop(system)).IsTrue();
 
@@ -122,7 +121,6 @@ public class AppleISystemCharacterMemoryTests
     public async Task CursorAdvancesByOneAfterACommittedWrite()
     {
         var system = new AppleISystem();
-        system.LoadProgram("");
 
         await Assert.That(RunToNextCharLoop(system)).IsTrue();
 
@@ -186,7 +184,6 @@ public class AppleISystemCharacterMemoryTests
         const int VisibleColumns = 40;
 
         var system = new AppleISystem();
-        system.LoadProgram("");
 
         for (var i = 0; i < MasterTicksPerFrame * 3; i++)
         {
@@ -217,7 +214,6 @@ public class AppleISystemCharacterMemoryTests
     public async Task CursorBlinkOscillatorFreeRuns()
     {
         var system = new AppleISystem();
-        system.LoadProgram("");
 
         var sawOn = false;
         var sawOff = false;
@@ -281,7 +277,6 @@ public class AppleISystemCharacterMemoryTests
     public async Task TypingPastTheBottomRowScrollsTheDisplayUpOneRow()
     {
         var system = new AppleISystem();
-        system.LoadProgram("");
 
         await Assert.That(RunToNextCharLoop(system)).IsTrue();
 
@@ -330,7 +325,6 @@ public class AppleISystemCharacterMemoryTests
     public async Task ReturnOnTheBottomRowScrollsAtOnceAndTypingStillWorksAfterIdling()
     {
         var system = new AppleISystem();
-        system.LoadProgram("");
 
         await Assert.That(RunToNextCharLoop(system)).IsTrue();
 

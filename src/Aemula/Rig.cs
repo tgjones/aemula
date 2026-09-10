@@ -26,8 +26,12 @@ namespace Aemula;
 /// per-machine subclass.
 /// </para>
 /// </remarks>
-public sealed class Rig : IDisposable
+public sealed class Rig : IDisposable, IMediaBayHost
 {
+    // bay id -> the system or peripheral that owns it, so InsertMedia /
+    // EjectMedia can forward a call to the right place by id alone.
+    private readonly Dictionary<string, IMediaBayHost> _bayOwners = [];
+
     public Rig(EmulatedSystem system, IReadOnlyList<IPeripheral>? peripherals = null)
     {
         System = system;
@@ -73,6 +77,36 @@ public sealed class Rig : IDisposable
             1 => sources[0],
             _ => new MixedAudioSource(sources),
         };
+
+        // The machine's own bays first, then each peripheral's, in one flat
+        // list. A bay id contributed by more than one host is a wiring bug in
+        // the assembler, not something a caller could recover from.
+        var bays = new List<MediaBay>();
+        RegisterBays(System, bays);
+        foreach (var peripheral in Peripherals)
+        {
+            RegisterBays(peripheral, bays);
+        }
+
+        MediaBays = bays;
+
+        // A media change anywhere on the system surfaces off the rig too, so the
+        // debugger (wired to the rig) resets its disassembler on a cartridge swap.
+        System.MediaChanged += (_, e) => MediaChanged?.Invoke(this, e);
+    }
+
+    private void RegisterBays(IMediaBayHost host, List<MediaBay> into)
+    {
+        foreach (var bay in host.MediaBays)
+        {
+            if (!_bayOwners.TryAdd(bay.Id, host))
+            {
+                throw new InvalidOperationException(
+                    $"Media bay id '{bay.Id}' is contributed by more than one of the system and its peripherals.");
+            }
+
+            into.Add(bay);
+        }
     }
 
     public EmulatedSystem System { get; }
@@ -93,6 +127,33 @@ public sealed class Rig : IDisposable
 
     public IAudioSource Audio { get; }
 
+    // Every media receptacle on this setup - the machine's own plus every
+    // cabled peripheral's - as one list, without the caller caring which is which.
+    public IReadOnlyList<MediaBay> MediaBays { get; }
+
+    // Re-surfaced from the system (see the constructor).
+    public event EventHandler? MediaChanged;
+
+    public void InsertMedia(string bayId, MediaImage image)
+    {
+        if (!_bayOwners.TryGetValue(bayId, out var owner))
+        {
+            throw new ArgumentException($"No media bay '{bayId}'.");
+        }
+
+        owner.InsertMedia(bayId, image);
+    }
+
+    public void EjectMedia(string bayId)
+    {
+        if (!_bayOwners.TryGetValue(bayId, out var owner))
+        {
+            throw new ArgumentException($"No media bay '{bayId}'.");
+        }
+
+        owner.EjectMedia(bayId);
+    }
+
     public T? GetPeripheral<T>() where T : class, IPeripheral
     {
         foreach (var peripheral in Peripherals)
@@ -104,24 +165,6 @@ public sealed class Rig : IDisposable
         }
 
         return null;
-    }
-
-    // A picked file is offered to each peripheral first (a cassette deck takes a
-    // .wav as a tape), then falls back to the system's own loader.
-    public void LoadProgram(string filePath)
-    {
-        if (!string.IsNullOrEmpty(filePath))
-        {
-            foreach (var peripheral in Peripherals)
-            {
-                if (peripheral.TryLoadMedia(filePath))
-                {
-                    return;
-                }
-            }
-        }
-
-        System.LoadProgram(filePath);
     }
 
     // A machine reset pulses the system only. Peripherals keep their state - a

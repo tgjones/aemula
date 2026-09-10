@@ -12,7 +12,6 @@ public class AppleIISystemGameIoTests
     private static AppleIISystem BootToIdle()
     {
         var system = new AppleIISystem();
-        system.LoadProgram("");
 
         // Enough to get the Autostart ROM into its keyboard-wait loop, which
         // touches none of the game-I/O soft switches - matching the budget

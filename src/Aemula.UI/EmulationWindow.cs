@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using Aemula;
 using Aemula.Emulation.Systems;
@@ -24,10 +25,13 @@ public sealed class EmulationWindow : IDisposable
     // (a system swap disposes GPU resources the debugger windows hold, so it
     // has to happen between frames), so the menu only ever *requests* things.
     public sealed record Callbacks(
-        Func<SystemCatalogEntry> CurrentEntry,
-        Action<SystemCatalogEntry> ChooseSystem,
-        Action OpenRom,
-        Action ResetSystem,
+        Func<SystemDescriptor> CurrentSystem,
+        Action<SystemDescriptor> ChooseSystem,
+        // Soft Reset pulses the RES line (RAM and registers survive); Hard Reset
+        // rebuilds the machine from cold with the same slots and the same
+        // inserted media. Both run between frames, so these only request.
+        Action SoftReset,
+        Action HardReset,
         Action Quit,
         Func<bool> IsDebuggerVisible,
         Action ToggleDebugger,
@@ -35,7 +39,13 @@ public sealed class EmulationWindow : IDisposable
         // slot is empty), and a request to fit a different one (null = empty).
         // Changing a card rebuilds the machine, so this only requests.
         Func<string, string?> SelectedSlotCard,
-        Action<string, string?> ChooseSlotCard);
+        Action<string, string?> ChooseSlotCard,
+        // The running rig's media bays, whether each currently holds an image,
+        // and requests to fill one (opens a file dialog) or clear one.
+        Func<IReadOnlyList<MediaBay>> MediaBays,
+        Func<string, bool> BayHasMedia,
+        Action<MediaBay> InsertMedia,
+        Action<string> EjectMedia);
 
     private readonly SDLGPUDevicePtr _gpuDevice;
     private readonly ImGuiWindowContext _context;
@@ -215,27 +225,27 @@ public sealed class EmulationWindow : IDisposable
             return;
         }
 
-        var currentEntry = _callbacks.CurrentEntry();
+        var currentSystem = _callbacks.CurrentSystem();
 
         if (ImGui.BeginMenu("File"u8))
         {
             if (ImGui.BeginMenu("System"u8))
             {
-                foreach (var entry in SystemCatalog.Entries)
+                foreach (var descriptor in EmulatedSystems.All)
                 {
-                    var selected = entry.Id == currentEntry.Id;
-                    if (ImGui.MenuItem(entry.DisplayName, (byte*)null, selected, true) && !selected)
+                    var selected = descriptor.Id == currentSystem.Id;
+                    if (ImGui.MenuItem(descriptor.DisplayName, (byte*)null, selected, true) && !selected)
                     {
-                        _callbacks.ChooseSystem(entry);
+                        _callbacks.ChooseSystem(descriptor);
                     }
                 }
 
                 ImGui.EndMenu();
             }
 
-            if (currentEntry.Slots.Count > 0 && ImGui.BeginMenu("Slots"u8))
+            if (currentSystem.Slots.Count > 0 && ImGui.BeginMenu("Slots"u8))
             {
-                foreach (var slot in currentEntry.Slots)
+                foreach (var slot in currentSystem.Slots)
                 {
                     if (!ImGui.BeginMenu(slot.DisplayName))
                     {
@@ -264,14 +274,40 @@ public sealed class EmulationWindow : IDisposable
                 ImGui.EndMenu();
             }
 
-            if (ImGui.MenuItem("Open ROM…"u8, "Ctrl+O"u8, false, currentEntry.Rom != RomRequirement.None))
+            var bays = _callbacks.MediaBays();
+            if (bays.Count > 0 && ImGui.BeginMenu("Media"u8))
             {
-                _callbacks.OpenRom();
+                foreach (var bay in bays)
+                {
+                    if (!ImGui.BeginMenu(bay.DisplayName))
+                    {
+                        continue;
+                    }
+
+                    if (ImGui.MenuItem("Insert…"u8))
+                    {
+                        _callbacks.InsertMedia(bay);
+                    }
+
+                    if (ImGui.MenuItem("Eject"u8, (byte*)null, false, _callbacks.BayHasMedia(bay.Id)))
+                    {
+                        _callbacks.EjectMedia(bay.Id);
+                    }
+
+                    ImGui.EndMenu();
+                }
+
+                ImGui.EndMenu();
             }
 
-            if (ImGui.MenuItem("Reset"u8, "Ctrl+R"u8))
+            if (ImGui.MenuItem("Soft Reset"u8, "Ctrl+R"u8))
             {
-                _callbacks.ResetSystem();
+                _callbacks.SoftReset();
+            }
+
+            if (ImGui.MenuItem("Hard Reset"u8))
+            {
+                _callbacks.HardReset();
             }
 
             ImGui.Separator();

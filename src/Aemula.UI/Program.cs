@@ -14,21 +14,30 @@ namespace Aemula.UI;
 
 public static unsafe class Program
 {
-    // A system swap disposes GPU resources the debugger windows hold, so it
-    // has to run between frames on the main loop - never from an SDL event or
-    // a file-dialog callback thread. The producer publishes one of these; the
-    // loop consumes it with Interlocked.Exchange.
+    // A system swap - or a card change, or a Hard Reset - disposes GPU
+    // resources the debugger windows hold, so it has to run between frames on
+    // the main loop, never from an SDL event or a file-dialog callback thread.
+    // The producer publishes one of these with the descriptor to (re)build;
+    // the loop consumes it with Interlocked.Exchange.
     private sealed class PendingLoad
     {
-        public required SystemCatalogEntry Entry;
-        public string? FilePath;
+        public required SystemDescriptor Descriptor;
+    }
+
+    // A media file the user picked in the open dialog, published from the
+    // (possibly off-thread) dialog callback and drained between frames.
+    private sealed class PendingMedia
+    {
+        public required string BayId;
+        public required string Path;
     }
 
     private static PendingLoad? _pendingLoad;
+    private static PendingMedia? _pendingMediaInsert;
 
     // Rooted for the process lifetime so the GC can't collect the delegate
     // while a native file dialog still holds a pointer to it.
-    private static readonly SDLDialogFileCallback RomDialogCallbackDelegate = RomDialogCallback;
+    private static readonly SDLDialogFileCallback MediaDialogCallbackDelegate = MediaDialogCallback;
 
     public static void Main(string[] args)
     {
@@ -87,7 +96,7 @@ public static unsafe class Program
         // --- system lifecycle ---
         Rig? rig = null;
         Debugger? debugger = null;
-        var currentEntry = SystemCatalog.Default;
+        var currentDescriptor = EmulatedSystems.All[0];
         var done = false;
 
         // The user's expansion-card picks for the current system: slot id ->
@@ -95,6 +104,12 @@ public static unsafe class Program
         // absent key meaning "take the slot's default". Kept across rebuilds of
         // the same machine; cleared when the system changes.
         var slotChoices = new Dictionary<string, string?>();
+
+        // The media the user has loaded into the current machine: bay id ->
+        // image. Re-applied to the freshly built Rig after every rebuild
+        // (system swap, card change, Hard Reset). Cleared when the system
+        // changes.
+        var mediaImages = new Dictionary<string, MediaImage>();
 
         ExpansionSlotConfiguration BuildSlotConfiguration() =>
             new(slotChoices.Select(choice => (choice.Key, choice.Value)));
@@ -105,8 +120,10 @@ public static unsafe class Program
         // a different context current when EndMenu runs). Callbacks only set
         // these; the loop drains them between frames.
         var pendingDebuggerToggle = false;
-        var pendingReset = false;
-        SystemCatalogEntry? pendingOpenRomEntry = null;
+        var pendingSoftReset = false;
+        var pendingHardReset = false;
+        MediaBay? pendingMediaDialog = null;
+        string? pendingMediaEject = null;
 
         // Perf cycle accounting. On the free-run path there's no Debugger to
         // hang a per-tick event off, so cycles come from
@@ -120,18 +137,36 @@ public static unsafe class Program
 
         EmulationWindow emulationWindow = null!;
 
-        void LoadSystem(SystemCatalogEntry entry, string? filePath)
+        void LoadSystem(SystemDescriptor descriptor)
         {
-            // A different machine starts from its own slot defaults.
-            if (entry.Id != currentEntry.Id)
+            // A different machine starts from its own slot defaults and with no
+            // media loaded.
+            if (descriptor.Id != currentDescriptor.Id)
             {
                 slotChoices.Clear();
+                mediaImages.Clear();
             }
 
             rig?.Dispose();
 
-            var newRig = entry.Build(BuildSlotConfiguration());
-            newRig.LoadProgram(filePath ?? "");
+            var newRig = descriptor.Build(BuildSlotConfiguration());
+
+            // A rebuild makes a fresh Rig with empty bays - re-seat whatever
+            // the user had loaded. A bay that no longer exists (its card was
+            // removed) just drops its image.
+            foreach (var (bayId, image) in mediaImages.ToArray())
+            {
+                try
+                {
+                    newRig.InsertMedia(bayId, image);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Warning: could not re-insert media in '{bayId}': {ex.Message}");
+                    mediaImages.Remove(bayId);
+                }
+            }
+
             var newDebugger = newRig.System.CreateDebugger();
             if (newDebugger != null)
             {
@@ -140,7 +175,7 @@ public static unsafe class Program
 
             rig = newRig;
             debugger = newDebugger;
-            currentEntry = entry;
+            currentDescriptor = descriptor;
 
             lastTotalCycles = 0;
             debuggerTickedCycles = 0;
@@ -148,20 +183,20 @@ public static unsafe class Program
 
             emulationWindow.SetRig(newRig);
             debuggerHost.SetSystem(newRig.System, newDebugger);
+
+            // If the new machine needs a cartridge and hasn't got one, open the
+            // picker straight away rather than sit on a black screen.
+            var requiredEmpty = newRig.MediaBays.FirstOrDefault(
+                bay => bay.Required && !mediaImages.ContainsKey(bay.Id));
+            if (requiredEmpty != null)
+            {
+                pendingMediaDialog = requiredEmpty;
+            }
         }
 
-        void ChooseSystem(SystemCatalogEntry entry)
+        void ChooseSystem(SystemDescriptor descriptor)
         {
-            if (entry.Rom == RomRequirement.Required)
-            {
-                // Pick the file first; only swap on a successful pick. Cancel
-                // leaves the current system running.
-                pendingOpenRomEntry = entry;
-            }
-            else
-            {
-                _pendingLoad = new PendingLoad { Entry = entry, FilePath = null };
-            }
+            _pendingLoad = new PendingLoad { Descriptor = descriptor };
         }
 
         // The card fitted in slotId right now: an explicit pick if the user made
@@ -169,7 +204,7 @@ public static unsafe class Program
         string? SelectedSlotCard(string slotId) =>
             slotChoices.TryGetValue(slotId, out var chosen)
                 ? chosen
-                : currentEntry.Slots.FirstOrDefault(slot => slot.Id == slotId)?.DefaultCardId;
+                : currentDescriptor.Slots.FirstOrDefault(slot => slot.Id == slotId)?.DefaultCardId;
 
         void ChooseSlotCard(string slotId, string? cardId)
         {
@@ -177,35 +212,47 @@ public static unsafe class Program
 
             // Changing a card is a machine rebuild, same as a system swap - and
             // like one, it has to run between frames, so just request it.
-            _pendingLoad = new PendingLoad { Entry = currentEntry, FilePath = null };
+            _pendingLoad = new PendingLoad { Descriptor = currentDescriptor };
         }
 
         var callbacks = new EmulationWindow.Callbacks(
-            CurrentEntry: () => currentEntry,
+            CurrentSystem: () => currentDescriptor,
             ChooseSystem: ChooseSystem,
-            OpenRom: () => pendingOpenRomEntry = currentEntry,
-            ResetSystem: () => pendingReset = true,
+            SoftReset: () => pendingSoftReset = true,
+            HardReset: () => pendingHardReset = true,
             Quit: () => done = true,
             IsDebuggerVisible: () => debuggerHost.Visible,
             ToggleDebugger: () => pendingDebuggerToggle = true,
             SelectedSlotCard: SelectedSlotCard,
-            ChooseSlotCard: ChooseSlotCard);
+            ChooseSlotCard: ChooseSlotCard,
+            MediaBays: () => rig?.MediaBays ?? [],
+            BayHasMedia: bayId => mediaImages.ContainsKey(bayId),
+            InsertMedia: bay => pendingMediaDialog = bay,
+            EjectMedia: bayId => pendingMediaEject = bayId);
 
         emulationWindow = new EmulationWindow(gpuDevice, emulationContext, callbacks);
 
-        // args are now an optional convenience: pre-select a system / file.
+        // args are an optional convenience: pre-select a system, and (arg 2) a
+        // media file for its first bay.
         {
-            var startEntry = SystemCatalog.FindById(args.Length > 0 ? args[0] : null) ?? SystemCatalog.Default;
-            var startFile = args.Length > 1 ? args[1] : null;
-            if (startEntry.Rom == RomRequirement.Required && string.IsNullOrEmpty(startFile))
-            {
-                // Nothing to boot a Required-ROM system from - fall back to
-                // the default (Apple II boots to BASIC unaided).
-                startEntry = SystemCatalog.Default;
-                startFile = null;
-            }
+            var startDescriptor = EmulatedSystems.FindById(args.Length > 0 ? args[0] : null) ?? EmulatedSystems.All[0];
+            LoadSystem(startDescriptor);
 
-            LoadSystem(startEntry, startFile);
+            if (args.Length > 1 && rig!.MediaBays.Count > 0)
+            {
+                try
+                {
+                    var image = MediaImage.FromFile(args[1]);
+                    var bayId = rig.MediaBays[0].Id;
+                    rig.InsertMedia(bayId, image);
+                    mediaImages[bayId] = image;
+                    pendingMediaDialog = null;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Could not load '{args[1]}': {ex.Message}");
+                }
+            }
         }
 
         var stopwatch = Stopwatch.StartNew();
@@ -313,38 +360,65 @@ public static unsafe class Program
                 debuggerHost.Toggle();
             }
 
-            if (pendingReset)
+            if (pendingSoftReset)
             {
-                pendingReset = false;
+                pendingSoftReset = false;
                 rig?.Reset();
             }
 
-            if (pendingOpenRomEntry is { } romEntry)
+            if (pendingHardReset)
             {
-                pendingOpenRomEntry = null;
-                ShowOpenRomDialog(emulationContext.Window, romEntry);
+                pendingHardReset = false;
+                // Rebuild the current machine from cold with the same slots and
+                // the same inserted media - the only clean way out of a wedged
+                // machine, and the way to change a cartridge cleanly.
+                _pendingLoad = new PendingLoad { Descriptor = currentDescriptor };
             }
 
-            // Fold in any system swap requested from a menu or dialog callback.
+            if (pendingMediaDialog is { } dialogBay)
+            {
+                pendingMediaDialog = null;
+                ShowMediaDialog(emulationContext.Window, dialogBay);
+            }
+
+            if (pendingMediaEject is { } ejectBayId)
+            {
+                pendingMediaEject = null;
+                try
+                {
+                    rig?.EjectMedia(ejectBayId);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Could not eject '{ejectBayId}': {ex.Message}");
+                }
+                mediaImages.Remove(ejectBayId);
+            }
+
+            // A media file picked from the open dialog: load it in place,
+            // leaving the running CPU (and whatever's already typed at the
+            // prompt) untouched. A truncated / invalid file shows a message
+            // rather than crashing.
+            var mediaInsert = Interlocked.Exchange(ref _pendingMediaInsert, null);
+            if (mediaInsert != null && rig != null)
+            {
+                try
+                {
+                    var image = MediaImage.FromFile(mediaInsert.Path);
+                    rig.InsertMedia(mediaInsert.BayId, image);
+                    mediaImages[mediaInsert.BayId] = image;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Could not load media for '{mediaInsert.BayId}': {ex.Message}");
+                }
+            }
+
+            // Fold in any system swap / rebuild requested from a menu or hotkey.
             var pending = Interlocked.Exchange(ref _pendingLoad, null);
             if (pending != null)
             {
-                // Picking a file a peripheral of the running rig can take (a
-                // .wav for the cassette deck) is loading media, not swapping
-                // machines - drop it in place, leaving the CPU (and whatever's
-                // already typed at the prompt) untouched. Everything else
-                // rebuilds.
-                if (pending.FilePath is { } picked
-                    && pending.Entry.Id == currentEntry.Id
-                    && rig is { } currentRig
-                    && currentRig.Peripherals.Any(p => p.TryLoadMedia(picked)))
-                {
-                    // handled by the peripheral
-                }
-                else
-                {
-                    LoadSystem(pending.Entry, pending.FilePath);
-                }
+                LoadSystem(pending.Descriptor);
             }
 
             if (emulationContext.IsMinimized && !debuggerHost.Visible)
@@ -454,23 +528,18 @@ public static unsafe class Program
         }
     }
 
-    private sealed class RomDialogState
+    private sealed class MediaDialogState
     {
-        public required SystemCatalogEntry Entry;
+        public required string BayId;
         public unsafe SDLDialogFileFilter* NativeFilters;
         public int FilterCount;
         public GCHandle Self;
     }
 
-    private static unsafe void ShowOpenRomDialog(SDLWindowPtr parent, SystemCatalogEntry entry)
+    private static unsafe void ShowMediaDialog(SDLWindowPtr parent, MediaBay bay)
     {
-        if (entry.Rom == RomRequirement.None)
-        {
-            return;
-        }
-
-        var filters = entry.RomFilters;
-        var count = filters.Length;
+        var filters = bay.Filters;
+        var count = filters.Count;
 
         var native = count > 0
             ? (SDLDialogFileFilter*)NativeMemory.Alloc((nuint)count, (nuint)sizeof(SDLDialogFileFilter))
@@ -481,20 +550,20 @@ public static unsafe class Program
             native[i].Pattern = (byte*)Marshal.StringToCoTaskMemUTF8(filters[i].Pattern);
         }
 
-        var state = new RomDialogState
+        var state = new MediaDialogState
         {
-            Entry = entry,
+            BayId = bay.Id,
             NativeFilters = native,
             FilterCount = count,
         };
         state.Self = GCHandle.Alloc(state);
 
-        // Async: returns immediately, RomDialogCallback fires later (possibly
-        // on another thread) and only publishes a PendingLoad. This SDL
-        // binding's ShowOpenFileDialog takes no title argument - entry
-        // .RomDialogTitle waits for a move to the properties-based API.
+        // Async: returns immediately, MediaDialogCallback fires later (possibly
+        // on another thread) and only publishes a PendingMedia. This SDL
+        // binding's ShowOpenFileDialog takes no title argument - bay
+        // .DialogTitle waits for a move to the properties-based API.
         SDL.ShowOpenFileDialog(
-            RomDialogCallbackDelegate,
+            MediaDialogCallbackDelegate,
             (void*)GCHandle.ToIntPtr(state.Self),
             parent,
             native,
@@ -503,10 +572,10 @@ public static unsafe class Program
             false);
     }
 
-    private static unsafe void RomDialogCallback(void* userdata, byte** filelist, int filter)
+    private static unsafe void MediaDialogCallback(void* userdata, byte** filelist, int filter)
     {
         var handle = GCHandle.FromIntPtr((nint)userdata);
-        var state = (RomDialogState)handle.Target!;
+        var state = (MediaDialogState)handle.Target!;
 
         try
         {
@@ -517,8 +586,8 @@ public static unsafe class Program
                 if (!string.IsNullOrEmpty(path))
                 {
                     Interlocked.Exchange(
-                        ref _pendingLoad,
-                        new PendingLoad { Entry = state.Entry, FilePath = path });
+                        ref _pendingMediaInsert,
+                        new PendingMedia { BayId = state.BayId, Path = path });
                 }
             }
         }

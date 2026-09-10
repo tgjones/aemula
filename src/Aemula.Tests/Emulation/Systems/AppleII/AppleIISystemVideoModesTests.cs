@@ -58,7 +58,6 @@ public class AppleIISystemVideoModesTests
         // could transiently glitch through while G was still asserted from
         // a previous $C050-$C05F access.
         var system = new AppleIISystem();
-        system.LoadProgram("");
 
         BootToIdle(system);
 
@@ -89,7 +88,6 @@ public class AppleIISystemVideoModesTests
         // cards are implemented, so it should just be open bus, distinctly
         // from (not accidentally aliased with) the I/O Section handling.
         var system = new AppleIISystem();
-        system.LoadProgram("");
 
         await Assert.That(system.ReadByteDebug(0xC800)).IsEqualTo((byte)0xFF);
         await Assert.That(system.ReadByteDebug(0xCFFF)).IsEqualTo((byte)0xFF);
@@ -99,7 +97,6 @@ public class AppleIISystemVideoModesTests
     public async Task LoresColorBlockRendersFromScreenNibbles()
     {
         var system = new AppleIISystem();
-        system.LoadProgram("");
 
         BootToIdle(system);
 
@@ -128,7 +125,6 @@ public class AppleIISystemVideoModesTests
     public async Task Page2SwitchesLoresAddressSource()
     {
         var system = new AppleIISystem();
-        system.LoadProgram("");
 
         BootToIdle(system);
 
@@ -168,7 +164,6 @@ public class AppleIISystemVideoModesTests
     public async Task HiresBitZeroIsLeftmostDot()
     {
         var system = new AppleIISystem();
-        system.LoadProgram("");
 
         BootToIdle(system);
 
@@ -206,7 +201,6 @@ public class AppleIISystemVideoModesTests
     public async Task HiresColorPhaseFollowsColumnParityAndDl7()
     {
         var system = new AppleIISystem();
-        system.LoadProgram("");
 
         BootToIdle(system);
 
@@ -252,7 +246,6 @@ public class AppleIISystemVideoModesTests
         // Matches Gayler's "A9" blanking-gated video-data selector - no
         // mode setup needed, HBL occurs every line regardless of mode.
         var system = new AppleIISystem();
-        system.LoadProgram("");
 
         var wasPhase0 = system.Phase0;
         var sampled = false;
@@ -285,7 +278,6 @@ public class AppleIISystemVideoModesTests
         // HiresBitZeroIsLeftmostDot uses for Display, since both are set
         // from the same "lit" value in DrawHiresByte.
         var system = new AppleIISystem();
-        system.LoadProgram("");
 
         BootToIdle(system);
 
@@ -344,7 +336,6 @@ public class AppleIISystemVideoModesTests
         // 1001: even cycle "10011001100110" starting at Q0, odd cycle
         // "01100110011001" starting at Q2).
         var system = new AppleIISystem();
-        system.LoadProgram("");
 
         BootToIdle(system);
 
@@ -396,7 +387,6 @@ public class AppleIISystemVideoModesTests
     public async Task MixModeShowsTextForBottomFourRows()
     {
         var system = new AppleIISystem();
-        system.LoadProgram("");
 
         BootToIdle(system);
 

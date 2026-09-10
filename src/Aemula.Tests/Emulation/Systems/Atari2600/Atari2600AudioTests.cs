@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using Aemula.Emulation.Output;
+using Aemula.Emulation.Systems;
 using Aemula.Emulation.Systems.Atari2600;
 
 namespace Aemula.Tests.Emulation.Systems.Atari2600;
@@ -128,7 +129,7 @@ public class Atari2600AudioTests
 
         try
         {
-            system.LoadProgram(path);
+            system.InsertMedia("cartridge", MediaImage.FromFile(path));
             system.Reset();
 
             var output = RunAndCollectAudio(system, Frames);
@@ -183,7 +184,7 @@ public class Atari2600AudioTests
 
         try
         {
-            system.LoadProgram(path);
+            system.InsertMedia("cartridge", MediaImage.FromFile(path));
             system.Reset();
 
             var output = RunAndCollectAudio(system, Frames);
@@ -209,7 +210,7 @@ public class Atari2600AudioTests
 
         try
         {
-            system.LoadProgram(path);
+            system.InsertMedia("cartridge", MediaImage.FromFile(path));
             system.Reset();
 
             var output = RunAndCollectAudio(system, Frames);
