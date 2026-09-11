@@ -131,14 +131,71 @@ public sealed class EmulationWindow : IDisposable
         }
     }
 
-    // Forwards to the system unconditionally - the only ImGui interactables
-    // here are the menus (which capture only while open, and the caller
-    // routes menu-time keys away from here). Gamepad forwarding is the
-    // caller's job: those events carry no window id.
+    // Modifiers that select a keyboard layout's shift level (plain Shift,
+    // plus AltGr/Option, however the host reports it) when resolving a key's
+    // character. Unified here from AppleISystem/AppleIISystem's own
+    // near-identical resolution, which used to happen twice with slightly
+    // different masks; every system gets the fuller one now.
+    private const SDLKeymod LayoutShiftMods = SDLKeymod.Shift | SDLKeymod.Alt | SDLKeymod.Mode;
+
+    // The only place left that still touches SDLKeyboardEvent - everything
+    // below EmulatedSystem.OnKeyEvent works in the neutral KeyEvent/Key
+    // types. Forwards to the system unconditionally - the only ImGui
+    // interactables here are the menus (which capture only while open, and
+    // the caller routes menu-time keys away from here). Gamepad forwarding is
+    // the caller's job: those events carry no window id.
     public void HandleKeyEvent(SDLKeyboardEvent keyEvent)
     {
-        _rig?.System.OnKeyEvent(keyEvent);
+        var mod = (SDLKeymod)keyEvent.Mod;
+
+        // Cmd/Win chords are for the host, never the emulated machine - every
+        // system that used to check this (Apple I, Apple II) agreed on the
+        // same policy, so it's enforced once here instead of per system.
+        if ((mod & SDLKeymod.Gui) != 0)
+        {
+            return;
+        }
+
+        char? character = null;
+        if (keyEvent.Scancode != SDLScancode.Unknown)
+        {
+            // The final arg must be false: true means a keycode shaped for a
+            // key_event (deliberately modifier-independent - it's what lands
+            // in keyEvent.Key), whereas false actually applies the given
+            // modifier state to produce a character. A non-text key (an
+            // arrow, say) resolves outside char's range, which the range
+            // check below turns into a null Character rather than a bogus cast.
+            var resolved = SDL.GetKeyFromScancode(keyEvent.Scancode, (ushort)(mod & LayoutShiftMods), false);
+            if (resolved is >= 0 and <= char.MaxValue)
+            {
+                character = (char)resolved;
+            }
+        }
+
+        _rig?.System.OnKeyEvent(new KeyEvent
+        {
+            IsDown = keyEvent.Type == SDLEventType.KeyDown,
+            Key = TranslateKey(keyEvent.Key),
+            Character = character,
+            Ctrl = (mod & SDLKeymod.Ctrl) != 0,
+        });
     }
+
+    // SDL's keycode already equals ASCII for every printable key
+    // (SDLK_a == 'a', SDLK_SEMICOLON == ';', ...), so that range passes
+    // through unchanged; only the handful of non-printable keys any system
+    // matches by name need an explicit entry, since their SDL keycodes are
+    // scancode-derived and fall well outside the ASCII range.
+    private static Key TranslateKey(int keycode) => keycode switch
+    {
+        (int)SDL.SDLK_UP => Key.Up,
+        (int)SDL.SDLK_DOWN => Key.Down,
+        (int)SDL.SDLK_LEFT => Key.Left,
+        (int)SDL.SDLK_RIGHT => Key.Right,
+        (int)SDL.SDLK_RSHIFT => Key.RightShift,
+        >= 0 and <= 0x7F => (Key)keycode,
+        _ => Key.None,
+    };
 
     public void SetPerf(double fps, double msPerFrame, double actualMHz, double nominalMHz)
     {

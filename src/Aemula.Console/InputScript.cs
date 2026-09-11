@@ -5,7 +5,6 @@ using System.Linq;
 using System.Text;
 using Aemula;
 using Aemula.Emulation.Systems;
-using Hexa.NET.SDL3;
 
 namespace Aemula.Console;
 
@@ -207,26 +206,27 @@ public sealed class InputScript
         }
 
         // Otherwise it's a joystick / button token: ride it in as the exact
-        // SDL key event EmulationWindow sends, using the keycode this system
-        // binds the token to (see EmulatedSystem.InputKeyBindings). Parse has
+        // key event EmulationWindow sends, using the Key this system binds
+        // the token to (see EmulatedSystem.InputKeyBindings). Parse has
         // already checked the token is one of the two known sets.
-        rig.System.OnKeyEvent(new SDLKeyboardEvent
+        rig.System.OnKeyEvent(new KeyEvent
         {
-            Type = press ? SDLEventType.KeyDown : SDLEventType.KeyUp,
+            IsDown = press,
             Key = rig.System.InputKeyBindings[token],
         });
     }
 
     // Delivers one character as the key-down event a system's OnKeyEvent maps
-    // to ASCII (Scancode left Unknown so the handler reads Key directly). A
-    // system with no keyboard handler ignores it.
+    // to ASCII (Character carries the resolved character directly, the way
+    // EmulationWindow would have resolved it from a real keypress). A system
+    // with no keyboard handler ignores it.
     private static void TypeCharacter(EmulatedSystem system, char character)
     {
-        system.OnKeyEvent(new SDLKeyboardEvent
+        system.OnKeyEvent(new KeyEvent
         {
-            Type = SDLEventType.KeyDown,
-            Key = character,
-            Scancode = SDLScancode.Unknown,
+            IsDown = true,
+            Key = (Key)character,
+            Character = character,
         });
     }
 }
