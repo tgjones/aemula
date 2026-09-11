@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using Hexa.NET.SDL3;
 
 namespace Aemula.Emulation.Systems.Atari2600;
 
@@ -23,24 +22,15 @@ public sealed partial class Atari2600System
     // TIA I-pin 4 is player 0's trigger; bit 7 of an INPT4 read follows it.
     private const byte Joystick0Fire = 0b0001_0000;
 
-    // SDL reports the arrow keys as scancode-derived keycodes:
-    // SDLK_* == SDL_SCANCODE_MASK (1 << 30) | scancode. Spelt out as literals
-    // to match the rest of the codebase (see SpaceInvadersSystem.OnKeyEvent).
-    private const int SdlkRight = 0x4000004F;
-    private const int SdlkLeft = 0x40000050;
-    private const int SdlkDown = 0x40000051;
-    private const int SdlkUp = 0x40000052;
-    private const int SdlkSpace = 0x20;
-
     // The generic InputScript tokens this system's OnKeyEvent understands,
-    // each mapped to the SDL keycode it matches on below.
-    public override IReadOnlyDictionary<string, int> InputKeyBindings { get; } = new Dictionary<string, int>
+    // each mapped to the Key it matches on below.
+    public override IReadOnlyDictionary<string, Key> InputKeyBindings { get; } = new Dictionary<string, Key>
     {
-        ["up"] = SdlkUp,
-        ["down"] = SdlkDown,
-        ["left"] = SdlkLeft,
-        ["right"] = SdlkRight,
-        ["fire"] = SdlkSpace,
+        ["up"] = Key.Up,
+        ["down"] = Key.Down,
+        ["left"] = Key.Left,
+        ["right"] = Key.Right,
+        ["fire"] = Key.Space,
     };
 
     // Release every input line at power-on. Both ports and both triggers idle
@@ -53,16 +43,14 @@ public sealed partial class Atari2600System
         _tia.I |= 0b0011_0000;
     }
 
-    public override void OnKeyEvent(SDLKeyboardEvent keyEvent)
+    public override void OnKeyEvent(KeyEvent keyEvent)
     {
-        var isKeyDown = keyEvent.Type == SDLEventType.KeyDown;
-
         var direction = keyEvent.Key switch
         {
-            SdlkUp => Joystick0Up,
-            SdlkDown => Joystick0Down,
-            SdlkLeft => Joystick0Left,
-            SdlkRight => Joystick0Right,
+            Key.Up => Joystick0Up,
+            Key.Down => Joystick0Down,
+            Key.Left => Joystick0Left,
+            Key.Right => Joystick0Right,
             _ => (byte)0,
         };
 
@@ -70,7 +58,7 @@ public sealed partial class Atari2600System
         {
             // Active-low: pressing pulls the bit to 0, releasing lets the
             // pull-up restore it.
-            if (isKeyDown)
+            if (keyEvent.IsDown)
             {
                 _riot.PA &= (byte)~direction;
             }
@@ -81,11 +69,11 @@ public sealed partial class Atari2600System
             return;
         }
 
-        if (keyEvent.Key == SdlkSpace)
+        if (keyEvent.Key == Key.Space)
         {
             // Assigning I runs TIA's trigger-latch update, so a quick tap is
             // still caught when the game has INPT4/INPT5 latching enabled.
-            if (isKeyDown)
+            if (keyEvent.IsDown)
             {
                 _tia.I &= unchecked((byte)~Joystick0Fire);
             }

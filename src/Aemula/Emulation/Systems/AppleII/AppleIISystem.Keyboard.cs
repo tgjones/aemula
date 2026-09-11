@@ -1,5 +1,4 @@
 using Aemula.Emulation.Chips;
-using Hexa.NET.SDL3;
 
 namespace Aemula.Emulation.Systems.AppleII;
 
@@ -23,10 +22,10 @@ public sealed partial class AppleIISystem
     private uint _keyboardScanDividerCounter;
 
     // The host key currently driving a matrix crosspoint, if any. Tracked by
-    // its layout-dependent base keycode (which doesn't change as modifiers go
+    // its layout-dependent base identity (which doesn't change as modifiers go
     // up and down), so a key-up releases the right crosspoint even if Shift
     // was let go first.
-    private int? _heldKey;
+    private Key? _heldKey;
 
     private void TickKeyboard()
     {
@@ -66,37 +65,13 @@ public sealed partial class AppleIISystem
         _keyboardStrobeLatch.Clr1 = true;
     }
 
-    // Modifiers that select a keyboard layout's shift level (plain Shift, plus
-    // AltGr / Option, however the host reports it). Ctrl and Gui/Cmd are
-    // deliberately excluded: Ctrl drives the encoder's own Control line, and
-    // Gui/Cmd chords aren't for the emulated machine at all.
-    private const SDLKeymod LayoutShiftMods =
-        SDLKeymod.Shift | SDLKeymod.Alt | SDLKeymod.Mode;
-
-    public override void OnKeyEvent(SDLKeyboardEvent keyEvent)
+    public override void OnKeyEvent(KeyEvent keyEvent)
     {
-        var isKeyDown = keyEvent.Type == SDLEventType.KeyDown;
-        var mod = (SDLKeymod)keyEvent.Mod;
-
-        // Cmd/Win chords belong to the host, never the emulated keyboard.
-        // (Ctrl is left alone here - the II+ uses it for its control codes.)
-        if ((mod & SDLKeymod.Gui) != 0)
-        {
-            return;
-        }
-
-        // Resolve the character this key actually produces in the host's
-        // current keyboard layout, with Shift/AltGr applied (Ctrl masked out -
-        // it's handled separately below). The final arg must be false: a
-        // key_event keycode is deliberately modifier-independent (it's what
-        // lands in keyEvent.Key), whereas false means "translate this scancode
-        // under the given modifier state" - i.e. actually apply Shift.
-        // GetKeyFromScancode needs a real scancode and an initialised video
-        // subsystem; synthetic events (unit tests) carry neither, so fall back
-        // to the raw keycode.
-        var character = keyEvent.Scancode != SDLScancode.Unknown
-            ? SDL.GetKeyFromScancode(keyEvent.Scancode, (ushort)(mod & LayoutShiftMods), false)
-            : keyEvent.Key;
+        // Arrows carry no text form (KeyEvent.Character is null for them), so
+        // the matrix lookup falls back to the key's own modifier-independent
+        // identity - the same value OnKeyEvent tracks non-arrow keys by below,
+        // just reused here instead of hand-rolling a second special case.
+        var character = keyEvent.Character ?? (char)keyEvent.Key;
 
         var position = MapCharToMatrixPosition(character);
         if (position is null)
@@ -104,12 +79,12 @@ public sealed partial class AppleIISystem
             return;
         }
 
-        if (isKeyDown)
+        if (keyEvent.IsDown)
         {
             var (x, y, appleShift) = position.Value;
             _heldKey = keyEvent.Key;
             _keyboardEncoder.Shift = appleShift;
-            _keyboardEncoder.Control = (mod & SDLKeymod.Ctrl) != 0;
+            _keyboardEncoder.Control = keyEvent.Ctrl;
             _keyboardEncoder.SetPressedKey(x, y);
         }
         else if (_heldKey == keyEvent.Key)
@@ -129,7 +104,7 @@ public sealed partial class AppleIISystem
     // (lowercase is fine - the ROM folds it; but '[' '\' '_' '{' '~' etc.)
     // map to nothing. Backspace/Delete drive the left-arrow key, which the
     // monitor and Applesoft treat as destructive backspace.
-    internal static (int X, int Y, bool Shift)? MapCharToMatrixPosition(int character) => character switch
+    internal static (int X, int Y, bool Shift)? MapCharToMatrixPosition(char character) => character switch
     {
         '0' => (0, 7, false),
         '1' => (4, 2, false),
@@ -195,12 +170,12 @@ public sealed partial class AppleIISystem
         'y' or 'Y' => (1, 5, false),
         'z' or 'Z' => (3, 0, false),
 
-        ' ' => (4, 5, false),          // Space.
-        0x0D or 0x0A => (4, 9, false), // Return.
-        0x1B => (4, 3, false),         // Escape.
-        0x08 or 0x7F => (2, 8, false), // Backspace / Delete -> left arrow.
-        0x40000050 => (2, 8, false),   // SDLK_LEFT.
-        0x4000004F => (2, 9, false),   // SDLK_RIGHT.
+        ' ' => (4, 5, false),               // Space.
+        '\r' or '\n' => (4, 9, false),      // Return.
+        '\x1b' => (4, 3, false),            // Escape.
+        '\b' or '\x7f' => (2, 8, false),    // Backspace / Delete -> left arrow.
+        (char)Key.Left => (2, 8, false),
+        (char)Key.Right => (2, 9, false),
 
         _ => null,
     };

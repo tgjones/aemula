@@ -7,7 +7,6 @@ using Aemula.Debugging;
 using Aemula.Emulation.Chips.MB14241;
 using Aemula.Emulation.Systems.SpaceInvaders.Debugging;
 using Aemula.UI.LogicAnalyzer;
-using Hexa.NET.SDL3;
 
 namespace Aemula.Emulation.Systems.SpaceInvaders;
 
@@ -362,23 +361,21 @@ public sealed partial class SpaceInvadersSystem : EmulatedSystem
         // TODO
     }
 
-    public override void OnKeyEvent(SDLKeyboardEvent keyEvent)
+    public override void OnKeyEvent(KeyEvent keyEvent)
     {
-        var isKeyDown = keyEvent.Type == SDLEventType.KeyDown;
-
         // Coin and the two start buttons are console-panel controls (see
         // SpaceInvadersSystem.ConsoleControls.cs), not keyboard input.
-        if (keyEvent.Key == ' ') // SDLK_SPACE
+        if (keyEvent.Key == Key.Space)
         {
-            _keyShoot = isKeyDown;
+            _keyShoot = keyEvent.IsDown;
         }
-        if (keyEvent.Key == 0x40000050u) // SDLK_LEFT
+        if (keyEvent.Key == Key.Left)
         {
-            _keyLeft = isKeyDown;
+            _keyLeft = keyEvent.IsDown;
         }
-        if (keyEvent.Key == 0x4000004fu) // SDLK_RIGHT
+        if (keyEvent.Key == Key.Right)
         {
-            _keyRight = isKeyDown;
+            _keyRight = keyEvent.IsDown;
         }
     }
 

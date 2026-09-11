@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using Hexa.NET.SDL3;
 
 namespace Aemula.Emulation.Systems.Nes;
 
@@ -20,44 +19,32 @@ public sealed partial class NesSystem
     public NesController Controller1 => _controller1;
     public NesController Controller2 => _controller2;
 
-    // SDL keycodes (SDLK_*). The arrow keys are scancode-derived
-    // (SDL_SCANCODE_MASK | scancode); the rest are plain ASCII. Spelt out as
-    // literals to match the other systems (see Atari2600System.Input.cs).
-    private const int SdlkReturn = 0x0D;
-    private const int SdlkX = 0x78;
-    private const int SdlkZ = 0x7A;
-    private const int SdlkRight = 0x4000004F;
-    private const int SdlkLeft = 0x40000050;
-    private const int SdlkDown = 0x40000051;
-    private const int SdlkUp = 0x40000052;
-    private const int SdlkRShift = 0x400000E5;
-
     // The generic InputScript tokens this system's OnKeyEvent understands,
-    // each mapped to the SDL keycode it matches on below.
-    public override IReadOnlyDictionary<string, int> InputKeyBindings { get; } = new Dictionary<string, int>
+    // each mapped to the Key it matches on below.
+    public override IReadOnlyDictionary<string, Key> InputKeyBindings { get; } = new Dictionary<string, Key>
     {
-        ["up"] = SdlkUp,
-        ["down"] = SdlkDown,
-        ["left"] = SdlkLeft,
-        ["right"] = SdlkRight,
-        ["a"] = SdlkX,
-        ["b"] = SdlkZ,
-        ["select"] = SdlkRShift,
-        ["start"] = SdlkReturn,
+        ["up"] = Key.Up,
+        ["down"] = Key.Down,
+        ["left"] = Key.Left,
+        ["right"] = Key.Right,
+        ["a"] = Key.X,
+        ["b"] = Key.Z,
+        ["select"] = Key.RightShift,
+        ["start"] = Key.Return,
     };
 
-    public override void OnKeyEvent(SDLKeyboardEvent keyEvent)
+    public override void OnKeyEvent(KeyEvent keyEvent)
     {
         var button = keyEvent.Key switch
         {
-            SdlkUp => NesButton.Up,
-            SdlkDown => NesButton.Down,
-            SdlkLeft => NesButton.Left,
-            SdlkRight => NesButton.Right,
-            SdlkX => NesButton.A,
-            SdlkZ => NesButton.B,
-            SdlkRShift => NesButton.Select,
-            SdlkReturn => NesButton.Start,
+            Key.Up => NesButton.Up,
+            Key.Down => NesButton.Down,
+            Key.Left => NesButton.Left,
+            Key.Right => NesButton.Right,
+            Key.X => NesButton.A,
+            Key.Z => NesButton.B,
+            Key.RightShift => NesButton.Select,
+            Key.Return => NesButton.Start,
             _ => NesButton.None,
         };
 
@@ -66,7 +53,7 @@ public sealed partial class NesSystem
             return;
         }
 
-        if (keyEvent.Type == SDLEventType.KeyDown)
+        if (keyEvent.IsDown)
         {
             _controller1.Buttons |= button;
         }

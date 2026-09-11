@@ -1,5 +1,3 @@
-using Hexa.NET.SDL3;
-
 namespace Aemula.Emulation.Systems.AppleI;
 
 // The keyboard: the B4 connector wires straight into the PIA (PA0-PA7 for
@@ -9,22 +7,12 @@ namespace Aemula.Emulation.Systems.AppleI;
 // strobe pulse.
 public sealed partial class AppleISystem
 {
-    public override void OnKeyEvent(SDLKeyboardEvent keyEvent)
+    public override void OnKeyEvent(KeyEvent keyEvent)
     {
-        if (keyEvent.Type != SDLEventType.KeyDown)
+        if (!keyEvent.IsDown || keyEvent.Character is not { } character)
         {
             return;
         }
-
-        var mod = (SDLKeymod)keyEvent.Mod;
-        if ((mod & SDLKeymod.Gui) != 0)
-        {
-            return;
-        }
-
-        var character = keyEvent.Scancode != SDLScancode.Unknown
-            ? SDL.GetKeyFromScancode(keyEvent.Scancode, (ushort)(mod & SDLKeymod.Shift), false)
-            : keyEvent.Key;
 
         var ascii = MapCharToAscii(character);
         if (ascii is null)
@@ -47,13 +35,13 @@ public sealed partial class AppleISystem
     // for letters, so 'a'..'z' fold to 'A'..'Z'. Backspace/Delete map to
     // "_", the real Apple 1 keyboard's own rubout key (WozMon's GETLINE
     // treats it as destructive backspace); Enter/Return map to CR ($0D).
-    private static byte? MapCharToAscii(int character) => character switch
+    private static byte? MapCharToAscii(char character) => character switch
     {
         >= 'a' and <= 'z' => (byte)(character - 'a' + 'A'),
         >= ' ' and <= '_' => (byte)character,
-        0x08 or 0x7F => (byte)'_',
-        0x0D or 0x0A => 0x0D,
-        0x1B => 0x1B,
+        '\b' or '\x7f' => (byte)'_',
+        '\r' or '\n' => 0x0D,
+        '\x1b' => 0x1B,
         _ => null,
     };
 }
