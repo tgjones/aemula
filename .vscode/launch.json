@@ -1,0 +1,30 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Aemula.UI (Debug)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build-debug",
+            "program": "${workspaceFolder}/src/Aemula.UI/bin/Debug/net10.0/osx-arm64/aemula-ui",
+            "args": [],
+            "cwd": "${workspaceFolder}/src/Aemula.UI",
+            "console": "internalConsole",
+            "stopAtEntry": false
+        },
+        {
+            "name": "Aemula.UI (Release)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build-release",
+            "program": "${workspaceFolder}/src/Aemula.UI/bin/Release/net10.0/osx-arm64/aemula-ui",
+            "args": [],
+            "cwd": "${workspaceFolder}/src/Aemula.UI",
+            "console": "internalConsole",
+            "stopAtEntry": false
+        }
+    ]
+}
