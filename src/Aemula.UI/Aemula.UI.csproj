@@ -2,10 +2,94 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
+    <AssemblyName>aemula-ui</AssemblyName>
+    <RuntimeIdentifiers>win-x64;osx-arm64;linux-x64</RuntimeIdentifiers>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <ApplicationIcon>..\..\img\logo.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Aemula\Aemula.csproj" />
+    <PackageReference Include="SixLabors.ImageSharp" />
   </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\img\logo.png" LogicalName="Aemula.UI.logo.png" />
+  </ItemGroup>
+
+  <!--
+    Finder can't launch a loose Unix executable named "aemula-ui" by
+    double-click - Launch Services reads the "-ui" tail as an unrecognised
+    document extension and offers to pick an app to open it with, rather
+    than sniffing the Mach-O header and running it. Wrapping the publish
+    output in a .app bundle (which Finder always knows how to launch,
+    whatever the inner binary is named) fixes that and is also the only way
+    to get a Dock icon, since macOS ignores SDL_SetWindowIcon and reads
+    CFBundleIconFile from the bundle's Info.plist instead.
+  -->
+  <Target Name="CreateMacOSAppBundle" AfterTargets="Publish" Condition="$(RuntimeIdentifier.StartsWith('osx'))">
+    <PropertyGroup>
+      <AppBundleDir>$(PublishDir)Aemula.app</AppBundleDir>
+      <AppBundleMacOSDir>$(AppBundleDir)/Contents/MacOS</AppBundleMacOSDir>
+      <AppBundleResourcesDir>$(AppBundleDir)/Contents/Resources</AppBundleResourcesDir>
+    </PropertyGroup>
+
+    <RemoveDir Directories="$(AppBundleDir)" Condition="Exists('$(AppBundleDir)')" />
+    <MakeDir Directories="$(AppBundleMacOSDir)" />
+    <MakeDir Directories="$(AppBundleResourcesDir)" />
+
+    <ItemGroup>
+      <PublishedFiles Include="$(PublishDir)**\*" />
+      <PublishedTopLevelDirs Include="$([System.IO.Directory]::GetDirectories('$(PublishDir)'))" Exclude="$(AppBundleDir)" />
+    </ItemGroup>
+    <Move SourceFiles="@(PublishedFiles)" DestinationFiles="@(PublishedFiles->'$(AppBundleMacOSDir)/%(RecursiveDir)%(Filename)%(Extension)')" />
+    <!-- Move only relocates files, leaving the now-empty source directory tree behind. -->
+    <RemoveDir Directories="@(PublishedTopLevelDirs)" />
+
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\..\..\img\logo.icns" DestinationFiles="$(AppBundleResourcesDir)/AppIcon.icns" />
+
+    <PropertyGroup>
+      <InfoPlistContent><![CDATA[<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>Aemula</string>
+    <key>CFBundleDisplayName</key>
+    <string>Aemula</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.tgjones.aemula</string>
+    <key>CFBundleVersion</key>
+    <string>1.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleExecutable</key>
+    <string>$(AssemblyName)</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon.icns</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+</dict>
+</plist>
+]]></InfoPlistContent>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(AppBundleDir)/Contents/Info.plist" Lines="$(InfoPlistContent)" Overwrite="true" />
+
+    <Exec Command="chmod +x &quot;$(AppBundleMacOSDir)/$(AssemblyName)&quot;" />
+
+    <!--
+      Apple Silicon refuses to run an unsigned binary at all, and .NET only
+      ad-hoc-signs the loose executable at publish time - once it's moved
+      inside a bundle, Gatekeeper validates the bundle's seal as a whole
+      (Info.plist, resources and binary together), so it needs re-signing
+      here or the bundle shows up as "damaged" on launch.
+    -->
+    <Exec Command="codesign --force --deep --sign - &quot;$(AppBundleDir)&quot;" />
+  </Target>
 
 </Project>

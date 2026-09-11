@@ -65,6 +65,7 @@ public static unsafe class Program
         }
 
         SDL.SetWindowPosition(emuWindow, (int)SDL.SDL_WINDOWPOS_CENTERED_MASK, (int)SDL.SDL_WINDOWPOS_CENTERED_MASK);
+        AppIcon.Apply(emuWindow);
         SDL.ShowWindow(emuWindow);
 
         var gpuDevice = SDL.CreateGPUDevice(

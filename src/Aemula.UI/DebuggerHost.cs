@@ -94,6 +94,7 @@ public sealed class DebuggerHost : IDisposable
         }
 
         SDL.SetWindowPosition(window, (int)SDL.SDL_WINDOWPOS_CENTERED_MASK, (int)SDL.SDL_WINDOWPOS_CENTERED_MASK);
+        AppIcon.Apply(window);
 
         if (!SDL.ClaimWindowForGPUDevice(_gpuDevice, window))
         {
