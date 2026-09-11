@@ -6,17 +6,35 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rid: linux-x64
+          - os: macos-latest
+            rid: osx-arm64
+          - os: windows-latest
+            rid: win-x64
+
+    runs-on: ${{ matrix.os }}
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
 
     - name: Install .NET
-      uses: actions/setup-dotnet@v1
-      with:
-        dotnet-version: '10.0.x'
+      uses: actions/setup-dotnet@v4
 
     - name: Build & Test
       run: dotnet test --configuration Release
       working-directory: src
+
+    - name: Publish aemula-ui
+      run: dotnet publish Aemula.UI/Aemula.UI.csproj --configuration Release --runtime ${{ matrix.rid }} --output ../publish/${{ matrix.rid }}
+      working-directory: src
+
+    - name: Upload aemula-ui artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: aemula-ui-${{ matrix.rid }}
+        path: publish/${{ matrix.rid }}
