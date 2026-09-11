@@ -63,7 +63,7 @@ public sealed class InputScript
     {
         var knownTokens = rig.System.InputKeyBindings.Keys
             .Concat(rig.AllControls
-                .Where(c => c.Kind != ConsoleControl.ControlKind.Readout)
+                .Where(c => c.Kind is not (ConsoleControl.ControlKind.Readout or ConsoleControl.ControlKind.MediaBay))
                 .Select(c => c.Mnemonic))
             .ToArray();
         var events = new List<ScheduledEvent>();

@@ -53,6 +53,10 @@ public sealed partial class Atari2600System
                 offLabel: "B",
                 onLabel: "A"),
 
+            // The cartridge slot sits in the panel row between the switches,
+            // where it was on the real console, not off in a menu.
+            ConsoleControl.CreateMediaBay(CartridgeBay, SeatCartridge, RemoveCartridge),
+
             new ConsoleControl(
                 "Right Diff.",
                 "right-diff",

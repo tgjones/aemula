@@ -73,8 +73,18 @@ public sealed class CassetteDeck : IPeripheral
 
         // There is no motor control from the machine, so the transport is
         // worked by hand here the way you would work the buttons on the deck.
+        // The tape bay leads, the way you load a cassette before pressing PLAY.
         _controls =
         [
+            ConsoleControl.CreateMediaBay(
+                TapeBay,
+                image =>
+                {
+                    var wav = WavReader.Read(image.OpenRead());
+                    InsertTape(wav.Samples, wav.SampleRate);
+                },
+                EjectTape),
+
             new ConsoleControl(
                 "Rewind",
                 "tape-rewind",
@@ -255,40 +265,17 @@ public sealed class CassetteDeck : IPeripheral
 
     // --- media bay ---
 
+    // Surfaced on the deck's control group as a MediaBay console control (see
+    // the constructor), so "Tape: BASIC.wav" sits right next to Rewind / Play.
     private static readonly MediaBay TapeBay = new(
         "cassette",
-        "Cassette recorder",
+        "Tape",
         Required: false,
         [
             new MediaFileFilter("Cassette audio", "wav"),
             new MediaFileFilter("All files", "*"),
         ],
         "Select a cassette WAV");
-
-    public IReadOnlyList<MediaBay> MediaBays => [TapeBay];
-
-    /// <summary>Threads a WAV image onto the deck as the tape (see <see cref="InsertTape(float[], int)"/>).</summary>
-    public void InsertMedia(string bayId, MediaImage image)
-    {
-        if (bayId != TapeBay.Id)
-        {
-            throw new ArgumentException($"No media bay '{bayId}'.");
-        }
-
-        var wav = WavReader.Read(image.OpenRead());
-        InsertTape(wav.Samples, wav.SampleRate);
-    }
-
-    /// <summary>Removes the tape (see <see cref="EjectTape"/>).</summary>
-    public void EjectMedia(string bayId)
-    {
-        if (bayId != TapeBay.Id)
-        {
-            throw new ArgumentException($"No media bay '{bayId}'.");
-        }
-
-        EjectTape();
-    }
 
     public void Reset()
     {

@@ -30,15 +30,16 @@ public class Atari2600SystemConsoleSwitchTests
     }
 
     [Test]
-    public async Task ExposesTheFivePanelControls()
+    public async Task ExposesThePanelControlsInConsoleOrder()
     {
         var system = new Atari2600System();
 
         var labels = system.ConsoleControls.Select(c => c.Label).ToArray();
 
-        // Left-to-right in real-console panel order.
+        // Left-to-right in real-console panel order, cartridge slot among the
+        // switches.
         await Assert.That(labels).IsEquivalentTo(
-            ["TV Type", "Left Diff.", "Right Diff.", "Select", "Reset"]);
+            ["TV Type", "Left Diff.", "Right Diff.", "Cartridge", "Select", "Reset"]);
     }
 
     [Test]
@@ -48,9 +49,11 @@ public class Atari2600SystemConsoleSwitchTests
 
         var mnemonics = system.ConsoleControls.Select(c => c.Mnemonic).ToArray();
 
-        // Terminal-friendly names the headless runner's --input matches on.
+        // Terminal-friendly names; the switch mnemonics are what the headless
+        // runner's --input matches on ("cartridge" is the bay id, driven by
+        // --media rather than a press token).
         await Assert.That(mnemonics).IsEquivalentTo(
-            ["tv-type", "left-diff", "right-diff", "select", "reset"]);
+            ["tv-type", "left-diff", "right-diff", "cartridge", "select", "reset"]);
     }
 
     [Test]

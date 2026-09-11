@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Linq;
 using Aemula.Debugging;
 using Aemula.Emulation.Output;
 using Aemula.Emulation.Peripherals;
@@ -9,7 +10,7 @@ using Hexa.NET.SDL3;
 
 namespace Aemula;
 
-public abstract class EmulatedSystem : IDisposable, IMediaBayHost
+public abstract class EmulatedSystem : IDisposable
 {
     // Raised whenever the media in one of this system's bays changes - a
     // cartridge inserted or ejected. The Debugger listens so it can rebuild
@@ -45,16 +46,23 @@ public abstract class EmulatedSystem : IDisposable, IMediaBayHost
         MediaChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    // Removable-media receptacles this machine exposes. Empty for a system whose
-    // program is fixed boot ROMs built in the constructor (Space Invaders); a
-    // cartridge console overrides this and the two methods below for its slot.
-    public virtual IReadOnlyList<MediaBay> MediaBays => [];
+    // Removable-media receptacles this machine exposes, read off its
+    // ConsoleControls: a cartridge console puts a MediaBay-kind control in that
+    // list and its slot falls out here for the CLI and the file dialog. Empty
+    // for a system whose program is fixed boot ROMs (Space Invaders).
+    public IReadOnlyList<MediaBay> MediaBays =>
+        [.. ConsoleControls
+            .Where(c => c.Kind == ConsoleControl.ControlKind.MediaBay)
+            .Select(c => c.Bay!)];
 
-    public virtual void InsertMedia(string bayId, MediaImage image) =>
-        throw new ArgumentException($"No media bay '{bayId}'.");
+    public void InsertMedia(string bayId, MediaImage image) => MediaBayControl(bayId).InsertMedia(image);
 
-    public virtual void EjectMedia(string bayId) =>
-        throw new ArgumentException($"No media bay '{bayId}'.");
+    public void EjectMedia(string bayId) => MediaBayControl(bayId).EjectMedia();
+
+    private ConsoleControl MediaBayControl(string bayId) =>
+        ConsoleControls.FirstOrDefault(
+            c => c.Kind == ConsoleControl.ControlKind.MediaBay && c.Bay!.Id == bayId)
+        ?? throw new ArgumentException($"No media bay '{bayId}'.");
 
     public abstract ulong CyclesPerSecond { get; }
 

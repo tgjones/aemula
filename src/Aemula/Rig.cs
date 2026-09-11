@@ -26,12 +26,8 @@ namespace Aemula;
 /// per-machine subclass.
 /// </para>
 /// </remarks>
-public sealed class Rig : IDisposable, IMediaBayHost
+public sealed class Rig : IDisposable
 {
-    // bay id -> the system or peripheral that owns it, so InsertMedia /
-    // EjectMedia can forward a call to the right place by id alone.
-    private readonly Dictionary<string, IMediaBayHost> _bayOwners = [];
-
     public Rig(EmulatedSystem system, IReadOnlyList<IPeripheral>? peripherals = null)
     {
         System = system;
@@ -78,14 +74,26 @@ public sealed class Rig : IDisposable, IMediaBayHost
             _ => new MixedAudioSource(sources),
         };
 
-        // The machine's own bays first, then each peripheral's, in one flat
-        // list. A bay id contributed by more than one host is a wiring bug in
-        // the assembler, not something a caller could recover from.
+        // Every media bay across the machine and its peripherals, taken from
+        // the MediaBay-kind console controls in the order they sit on the
+        // panels. A bay id contributed twice is a wiring bug in the assembler,
+        // not something a caller could recover from.
         var bays = new List<MediaBay>();
-        RegisterBays(System, bays);
-        foreach (var peripheral in Peripherals)
+        var seenBayIds = new HashSet<string>();
+        foreach (var control in AllControls)
         {
-            RegisterBays(peripheral, bays);
+            if (control.Kind != ConsoleControl.ControlKind.MediaBay)
+            {
+                continue;
+            }
+
+            if (!seenBayIds.Add(control.Bay!.Id))
+            {
+                throw new InvalidOperationException(
+                    $"Media bay id '{control.Bay.Id}' is contributed by more than one of the system and its peripherals.");
+            }
+
+            bays.Add(control.Bay);
         }
 
         MediaBays = bays;
@@ -93,20 +101,6 @@ public sealed class Rig : IDisposable, IMediaBayHost
         // A media change anywhere on the system surfaces off the rig too, so the
         // debugger (wired to the rig) resets its disassembler on a cartridge swap.
         System.MediaChanged += (_, e) => MediaChanged?.Invoke(this, e);
-    }
-
-    private void RegisterBays(IMediaBayHost host, List<MediaBay> into)
-    {
-        foreach (var bay in host.MediaBays)
-        {
-            if (!_bayOwners.TryAdd(bay.Id, host))
-            {
-                throw new InvalidOperationException(
-                    $"Media bay id '{bay.Id}' is contributed by more than one of the system and its peripherals.");
-            }
-
-            into.Add(bay);
-        }
     }
 
     public EmulatedSystem System { get; }
@@ -134,25 +128,14 @@ public sealed class Rig : IDisposable, IMediaBayHost
     // Re-surfaced from the system (see the constructor).
     public event EventHandler? MediaChanged;
 
-    public void InsertMedia(string bayId, MediaImage image)
-    {
-        if (!_bayOwners.TryGetValue(bayId, out var owner))
-        {
-            throw new ArgumentException($"No media bay '{bayId}'.");
-        }
+    public void InsertMedia(string bayId, MediaImage image) => MediaBayControl(bayId).InsertMedia(image);
 
-        owner.InsertMedia(bayId, image);
-    }
+    public void EjectMedia(string bayId) => MediaBayControl(bayId).EjectMedia();
 
-    public void EjectMedia(string bayId)
-    {
-        if (!_bayOwners.TryGetValue(bayId, out var owner))
-        {
-            throw new ArgumentException($"No media bay '{bayId}'.");
-        }
-
-        owner.EjectMedia(bayId);
-    }
+    private ConsoleControl MediaBayControl(string bayId) =>
+        AllControls.FirstOrDefault(
+            c => c.Kind == ConsoleControl.ControlKind.MediaBay && c.Bay!.Id == bayId)
+        ?? throw new ArgumentException($"No media bay '{bayId}'.");
 
     public T? GetPeripheral<T>() where T : class, IPeripheral
     {

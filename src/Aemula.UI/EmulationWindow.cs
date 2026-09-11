@@ -40,10 +40,9 @@ public sealed class EmulationWindow : IDisposable
         // Changing a card rebuilds the machine, so this only requests.
         Func<string, string?> SelectedSlotCard,
         Action<string, string?> ChooseSlotCard,
-        // The running rig's media bays, whether each currently holds an image,
-        // and requests to fill one (opens a file dialog) or clear one.
-        Func<IReadOnlyList<MediaBay>> MediaBays,
-        Func<string, bool> BayHasMedia,
+        // Fill a media bay (opens a file dialog) or clear one. What each bay
+        // currently holds is read straight off its MediaBay console control;
+        // the shell only needs to service these two requests.
         Action<MediaBay> InsertMedia,
         Action<string> EjectMedia);
 
@@ -266,32 +265,6 @@ public sealed class EmulationWindow : IDisposable
                         {
                             _callbacks.ChooseSlotCard(slot.Id, card.Id);
                         }
-                    }
-
-                    ImGui.EndMenu();
-                }
-
-                ImGui.EndMenu();
-            }
-
-            var bays = _callbacks.MediaBays();
-            if (bays.Count > 0 && ImGui.BeginMenu("Media"u8))
-            {
-                foreach (var bay in bays)
-                {
-                    if (!ImGui.BeginMenu(bay.DisplayName))
-                    {
-                        continue;
-                    }
-
-                    if (ImGui.MenuItem("Insert…"u8))
-                    {
-                        _callbacks.InsertMedia(bay);
-                    }
-
-                    if (ImGui.MenuItem("Eject"u8, (byte*)null, false, _callbacks.BayHasMedia(bay.Id)))
-                    {
-                        _callbacks.EjectMedia(bay.Id);
                     }
 
                     ImGui.EndMenu();
@@ -543,10 +516,14 @@ public sealed class EmulationWindow : IDisposable
         ImGui.SameLine(0f, 0f);
     }
 
-    private static void DrawConsoleControl(ConsoleControl control)
+    private void DrawConsoleControl(ConsoleControl control)
     {
         switch (control.Kind)
         {
+            case ConsoleControl.ControlKind.MediaBay:
+                DrawMediaBay(control);
+                break;
+
             case ConsoleControl.ControlKind.Momentary:
                 ImGui.Button(control.Label);
                 // Closed for exactly as long as the mouse is held on it, so a
@@ -613,6 +590,39 @@ public sealed class EmulationWindow : IDisposable
                     control.Value = true;
                 }
                 break;
+        }
+    }
+
+    // A removable-media receptacle: a button captioned with the bay name and
+    // whatever is loaded ("Cartridge: Combat", "Tape: —"), opening a popup to
+    // insert / replace or eject. Insert is the shell's job (it runs the file
+    // dialog); the loaded name is read straight off the control.
+    private void DrawMediaBay(ConsoleControl control)
+    {
+        var bay = control.Bay!;
+        var loaded = control.Text;
+        var caption = loaded == null ? $"{bay.DisplayName}: —" : $"{bay.DisplayName}: {loaded}";
+
+        if (ImGui.Button($"{caption}###bay-{bay.Id}"))
+        {
+            ImGui.OpenPopup($"##bay-menu-{bay.Id}");
+        }
+
+        if (ImGui.BeginPopup($"##bay-menu-{bay.Id}"))
+        {
+            if (ImGui.MenuItem(loaded == null ? "Insert"u8 : "Replace"u8))
+            {
+                _callbacks.InsertMedia(bay);
+            }
+
+            ImGui.BeginDisabled(loaded == null);
+            if (ImGui.MenuItem("Eject"u8))
+            {
+                _callbacks.EjectMedia(bay.Id);
+            }
+            ImGui.EndDisabled();
+
+            ImGui.EndPopup();
         }
     }
 

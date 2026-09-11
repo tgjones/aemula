@@ -87,12 +87,14 @@ public sealed partial class Atari2600System : EmulatedSystem
         // TODO
     }
 
-    // The 4K cartridge connector. The 6507 has no reset vector to fetch until a
-    // cartridge is in, so completing the insert at power-on (before the first
-    // tick) also completes the reset - see InsertMedia.
+    // The 4K cartridge connector - surfaced on the panel as a MediaBay console
+    // control (see InitializeConsoleSwitches), so it sits in the switch row
+    // rather than in a menu. The 6507 has no reset vector to fetch until a
+    // cartridge is in, so seating one before the first tick also completes the
+    // reset.
     private static readonly MediaBay CartridgeBay = new(
         "cartridge",
-        "Cartridge slot",
+        "Cartridge",
         Required: true,
         [
             new MediaFileFilter("Atari 2600 cartridges", "a26;bin"),
@@ -100,16 +102,8 @@ public sealed partial class Atari2600System : EmulatedSystem
         ],
         "Select a cartridge");
 
-    public override IReadOnlyList<MediaBay> MediaBays => [CartridgeBay];
-
-    public override void InsertMedia(string bayId, MediaImage image)
+    private void SeatCartridge(MediaImage image)
     {
-        if (bayId != CartridgeBay.Id)
-        {
-            base.InsertMedia(bayId, image);
-            return;
-        }
-
         _cartridge = Cartridge.FromData(image.Data);
 
         // Seating a cartridge during power-on pulses the CPU reset line, so the
@@ -124,14 +118,8 @@ public sealed partial class Atari2600System : EmulatedSystem
         RaiseMediaChanged();
     }
 
-    public override void EjectMedia(string bayId)
+    private void RemoveCartridge()
     {
-        if (bayId != CartridgeBay.Id)
-        {
-            base.EjectMedia(bayId);
-            return;
-        }
-
         _cartridge = null;
         RaiseMediaChanged();
     }

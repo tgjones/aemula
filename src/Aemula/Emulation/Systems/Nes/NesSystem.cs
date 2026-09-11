@@ -323,12 +323,13 @@ public sealed partial class NesSystem : EmulatedSystem
         return _ciram[offset];
     }
 
-    // The cartridge connector. Until a cartridge is seated there is no reset
-    // vector to fetch, so completing the insert at power-on (before the first
-    // tick) also pulses /RES - see InsertMedia.
+    // The cartridge connector - the console's one hand-operated receptacle, so
+    // it is the whole of ConsoleControls and the UI shows it as a slot button
+    // in the status bar. Until a cartridge is seated there is no reset vector
+    // to fetch, so seating one before the first tick also pulses /RES.
     private static readonly MediaBay CartridgeBay = new(
         "cartridge",
-        "Cartridge slot",
+        "Cartridge",
         Required: true,
         [
             new MediaFileFilter("iNES cartridges", "nes"),
@@ -336,16 +337,15 @@ public sealed partial class NesSystem : EmulatedSystem
         ],
         "Select a cartridge");
 
-    public override IReadOnlyList<MediaBay> MediaBays => [CartridgeBay];
+    // Built once, on first read: the control holds its own loaded-image name
+    // for the caption, so it has to be the same instance every time.
+    private ConsoleControl[]? _consoleControls;
 
-    public override void InsertMedia(string bayId, MediaImage image)
+    public override IReadOnlyList<ConsoleControl> ConsoleControls =>
+        _consoleControls ??= [ConsoleControl.CreateMediaBay(CartridgeBay, SeatCartridge, RemoveCartridge)];
+
+    private void SeatCartridge(MediaImage image)
     {
-        if (bayId != CartridgeBay.Id)
-        {
-            base.InsertMedia(bayId, image);
-            return;
-        }
-
         _cartridge = Cartridge.FromImage(image);
 
         // Seating a cartridge during power-on pulses /RES so the CPU and PPU
@@ -359,14 +359,8 @@ public sealed partial class NesSystem : EmulatedSystem
         RaiseMediaChanged();
     }
 
-    public override void EjectMedia(string bayId)
+    private void RemoveCartridge()
     {
-        if (bayId != CartridgeBay.Id)
-        {
-            base.EjectMedia(bayId);
-            return;
-        }
-
         _cartridge = null;
         RaiseMediaChanged();
     }

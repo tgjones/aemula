@@ -225,8 +225,6 @@ public static unsafe class Program
             ToggleDebugger: () => pendingDebuggerToggle = true,
             SelectedSlotCard: SelectedSlotCard,
             ChooseSlotCard: ChooseSlotCard,
-            MediaBays: () => rig?.MediaBays ?? [],
-            BayHasMedia: bayId => mediaImages.ContainsKey(bayId),
             InsertMedia: bay => pendingMediaDialog = bay,
             EjectMedia: bayId => pendingMediaEject = bayId);
 

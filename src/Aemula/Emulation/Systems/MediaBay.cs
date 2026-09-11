@@ -5,10 +5,12 @@ namespace Aemula.Emulation.Systems;
 /// <summary>
 /// One receptacle a machine (or a peripheral cabled to it) takes removable media
 /// into: a cartridge slot, a cassette recorder, a disk drive. This is plain
-/// capability data - the UI builds its "Media" menu and the command line builds
-/// its <c>--media</c> / <c>--list-media</c> options straight off a list of these,
-/// with no per-system code. The hardware word ("Cartridge slot", "Cassette
-/// recorder") lives only in <see cref="DisplayName"/>; the type stays generic.
+/// capability data, carried by a <see cref="ConsoleControl.ControlKind.MediaBay"/>
+/// console control: the status bar draws that control as a slot button in the
+/// panel row, and the command line builds its <c>--media</c> / <c>--list-media</c>
+/// options straight off <see cref="Rig.MediaBays"/> (derived from those controls),
+/// with no per-system code. The hardware word ("Cartridge", "Tape") lives only in
+/// <see cref="DisplayName"/>; the type stays generic.
 /// </summary>
 /// <param name="Id">Stable, lower-case identifier - "cartridge", "cassette", "drive1".</param>
 /// <param name="DisplayName">Human-readable name for menus and listings.</param>

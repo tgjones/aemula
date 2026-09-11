@@ -200,12 +200,18 @@ public class MediaBayTests
 
     // A bare system that claims one media bay of a given id, to force a
     // collision with a peripheral that claims the same one.
-    private sealed class BayNamingSystem(string bayId) : EmulatedSystem
+    private sealed class BayNamingSystem : EmulatedSystem
     {
-        private readonly MediaBay _bay = new(bayId, bayId, false, [], "");
+        private readonly ConsoleControl[] _controls;
+
+        public BayNamingSystem(string bayId)
+        {
+            var bay = new MediaBay(bayId, bayId, false, [], "");
+            _controls = [ConsoleControl.CreateMediaBay(bay, static _ => { }, static () => { })];
+        }
 
         public override ulong CyclesPerSecond => 1_000_000;
         public override void Tick() { }
-        public override IReadOnlyList<MediaBay> MediaBays => [_bay];
+        public override IReadOnlyList<ConsoleControl> ConsoleControls => _controls;
     }
 }
