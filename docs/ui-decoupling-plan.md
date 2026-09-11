@@ -63,10 +63,12 @@ It's also driven from two places, not one:
   `Hexa.NET.SDL3` transitively through its reference to `Aemula.csproj`, same
   as `Aemula.UI`.
 - `Aemula.Tests` also constructs `SDLKeyboardEvent` directly in
-  `AppleISystemInputTests.cs` and `Atari2600SystemInputTests.cs` (also via the
-  transitive package flow — no explicit SDL reference in `Aemula.Tests.csproj`
-  today). `AppleIISystemKeyboardTests.cs` doesn't construct one — it tests
-  `AppleIISystem.MapCharToMatrixPosition` directly.
+  `AppleISystemInputTests.cs`, `Atari2600SystemInputTests.cs`,
+  `AppleICassetteTests.cs`, `AppleISystemCharacterMemoryTests.cs`, and
+  `AppleIISystemTests.cs` (also via the transitive package flow — no explicit
+  SDL reference in `Aemula.Tests.csproj` today). `AppleIISystemKeyboardTests.cs`
+  doesn't construct one — it tests `AppleIISystem.MapCharToMatrixPosition`
+  directly.
 
 So `Hexa.NET.SDL3` currently reaches four projects (`Aemula`, `Aemula.UI`,
 `Aemula.Console`, `Aemula.Tests`) through one transitive chain, and the fix
@@ -164,7 +166,78 @@ just a different type) with `Character = null`. `TypeCharacter` (typed text)
 sets `Character` and `Key` from the same resolved character. No SDL reference
 needed in `Aemula.Console` afterward.
 
-### 4. Package reference changes
+### 4. `DebuggerUI`: how debugger-window construction crosses the boundary
+
+The window-file move isn't actually mechanical, because it's not just the
+per-chip UI folders that construct window types — the *debugger-support* code
+that the plan keeps in `Aemula` does too, all the way up:
+
+- `Debugger.CreateDebuggerWindows` (base, adds `DisassemblyWindow`)
+- Every per-system `Debugger` subclass's override (`AppleIDebugger`,
+  `AppleIIDebugger`, `Atari2600Debugger`, `NesDebugger`,
+  `SpaceInvadersDebugger`) — each `new`s `BreakpointsWindow`, `MemoryEditor`,
+  `TelevisionWindow`, `ScreenDisplayWindow`, `LogicAnalyzerWindow`,
+  `PatternTableWindow` directly.
+- `Atari2600System.CreateDebuggerWindows` (system-level, delegates to its CPU
+  and TIA).
+- Each chip's `CreateDebuggerWindows` (`Mos6502Chip`, `Ricoh2C02Chip`,
+  `TiaChip`, `Intel8080Chip`, `Ricoh2A03Chip`) — one or two lines each,
+  `result.Add(new CpuStateWindow(this))` and the like.
+
+Once the window classes live in `Aemula.UI`, none of this can stay in
+`Aemula` — `Aemula.UI` already has a `ProjectReference` to `Aemula`, so the
+dependency can't run the other way.
+
+**Fix:** delete every one of the `CreateDebuggerWindows` methods above from
+`Aemula` and reconstitute their bodies as a small class hierarchy in
+`Aemula.UI`:
+
+```csharp
+// Aemula.UI/DebuggerUI.cs
+public abstract class DebuggerUI(Debugger debugger)
+{
+    protected Debugger Debugger => debugger;
+
+    public virtual void CreateDebuggerWindows(List<DebuggerWindow> result)
+    {
+        result.Add(new DisassemblyWindow(debugger));
+    }
+}
+```
+
+Five concrete subclasses (`AppleIDebuggerUI`, `AppleIIDebuggerUI`,
+`Atari2600DebuggerUI`, `NesDebuggerUI`, `SpaceInvadersDebuggerUI`), each taking
+the concrete `Debugger` subtype in its constructor and downcasting
+`debugger.System` (already public on the base `Debugger`) to the concrete
+`EmulatedSystem` subtype to reach its `Cpu`/`Ppu`/`Tia`/`Display`. Each
+overrides `CreateDebuggerWindows` with exactly the composition its `Debugger`
+subclass has today — `base.CreateDebuggerWindows(result)` first, then the
+chip-level windows inlined directly (no separate per-chip `*UI` layer: which
+chip-window belongs to which system is always statically known at this call
+site, unlike the `Debugger` → `DebuggerUI` mapping below), then the
+system-level windows in the same order as today.
+
+**Dispatch.** `DebuggerHost` only ever holds a `Debugger?` (from
+`EmulatedSystem.CreateDebugger()`, typed to the base class), so turning that
+into the right concrete `DebuggerUI` needs one runtime type check — this is
+the one genuinely dynamic point in the whole hierarchy. Resolved as a plain
+hand-written switch in `Aemula.UI` (`Atari2600Debugger d => new
+Atari2600DebuggerUI(d), ...`), matching the convention `EmulatedSystems.cs`
+already states for this shape of problem (small per-project hand-maintained
+tables, not a generated registry) rather than introducing an attribute +
+source generator. `DebuggerHost` calls this factory in place of the old
+`debugger?.CreateDebuggerWindows(_windows)`.
+
+**Accessibility.** Everything these `DebuggerUI` classes need is public
+already (`Debugger.System`, `AppleISystem.Cpu`, `AppleIISystem.Cpu`,
+`SpaceInvadersSystem.Cpu`/`.Display`, `NesSystem.Cpu`/`.Ppu`) except
+`Atari2600System.Tia`, `Atari2600System.Cpu`, `Ricoh2A03Chip.CpuCore`, the
+`CreateChannelNodes()` methods, and `ReadByteDebug`/`WriteByteDebug` on a few
+systems, which are `internal`. Add `<InternalsVisibleTo Include="Aemula.UI" />`
+to `Aemula.csproj` (mirroring the existing `Aemula.Tests` entry) rather than
+widening each of those to `public`.
+
+### 5. Package reference changes
 
 - Move `Hexa.NET.ImGui`, `Hexa.NET.ImGui.Backends.SDL3`, `Hexa.NET.ImPlot`,
   `Hexa.NET.SDL3` from `Aemula.csproj` to `Aemula.UI.csproj` (explicit, since
@@ -201,24 +274,31 @@ directly and drops its `Hexa.NET.SDL3` `using`.
 **Done when:** `Aemula.Console.csproj` needs no SDL package reference.
 
 **Phase 3 — Update tests**
-`AppleISystemInputTests.cs` and `Atari2600SystemInputTests.cs` construct
-`KeyEvent` instead of `SDLKeyboardEvent`. `AppleIISystemKeyboardTests.cs`
-likely needs no change (it exercises `MapCharToMatrixPosition` directly), but
-confirm that method's signature still makes sense once its two SDLK-arrow
-special cases move to switching on `Key` instead of a raw int.
+`AppleISystemInputTests.cs`, `Atari2600SystemInputTests.cs`,
+`AppleICassetteTests.cs`, `AppleISystemCharacterMemoryTests.cs`, and
+`AppleIISystemTests.cs` construct `KeyEvent` instead of `SDLKeyboardEvent`.
+`AppleIISystemKeyboardTests.cs` likely needs no change (it exercises
+`MapCharToMatrixPosition` directly), but confirm that method's signature still
+makes sense once its two SDLK-arrow special cases move to switching on `Key`
+instead of a raw int.
 Run targeted tests via `--treenode-filter` for
 `AppleISystemInputTests`, `AppleIISystemKeyboardTests`,
-`Atari2600SystemInputTests`, plus `TiaInputPortTests` (touches the same input
-path on the Atari side) — not the full suite.
+`Atari2600SystemInputTests`, `AppleICassetteTests`,
+`AppleISystemCharacterMemoryTests`, `AppleIISystemTests`, plus
+`TiaInputPortTests` (touches the same input path on the Atari side) — not the
+full suite.
 
 **Phase 4 — Move package references**
 Move the four `Hexa.NET.*` `PackageReference`s from `Aemula.csproj` to
-`Aemula.UI.csproj`. Build `Aemula.UI` and `Aemula.Console` to confirm nothing
-else was relying on the transitive flow.
+`Aemula.UI.csproj`. Add `<InternalsVisibleTo Include="Aemula.UI" />` to
+`Aemula.csproj` (needed by phase 5's `DebuggerUI` classes — see
+[Design §4](#4-debuggerui-how-debugger-window-construction-crosses-the-boundary)).
+Build `Aemula.UI` and `Aemula.Console` to confirm nothing else was relying on
+the transitive package flow.
 **Done when:** `Aemula.csproj` has zero `Hexa.NET.*` references and the
 solution still builds.
 
-**Phase 5 — Move the window files**
+**Phase 5 — Move the window files and introduce `DebuggerUI`**
 Move every file listed under "Pure UI files" in [Current state](#current-state)
 into `Aemula.UI`, mirroring the source folder shape but dropping the
 now-redundant trailing `UI/` segment, since everything under `Aemula.UI` is
@@ -228,6 +308,16 @@ becomes `Aemula.UI/Chips/Mos6502/CpuStateWindow.cs`, namespace
 moves to `Aemula.UI/LogicAnalyzer/LogicAnalyzerWindow.cs`;
 `Channel.cs`, `ChannelGroup.cs`, `ChannelKind.cs`, `ChannelNode.cs`,
 `LogicAnalyzerRecorder.cs`, `SampleClock.cs` stay in `Aemula`.
+
+In the same phase (the build doesn't pass with these split across two
+commits): delete `CreateDebuggerWindows` from `Debugger` and its five
+subclasses, from `Atari2600System`, and from `Mos6502Chip`, `Ricoh2C02Chip`,
+`TiaChip`, `Intel8080Chip`, `Ricoh2A03Chip`; add `Aemula.UI/DebuggerUI.cs`
+(base class) and its five per-system subclasses reconstituting that logic, per
+[Design §4](#4-debuggerui-how-debugger-window-construction-crosses-the-boundary);
+add the hand-written `Debugger` → `DebuggerUI` dispatch; update `DebuggerHost`
+to use it in place of `debugger?.CreateDebuggerWindows(_windows)`.
+
 **Done when:** `Aemula.csproj` has zero `Hexa.NET.*`/ImGui/SDL references of
 any kind (package or transitive), and `Aemula.UI` builds and renders
 unchanged. (Per standing project convention, this is a build/compile check —
