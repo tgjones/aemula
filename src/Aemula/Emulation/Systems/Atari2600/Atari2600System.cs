@@ -4,7 +4,6 @@ using Aemula.Emulation.Chips.Mos6532;
 using Aemula.Emulation.Chips.Tia;
 using Aemula.Emulation.Output;
 using Aemula.Emulation.Systems.Atari2600.Debugging;
-using Aemula.UI;
 using Aemula.UI.LogicAnalyzer;
 using static Aemula.BitUtility;
 
@@ -229,13 +228,6 @@ public sealed partial class Atari2600System : EmulatedSystem
     public override Debugger CreateDebugger()
     {
         return new Atari2600Debugger(this);
-    }
-
-    internal void CreateDebuggerWindows(List<DebuggerWindow> result)
-    {
-        Cpu.CreateDebuggerWindows(result);
-
-        _tia.CreateDebuggerWindows(result);
     }
 
     internal IReadOnlyList<ChannelNode> CreateChannelNodes()

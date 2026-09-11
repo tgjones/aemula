@@ -290,13 +290,20 @@ full suite.
 
 **Phase 4 — Move package references**
 Move the four `Hexa.NET.*` `PackageReference`s from `Aemula.csproj` to
-`Aemula.UI.csproj`. Add `<InternalsVisibleTo Include="Aemula.UI" />` to
-`Aemula.csproj` (needed by phase 5's `DebuggerUI` classes — see
-[Design §4](#4-debuggerui-how-debugger-window-construction-crosses-the-boundary)).
-Build `Aemula.UI` and `Aemula.Console` to confirm nothing else was relying on
-the transitive package flow.
-**Done when:** `Aemula.csproj` has zero `Hexa.NET.*` references and the
-solution still builds.
+`Aemula.UI.csproj`. Add `<InternalsVisibleTo Include="aemula-ui" />` to
+`Aemula.csproj` (`Aemula.UI.csproj` sets `<AssemblyName>aemula-ui</AssemblyName>`,
+so that's the name `InternalsVisibleTo` needs, not the project name) — needed
+by phase 5's `DebuggerUI` classes, see
+[Design §4](#4-debuggerui-how-debugger-window-construction-crosses-the-boundary).
+
+Removing the packages here does *not* leave `Aemula.csproj` building on its
+own: the window files still under `Aemula/UI/` and the five chip `UI/`
+subfolders still need them, and only stop needing them once phase 5 moves
+those files out. So this phase's csproj edits land in the same commit as
+phase 5's file moves, not their own — committing them alone would leave the
+repo in a non-building state. Build `Aemula.UI` and `Aemula.Console`
+independently at this point to confirm neither was relying on the transitive
+package flow for anything *other* than what phase 5 is about to move.
 
 **Phase 5 — Move the window files and introduce `DebuggerUI`**
 Move every file listed under "Pure UI files" in [Current state](#current-state)
@@ -319,7 +326,8 @@ add the hand-written `Debugger` → `DebuggerUI` dispatch; update `DebuggerHost`
 to use it in place of `debugger?.CreateDebuggerWindows(_windows)`.
 
 **Done when:** `Aemula.csproj` has zero `Hexa.NET.*`/ImGui/SDL references of
-any kind (package or transitive), and `Aemula.UI` builds and renders
+any kind (package or transitive), and the whole solution builds - this is the
+first point since phase 3 where that's true again. `Aemula.UI` renders
 unchanged. (Per standing project convention, this is a build/compile check —
 not a manual UI smoke test; the user verifies UI changes themselves.)
 

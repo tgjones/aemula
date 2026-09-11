@@ -1,8 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
-using Aemula.Emulation.Chips.Ricoh2C02.UI;
-using Aemula.UI;
 
 namespace Aemula.Emulation.Chips.Ricoh2C02;
 
@@ -783,12 +781,6 @@ public sealed partial class Ricoh2C02Chip
                 break;
         }
         return address;
-    }
-
-    internal void CreateDebuggerWindows(List<DebuggerWindow> result)
-    {
-        result.Add(new PpuStateWindow(this));
-        result.Add(new PaletteWindow(this));
     }
 
     internal Color GetColor(ushort address)

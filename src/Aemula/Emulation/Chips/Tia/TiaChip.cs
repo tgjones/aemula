@@ -1,9 +1,7 @@
 using System;
 using System.Collections.Generic;
-using Aemula.Emulation.Chips.Tia.UI;
 using static Aemula.BitUtility;
 using static Aemula.Emulation.Chips.Tia.TiaUtility;
-using Aemula.UI;
 using Aemula.UI.LogicAnalyzer;
 
 namespace Aemula.Emulation.Chips.Tia;
@@ -1345,11 +1343,6 @@ public sealed class TiaChip
     /// </summary>
     private static byte PackData67(bool d7, bool d6) =>
         (byte)((d7 ? 0b10 : 0) | (d6 ? 0b01 : 0));
-
-    public void CreateDebuggerWindows(List<DebuggerWindow> result)
-    {
-        result.Add(new TiaWindow(this));
-    }
 
     /// <summary>
     /// Owned here (rather than by the system that embeds a TIA) so every

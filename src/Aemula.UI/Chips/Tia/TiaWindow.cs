@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Numerics;
-using Aemula.UI;
+using Aemula.Emulation.Chips.Tia;
 using Hexa.NET.ImGui;
 
-namespace Aemula.Emulation.Chips.Tia.UI;
+namespace Aemula.UI.Chips.Tia;
 
 internal sealed class TiaWindow : DebuggerWindow
 {

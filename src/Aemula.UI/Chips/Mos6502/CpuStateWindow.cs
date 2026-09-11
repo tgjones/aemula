@@ -1,7 +1,7 @@
-﻿using Aemula.UI;
+﻿using Aemula.Emulation.Chips.Mos6502;
 using Hexa.NET.ImGui;
 
-namespace Aemula.Emulation.Chips.Mos6502.UI;
+namespace Aemula.UI.Chips.Mos6502;
 
 internal sealed class CpuStateWindow : DebuggerWindow
 {

@@ -1,6 +1,4 @@
-﻿using System.Collections.Generic;
-using Aemula.Emulation.Chips.Mos6502;
-using Aemula.UI;
+﻿using Aemula.Emulation.Chips.Mos6502;
 
 namespace Aemula.Emulation.Chips.Ricoh2A03;
 
@@ -194,10 +192,5 @@ public sealed partial class Ricoh2A03Chip
                     break;
             }
         }
-    }
-
-    public void CreateDebuggerWindows(List<DebuggerWindow> result)
-    {
-        _cpuCore.CreateDebuggerWindows(result);
     }
 }

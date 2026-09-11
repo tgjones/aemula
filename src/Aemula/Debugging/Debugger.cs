@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using Aemula.UI;
 
 namespace Aemula.Debugging;
 
@@ -24,7 +23,7 @@ public abstract class Debugger
     /// <summary>
     /// Raised once per tick actually executed (free-run or single-step alike,
     /// since both funnel through <see cref="RunForDuration"/>). Used by
-    /// <see cref="UI.LogicAnalyzer.LogicAnalyzerWindow"/> to sample channels.
+    /// Aemula.UI.LogicAnalyzer.LogicAnalyzerWindow to sample channels.
     /// </summary>
     public event Action? Ticked;
 
@@ -93,10 +92,5 @@ public abstract class Debugger
         LastPC = address;
 
         Disassembler.OnAddressExecuting(address);
-    }
-
-    public virtual void CreateDebuggerWindows(List<DebuggerWindow> result)
-    {
-        result.Add(new DisassemblyWindow(this));
     }
 }

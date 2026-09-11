@@ -1,8 +1,8 @@
 ﻿using System.Numerics;
-using Aemula.UI;
+using Aemula.Emulation.Chips.Ricoh2C02;
 using Hexa.NET.ImGui;
 
-namespace Aemula.Emulation.Chips.Ricoh2C02.UI;
+namespace Aemula.UI.Chips.Ricoh2C02;
 
 internal sealed class PaletteWindow : DebuggerWindow
 {

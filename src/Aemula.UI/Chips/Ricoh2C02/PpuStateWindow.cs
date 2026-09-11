@@ -1,8 +1,8 @@
-﻿using Aemula.UI;
+﻿using Aemula.Emulation.Chips.Ricoh2C02;
 using Hexa.NET.ImGui;
 using static Aemula.Emulation.Chips.Ricoh2C02.Ricoh2C02Chip;
 
-namespace Aemula.Emulation.Chips.Ricoh2C02.UI;
+namespace Aemula.UI.Chips.Ricoh2C02;
 
 public sealed class PpuStateWindow : DebuggerWindow
 {

@@ -1,7 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using Aemula.Emulation.Chips.Mos6502.UI;
-using Aemula.UI;
 using Aemula.UI.LogicAnalyzer;
 
 namespace Aemula.Emulation.Chips.Mos6502;
@@ -353,11 +351,6 @@ public partial class Mos6502Chip
         Irq = 1,
         Nmi = 2,
         Reset = 4,
-    }
-
-    internal void CreateDebuggerWindows(List<DebuggerWindow> result)
-    {
-        result.Add(new CpuStateWindow(this));
     }
 
     /// <summary>

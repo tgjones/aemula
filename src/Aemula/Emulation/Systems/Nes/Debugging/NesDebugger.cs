@@ -1,8 +1,6 @@
 ﻿using System.Collections.Generic;
 using Aemula.Debugging;
 using Aemula.Emulation.Chips.Mos6502.Debugging;
-using Aemula.Emulation.Systems.Nes.UI;
-using Aemula.UI;
 
 namespace Aemula.Emulation.Systems.Nes.Debugging;
 
@@ -52,18 +50,5 @@ public sealed class NesDebugger : Debugger
         {
             OnAddressExecuting(_nes.Cpu.Address);
         }
-    }
-
-    public override void CreateDebuggerWindows(List<DebuggerWindow> result)
-    {
-        base.CreateDebuggerWindows(result);
-
-        _nes.Cpu.CreateDebuggerWindows(result);
-        _nes.Ppu.CreateDebuggerWindows(result);
-
-        result.Add(new BreakpointsWindow(this));
-        result.Add(new MemoryEditor(1, address => _nes.ReadByteDebug((ushort)address), (address, data) => _nes.WriteByteDebug((ushort)address, data)));
-        result.Add(new PatternTableWindow(_nes));
-        result.Add(new TelevisionWindow(_nes.Television));
     }
 }

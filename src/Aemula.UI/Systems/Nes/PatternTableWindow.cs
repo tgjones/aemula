@@ -1,10 +1,10 @@
 ﻿using System;
 using System.Numerics;
-using Aemula.UI;
+using Aemula.Emulation.Systems.Nes;
 using Hexa.NET.ImGui;
 using Hexa.NET.SDL3;
 
-namespace Aemula.Emulation.Systems.Nes.UI;
+namespace Aemula.UI.Systems.Nes;
 
 internal sealed class PatternTableWindow(NesSystem nes) : DebuggerWindow
 {

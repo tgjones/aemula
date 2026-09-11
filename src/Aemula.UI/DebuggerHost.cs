@@ -4,6 +4,7 @@ using System.IO;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Aemula.Debugging;
+using Aemula.UI.Debugging;
 using Hexa.NET.ImGui;
 using Hexa.NET.SDL3;
 
@@ -133,7 +134,10 @@ public sealed class DebuggerHost : IDisposable
         }
         _windows.Clear();
 
-        debugger?.CreateDebuggerWindows(_windows);
+        if (debugger != null)
+        {
+            DebuggerUIFactory.Create(debugger).CreateDebuggerWindows(_windows);
+        }
 
         if (_context != null)
         {

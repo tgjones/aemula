@@ -1,7 +1,6 @@
 using System.Collections.Generic;
 using Aemula.Debugging;
 using Aemula.Emulation.Chips.Mos6502.Debugging;
-using Aemula.UI;
 
 namespace Aemula.Emulation.Systems.AppleI.Debugging;
 
@@ -43,16 +42,5 @@ public sealed class AppleIDebugger : Debugger
         {
             OnAddressExecuting(_appleI.Cpu.Address);
         }
-    }
-
-    public override void CreateDebuggerWindows(List<DebuggerWindow> result)
-    {
-        base.CreateDebuggerWindows(result);
-
-        _appleI.Cpu.CreateDebuggerWindows(result);
-
-        result.Add(new BreakpointsWindow(this));
-        result.Add(new MemoryEditor(1, address => _appleI.ReadByteDebug((ushort)address), (address, data) => _appleI.WriteByteDebug((ushort)address, data)));
-        result.Add(new TelevisionWindow(_appleI.Television));
     }
 }

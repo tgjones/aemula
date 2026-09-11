@@ -1,7 +1,7 @@
-﻿using Aemula.UI;
+﻿using Aemula.Emulation.Chips.Intel8080;
 using Hexa.NET.ImGui;
 
-namespace Aemula.Emulation.Chips.Intel8080.UI;
+namespace Aemula.UI.Chips.Intel8080;
 
 internal sealed class CpuStateWindow : DebuggerWindow
 {

@@ -1,7 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using Aemula.Emulation.Chips.Intel8080.UI;
-using Aemula.UI;
 using Aemula.UI.LogicAnalyzer;
 
 namespace Aemula.Emulation.Chips.Intel8080;
@@ -2896,11 +2894,6 @@ public sealed partial class Intel8080Chip
     private static int CombineMachineCycleTypeAndState(MachineCycleType machineCycleType, State state)
     {
         return ((byte)machineCycleType << 8) | (byte)state;
-    }
-
-    internal void CreateDebuggerWindows(List<DebuggerWindow> result)
-    {
-        result.Add(new CpuStateWindow(this));
     }
 
     /// <summary>
