@@ -2,7 +2,6 @@ using System.Linq;
 using System.Threading.Tasks;
 using Aemula.Emulation.Systems;
 using Aemula.Emulation.Systems.AppleI;
-using Hexa.NET.SDL3;
 
 namespace Aemula.Tests.Emulation.Systems.AppleI;
 
@@ -63,14 +62,14 @@ public class AppleISystemInputTests
     }
 
     // The exact shape the console harness delivers a typed character in
-    // (InputScript.TypeCharacter): a key-down with the scancode left Unknown
-    // so OnKeyEvent takes Key as the literal character.
+    // (InputScript.TypeCharacter): a key-down carrying the resolved
+    // character directly.
     private static void TypeKey(AppleISystem system, char character) =>
-        system.OnKeyEvent(new SDLKeyboardEvent
+        system.OnKeyEvent(new KeyEvent
         {
-            Type = SDLEventType.KeyDown,
-            Key = character,
-            Scancode = SDLScancode.Unknown,
+            IsDown = true,
+            Key = (Key)character,
+            Character = character,
         });
 
     [Test]

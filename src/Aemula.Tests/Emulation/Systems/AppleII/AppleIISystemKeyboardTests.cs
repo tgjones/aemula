@@ -96,10 +96,10 @@ public class AppleIISystemKeyboardTests
     [Test]
     public async Task ControlAndArrowKeysMapToTheirFixedCrosspoints()
     {
-        await Assert.That(AppleIISystem.MapCharToMatrixPosition(0x0D)).IsEqualTo((4, 9, false)); // Return.
-        await Assert.That(AppleIISystem.MapCharToMatrixPosition(0x1B)).IsEqualTo((4, 3, false)); // Escape.
-        await Assert.That(AppleIISystem.MapCharToMatrixPosition(0x08)).IsEqualTo((2, 8, false)); // Backspace.
-        await Assert.That(AppleIISystem.MapCharToMatrixPosition(0x40000050)).IsEqualTo((2, 8, false)); // Left.
-        await Assert.That(AppleIISystem.MapCharToMatrixPosition(0x4000004F)).IsEqualTo((2, 9, false)); // Right.
+        await Assert.That(AppleIISystem.MapCharToMatrixPosition('\r')).IsEqualTo((4, 9, false)); // Return.
+        await Assert.That(AppleIISystem.MapCharToMatrixPosition('\x1b')).IsEqualTo((4, 3, false)); // Escape.
+        await Assert.That(AppleIISystem.MapCharToMatrixPosition('\b')).IsEqualTo((2, 8, false)); // Backspace.
+        await Assert.That(AppleIISystem.MapCharToMatrixPosition((char)Key.Left)).IsEqualTo((2, 8, false));
+        await Assert.That(AppleIISystem.MapCharToMatrixPosition((char)Key.Right)).IsEqualTo((2, 9, false));
     }
 }

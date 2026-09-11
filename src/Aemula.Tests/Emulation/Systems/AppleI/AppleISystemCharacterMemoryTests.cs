@@ -1,6 +1,5 @@
 using System.Threading.Tasks;
 using Aemula.Emulation.Systems.AppleI;
-using Hexa.NET.SDL3;
 
 namespace Aemula.Tests.Emulation.Systems.AppleI;
 
@@ -17,11 +16,11 @@ public class AppleISystemCharacterMemoryTests
 
     private static void PressKey(AppleISystem system, char key)
     {
-        system.OnKeyEvent(new SDLKeyboardEvent
+        system.OnKeyEvent(new KeyEvent
         {
-            Type = SDLEventType.KeyDown,
-            Key = key,
-            Scancode = SDLScancode.Unknown,
+            IsDown = true,
+            Key = (Key)key,
+            Character = key,
         });
     }
 

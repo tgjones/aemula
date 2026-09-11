@@ -2,7 +2,6 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 using Aemula.Emulation.Systems.AppleII;
-using Hexa.NET.SDL3;
 
 namespace Aemula.Tests.Emulation.Systems.AppleII;
 
@@ -73,7 +72,7 @@ public class AppleIISystemTests
             system.Tick();
         }
 
-        system.OnKeyEvent(new SDLKeyboardEvent { Type = SDLEventType.KeyDown, Key = (int)'a' });
+        system.OnKeyEvent(new KeyEvent { IsDown = true, Key = Key.A });
 
         for (var i = 0; i < 200_000; i++)
         {
@@ -84,7 +83,7 @@ public class AppleIISystemTests
         // strobe flag, bits 0-6 are the uppercase ASCII code).
         await Assert.That(system.ReadByteDebug(0xC000)).IsEqualTo((byte)0xC1);
 
-        system.OnKeyEvent(new SDLKeyboardEvent { Type = SDLEventType.KeyUp, Key = (int)'a' });
+        system.OnKeyEvent(new KeyEvent { IsDown = false, Key = Key.A });
 
         // Reading $C010 clears the strobe; the data bits (a stale, latched
         // "A") stay put until another key is pressed.

@@ -6,7 +6,6 @@ using Aemula.Emulation.Output.Wav;
 using Aemula.Emulation.Peripherals.Cassette;
 using Aemula.Emulation.Systems;
 using Aemula.Emulation.Systems.AppleI;
-using Hexa.NET.SDL3;
 
 namespace Aemula.Tests.Emulation.Systems.AppleI;
 
@@ -25,11 +24,11 @@ public class AppleICassetteTests
     private const ushort WozMonEscape = 0xFF1A;
 
     private static void TypeKey(AppleISystem system, char character) =>
-        system.OnKeyEvent(new SDLKeyboardEvent
+        system.OnKeyEvent(new KeyEvent
         {
-            Type = SDLEventType.KeyDown,
-            Key = character,
-            Scancode = SDLScancode.Unknown,
+            IsDown = true,
+            Key = (Key)character,
+            Character = character,
         });
 
     // Paced the way the console harness types: one key, then a couple of

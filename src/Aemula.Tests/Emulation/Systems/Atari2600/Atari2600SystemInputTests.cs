@@ -1,6 +1,5 @@
 using System.Threading.Tasks;
 using Aemula.Emulation.Systems.Atari2600;
-using Hexa.NET.SDL3;
 
 namespace Aemula.Tests.Emulation.Systems.Atari2600;
 
@@ -9,17 +8,11 @@ namespace Aemula.Tests.Emulation.Systems.Atari2600;
 // drives INPT4 (TIA I-pin 4). Every line is active-low, idle high.
 public class Atari2600SystemInputTests
 {
-    private const int SdlkRight = 0x4000004F;
-    private const int SdlkLeft = 0x40000050;
-    private const int SdlkDown = 0x40000051;
-    private const int SdlkUp = 0x40000052;
-    private const int SdlkSpace = 0x20;
+    private static void KeyDown(Atari2600System system, Key key) =>
+        system.OnKeyEvent(new KeyEvent { IsDown = true, Key = key });
 
-    private static void KeyDown(Atari2600System system, int key) =>
-        system.OnKeyEvent(new SDLKeyboardEvent { Type = SDLEventType.KeyDown, Key = key });
-
-    private static void KeyUp(Atari2600System system, int key) =>
-        system.OnKeyEvent(new SDLKeyboardEvent { Type = SDLEventType.KeyUp, Key = key });
+    private static void KeyUp(Atari2600System system, Key key) =>
+        system.OnKeyEvent(new KeyEvent { IsDown = false, Key = key });
 
     [Test]
     public async Task IdleInputSitsAtAllOnes()
@@ -32,11 +25,11 @@ public class Atari2600SystemInputTests
     }
 
     [Test]
-    [Arguments(SdlkUp, 0b0001_0000)]
-    [Arguments(SdlkDown, 0b0010_0000)]
-    [Arguments(SdlkLeft, 0b0100_0000)]
-    [Arguments(SdlkRight, 0b1000_0000)]
-    public async Task ArrowKeyPullsItsSwchaBitLowThenReleasesIt(int key, int bit)
+    [Arguments(Key.Up, 0b0001_0000)]
+    [Arguments(Key.Down, 0b0010_0000)]
+    [Arguments(Key.Left, 0b0100_0000)]
+    [Arguments(Key.Right, 0b1000_0000)]
+    public async Task ArrowKeyPullsItsSwchaBitLowThenReleasesIt(Key key, int bit)
     {
         var system = new Atari2600System();
 
@@ -54,13 +47,13 @@ public class Atari2600SystemInputTests
     {
         var system = new Atari2600System();
 
-        KeyDown(system, SdlkUp);
-        KeyDown(system, SdlkLeft);
+        KeyDown(system, Key.Up);
+        KeyDown(system, Key.Left);
 
         // Up (bit 4) + Left (bit 6) low, Down + Right still high.
         await Assert.That(system.Riot.PA & 0xF0).IsEqualTo(0b1010_0000);
 
-        KeyUp(system, SdlkUp);
+        KeyUp(system, Key.Up);
         await Assert.That(system.Riot.PA & 0xF0).IsEqualTo(0b1011_0000);
     }
 
@@ -69,10 +62,10 @@ public class Atari2600SystemInputTests
     {
         var system = new Atari2600System();
 
-        KeyDown(system, SdlkSpace);
+        KeyDown(system, Key.Space);
         await Assert.That(system.Tia.I & 0b0001_0000).IsEqualTo(0);
 
-        KeyUp(system, SdlkSpace);
+        KeyUp(system, Key.Space);
         await Assert.That(system.Tia.I & 0b0001_0000).IsEqualTo(0b0001_0000);
     }
 
@@ -81,8 +74,8 @@ public class Atari2600SystemInputTests
     {
         var system = new Atari2600System();
 
-        KeyDown(system, 'a');
-        KeyDown(system, 0x0D); // Return.
+        KeyDown(system, Key.A);
+        KeyDown(system, Key.Return);
 
         await Assert.That(system.Riot.PA & 0xF0).IsEqualTo(0xF0);
         await Assert.That(system.Tia.I & 0b0001_0000).IsEqualTo(0b0001_0000);
