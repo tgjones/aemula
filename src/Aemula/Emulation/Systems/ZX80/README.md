@@ -20,8 +20,12 @@ corrected KiCad reproduction of the original board:
 
 ## ROMs
 
-Not yet sourced - see [`docs/zx80-plan.md`](../../../../../docs/zx80-plan.md)
-for sourcing notes while this is in progress.
+`Roms/zx80.rom` - the 4K BASIC ROM, sourced from
+[k1.spdns.de's Sinclair archive](https://k1.spdns.de/Vintage/Sinclair/80/Sinclair%20ZX80/ROMs/)
+and checksum-verified against MAME's `zx80` romset (CRC32 `4c7fc597`). See
+`Roms/README.txt` for the disclaimer, and
+[`docs/zx80-plan.md`](../../../../../docs/zx80-plan.md) for the open v1/v2
+revision question while this is in progress.
 
 ## Other implementations
 

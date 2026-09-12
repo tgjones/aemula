@@ -5,6 +5,7 @@ using Aemula.Emulation.Systems.AppleII;
 using Aemula.Emulation.Systems.Atari2600;
 using Aemula.Emulation.Systems.Nes;
 using Aemula.Emulation.Systems.SpaceInvaders;
+using Aemula.Emulation.Systems.ZX80;
 
 namespace Aemula.Emulation.Systems;
 
@@ -48,6 +49,7 @@ public static class EmulatedSystems
         new("atari2600", "Atari 2600", [], static _ => new Atari2600System()),
         new("nes", "NES", [], static _ => new NesSystem()),
         new("spaceinvaders", "Space Invaders", [], static _ => new SpaceInvadersSystem()),
+        new("zx80", "Sinclair ZX80", [], static _ => new ZX80System()),
     ];
 
     public static SystemDescriptor? FindById(string? id)
