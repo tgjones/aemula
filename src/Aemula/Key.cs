@@ -64,4 +64,5 @@ public enum Key
     Left,
     Right,
     RightShift,
+    LeftShift,
 }

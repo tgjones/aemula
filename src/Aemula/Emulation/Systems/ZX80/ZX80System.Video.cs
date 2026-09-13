@@ -212,6 +212,25 @@ public sealed partial class ZX80System
         return _ic16.Y2;
     }
 
+    // IC17 gates 1+4: OR(/RD, /IORQ) NAND'd... rather, De Morgan'd through a
+    // second OR with A0, giving an active-low "an I/O read of an even port
+    // is in progress" signal from plain OR gates - the standard trick of
+    // building an active-low AND-of-lows out of an OR gate. Shared between
+    // the horizontal counter-reset latch above (which only needs to know a
+    // keyboard read happened) and the keyboard matrix read in
+    // ZX80System.Keyboard.cs (which needs it to know when to drive Cpu.Data
+    // at all).
+    private bool GetKbdSignal()
+    {
+        _ic17.A1 = Cpu.Rd;
+        _ic17.B1 = Cpu.IoRq;
+        var ioReadOrIoRq = _ic17.Y1;
+
+        _ic17.A4 = ioReadOrIoRq;
+        _ic17.B4 = (Cpu.Address & 0x01) != 0;
+        return _ic17.Y4;
+    }
+
     private void TickVideo(bool phi2X)
     {
         _videoShiftRegister.Clk = phi2X;
@@ -312,14 +331,7 @@ public sealed partial class ZX80System
         // cleared by a keyboard row read's /RD+/IORQ+A0 pulse - the same
         // "software releases a hardware latch" trick the sync chain below
         // uses, just gating the scanline counter instead of the sync pulse.
-        // The keyboard matrix itself isn't wired up until phase 4, but /KBD
-        // is pure bus decode and needs none of it.
-        _ic17.A1 = Cpu.Rd;
-        _ic17.B1 = Cpu.IoRq;
-        var ioReadOrIoRq = _ic17.Y1;
-        _ic17.A4 = ioReadOrIoRq;
-        _ic17.B4 = (Cpu.Address & 0x01) != 0;
-        var kbd = _ic17.Y4;
+        var kbd = GetKbdSignal();
 
         _ic17.A2 = Cpu.Wr;
         _ic17.B2 = Cpu.IoRq;

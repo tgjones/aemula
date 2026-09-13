@@ -121,6 +121,7 @@ public sealed partial class ZX80System : EmulatedSystem
 
         DoCpuMemoryAccess();
         TickVideo(phi2X);
+        TickCompositeVideo();
     }
 
     private void DoCpuMemoryAccess()
@@ -165,6 +166,15 @@ public sealed partial class ZX80System : EmulatedSystem
         if (Cpu.Rfsh && !Cpu.M1)
         {
             TickNopGenerator();
+        }
+
+        // The keyboard read: GetKbdSignal is already false exactly when this
+        // is an I/O read of an even port (see its own remarks) - which on
+        // this board only ever means the keyboard, there being no other I/O
+        // device decoded on A0 alone.
+        if (!GetKbdSignal())
+        {
+            Cpu.Data = ReadKeyboardMatrix(Cpu.Address);
         }
     }
 

@@ -193,6 +193,7 @@ public sealed class EmulationWindow : IDisposable
         (int)SDL.SDLK_LEFT => Key.Left,
         (int)SDL.SDLK_RIGHT => Key.Right,
         (int)SDL.SDLK_RSHIFT => Key.RightShift,
+        (int)SDL.SDLK_LSHIFT => Key.LeftShift,
         >= 0 and <= 0x7F => (Key)keycode,
         _ => Key.None,
     };
