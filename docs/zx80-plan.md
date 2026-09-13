@@ -444,9 +444,39 @@ shift-register load strobe is now actually firing, though the visible mark
 is a small cursor-shaped artifact near the bottom-left corner rather than a
 recognizable "K" boot prompt - worth checking next whether that position/
 scale is a display-model bug (e.g. a vertical flip) or the shift register is
-still only loading intermittently. Not yet re-instrumented with the
-addendum's own `ShLd`-strobe-count reflection check to confirm the strobe
-rate is now "thousands of times" rather than "once."
+still only loading intermittently.
+
+**Re-instrumented the `ShLd`-strobe count (throwaway reflection-based test,
+not committed) - found and fixed the actual rendering bug.** The count was
+still 1 falling edge across 30,000,000 ticks, unchanged from the original
+addendum finding above - the split-bus fidelity fix was real and worth
+doing, but it wasn't this bug. Tracing `_characterLatch`'s internal `_le`/
+`_d6`/`_q6` fields tick-by-tick around a genuine character fetch (address
+`0xC043`, far bus `0xB0` - a `K` cursor glyph with the inverse-video flag
+set) found the actual cause: a one-tick-late latch-enable ordering bug in
+`TickVideo`, not the split bus at all. `Ttl74373Chip`'s `Le` was assigned
+*after* `D0`-`D7` each tick. On the tick a display-file M1's refresh half
+begins (every M1 cycle, `Le` correctly falls to end the transparent
+window), the `D6` setter ran first and still read the *previous* tick's
+stale `_le = true`, so it performed one more transparent capture using this
+tick's now-irrelevant refresh-phase `nopDecode` (computed against the
+refresh address, where A15 is always clear) - overwriting the correct
+character-fetch value `Le`'s own falling edge was about to freeze. Fixed by
+moving `_characterLatch.Le = le;` to before the `D0`-`D7` assignments, so
+the D setters see the current tick's `Le` state: a falling-edge tick now
+freezes immediately (D setters see the already-updated `false` and no-op),
+and a rising-edge tick is still correctly transparent (the D setters see
+the already-updated `true` and capture fresh values right after `Le`'s own
+edge-triggered bulk copy, which used stale D inputs, runs). This took the
+`ShLd` falling-edge count from 1 to 3,073 over the same 30,000,000 ticks -
+in the "thousands, roughly once per character cell" range the original
+addendum expected. All ZX80 tests still pass (10/10), and
+`Aemula.Console --screenshot` now renders a solid, glyph-shaped black block
+(the inverse-video cursor, by its position and shape) in place of the
+earlier one-pixel artifact - not yet the full "K" prompt text, and its
+on-screen position (bottom-left rather than top-left) is still unexplained,
+worth checking next along with whether the remaining gap is a display/
+timing offset or something further in the shift-out/composite-video path.
 
 **Phase 7 (stretch, explicit follow-up per your steer) — PAL variant**
 Add the 50Hz strapping (no D11, the default BOM) as a build/config option

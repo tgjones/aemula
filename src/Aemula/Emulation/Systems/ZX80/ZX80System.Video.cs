@@ -311,7 +311,22 @@ public sealed partial class ZX80System
         // which still carries the true character code even on a cycle where
         // IC14/IC15 are forcing the CPU-visible side to 0x00 - see
         // _farDataBus's own remarks.
+        //
+        // Le has to be set before the D inputs below, not after: Ttl74373Chip's
+        // D setters check its *current* Le state to decide whether to update Q
+        // transparently, and on the tick Le falls (the T1-to-refresh boundary,
+        // every M1 cycle), Le itself only just became false this tick - setting
+        // it last would leave the D setters still seeing last tick's stale
+        // true, letting them sneak in one more transparent capture using this
+        // tick's now-irrelevant refresh-phase nopDecode and stomping the real
+        // character byte the latch just correctly froze a tick earlier. Le
+        // first means: falling-edge ticks freeze immediately (D setters below
+        // see the new false and no-op), and rising-edge ticks still end up
+        // transparent (the D setters see the new true and capture this tick's
+        // fresh values right after Le's own edge-triggered copy, which used the
+        // stale D inputs, runs).
         _characterLatch.Oe = false; // OE tied to 0V - always enabled.
+        _characterLatch.Le = le;
         _characterLatch.D0 = (_farDataBus & 0x01) != 0;
         _characterLatch.D1 = (_farDataBus & 0x02) != 0;
         _characterLatch.D2 = (_farDataBus & 0x04) != 0;
@@ -320,7 +335,6 @@ public sealed partial class ZX80System
         _characterLatch.D5 = (_farDataBus & 0x20) != 0;
         _characterLatch.D6 = nopDecode;
         _characterLatch.D7 = (_farDataBus & 0x80) != 0; // the inverse-video flag.
-        _characterLatch.Le = le;
 
         // Shift-register load vs. shift, off data bus line D4 (see the
         // field comment on _videoShiftRegister). IC16 gate 3 NANDs: a
