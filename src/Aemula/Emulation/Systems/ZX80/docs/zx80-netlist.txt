@@ -17,6 +17,18 @@
 #   giving black text on a white background. The alternative position connects it to
 #   IC9.9 instead, giving white text on black. This netlist wires the normal position.
 # IC18.11 / 2PHI is marked uncertain by the user - verify before relying on it.
+# SECOND PASS: three more corrections, user-verified against the schematic:
+#   IC15.9 (the NOP-generator gate that ultimately clocks IC19's sync flip-flops)
+#     is driven by /M1, not by the dangling net the first pass left it on.
+#   /INT (IC1.16) is the same physical net as A6 - the Z80's own address bus
+#     wired straight back into its own interrupt input, no gate in between.
+#     This is the well-known "refresh counter drives the interrupt" ZX80 trick,
+#     now confirmed for this schematic rather than assumed from folklore.
+#   IC9.2 (the 74LS165 video shift register's CLK) is not grounded - it sits
+#     between R2 (470R, to 0V) and C9 (47p, to 2PHI), the same edge-differentiator
+#     pattern as the C11/R25 pair on PHI, but off the pre-divide 2PHI instead -
+#     giving the shift register two shift pulses per CPU T-state (8 per M1 cycle,
+#     one per pixel of a character cell).
 #
 ## COMPONENTS
 C1 | capacitor | 
@@ -142,10 +154,9 @@ X1 | crystal |
 /BUSAC: IC1.23 J23A.18
 /BUSRQ: IC1.25 J23A.20 R22.2
 /HALT: IC1.18 IC16.3 J23A.13
-/INT: IC1.16 J23A.11
 /IORQ: IC1.20 IC17.2 IC17.5 IC18.4 J23A.15
 /KBD: IC11.13 IC17.11
-/M1: IC1.27 IC17.10 J23A.22
+/M1: IC1.27 IC15.9 IC17.10 J23A.22
 /MREQ: IC1.19 IC11.1 IC12.12 IC13.1 IC16.11 J23A.14
 /NMI: IC1.17 J23A.12 R12.2
 /PHI: IC15.11 IC15.13 IC16.2 IC18.8 IC18.12 J23B.6
@@ -155,8 +166,8 @@ X1 | crystal |
 /SYNC: IC19.6
 /WAIT: IC1.24 J23A.19 R23.2
 /WR: IC1.22 IC3.10 IC17.4 J23A.17
-0V: C1.2 C2.2 C4.2 C5.2 C6.2 C9.1 C10.2 C13.2 IC1.29 IC2.12 IC3.9 IC4.9 IC5.1 IC5.10 IC6.8 IC6.15 IC7.8 IC7.15 IC8.8 IC8.15 IC9.2 IC9.8 IC9.10 IC9.15 IC10.8 IC18.2 IC20.1 IC21.10 IC22.Lb J23B.4 J23B.5 R1.2 R2.1 R2.2 R25.2 R34.2 X1.3
-2PHI: IC18.11 IC20.3
+0V: C1.2 C2.2 C4.2 C5.2 C6.2 C10.2 C13.2 IC1.29 IC2.12 IC3.9 IC4.9 IC5.1 IC5.10 IC6.8 IC6.15 IC7.8 IC7.15 IC8.8 IC8.15 IC9.8 IC9.10 IC9.15 IC10.8 IC18.2 IC20.1 IC21.10 IC22.Lb J23B.4 J23B.5 R1.2 R2.2 R25.2 R34.2 X1.3
+2PHI: C9.2 IC18.11 IC20.3
 5V: C1.1 C2.1 C4.1 C5.1 C6.1 IC1.11 IC2.24 IC3.18 IC4.18 IC5.20 IC6.16 IC7.16 IC8.16 IC9.16 IC10.16 IC18.3 IC18.10 IC19.4 IC19.10 IC19.13 IC20.9 IC20.13 IC21.5 IC22.Lt J23B.1 R3.1 R12.1 R18.1 R20.1 R21.1 R22.1 R23.1 R28.1
 9V: J23B.2
 A0: IC1.30 IC3.7 IC4.7 IC8.10 IC17.13 J23B.7
@@ -179,7 +190,7 @@ A4: IC1.34 IC3.3 IC4.3 IC7.10 J23B.22
 A4': IC2.4 IC7.9
 A5: IC1.35 IC3.2 IC4.2 IC7.6 J23B.21
 A5': IC2.3 IC7.7
-A6: IC1.36 IC3.1 IC4.1 IC7.3 J23B.20
+A6: IC1.16 IC1.36 IC3.1 IC4.1 IC7.3 J23A.11 J23B.20
 A6': IC2.2 IC7.4
 A7: IC1.37 IC3.17 IC4.17 IC7.13 J23B.19
 A7': IC2.1 IC7.12
@@ -194,7 +205,7 @@ D2: IC1.12 IC9.13 IC10.11 IC10.12 IC14.10 R8.2 R13.2 SW_3.2 SW_8.2 SW_D.2 SW_E.2
 D2': IC2.11 IC3.11 IC5.17 J23A.6 R8.1
 D3: IC1.8 IC9.14 IC10.4 IC10.5 IC14.6 R5.2 R14.1 SW_4.2 SW_7.2 SW_C.2 SW_F.2 SW_J.2 SW_N.2 SW_R.2 SW_U.2
 D3': IC2.13 IC4.13 IC5.18 J23A.9 R5.1
-D4: IC1.7 IC9.1 IC9.3 IC10.13 IC10.14 IC13.9 IC14.8 IC16.8 R4.2 R15.1 SW_G.2 SW_V.2
+D4: IC1.7 IC9.3 IC10.13 IC10.14 IC14.8 R4.2 R15.1 SW_G.2 SW_V.2
 D4': IC2.14 IC4.14 IC5.3 J23A.10 R4.1
 D5: IC1.9 IC9.4 IC14.12 R6.2
 D5': IC2.15 IC4.12 IC5.4 J23A.8 R6.1
@@ -229,56 +240,56 @@ _N020: IC5.8 IC16.6 IC17.9
 _N021: IC5.11 IC13.4
 _N022: D11.1 IC10.1 IC10.15
 _N023: IC9.7 IC20.4
-_N024: IC11.10 IC11.11 IC21.2 IC21.3
-_N025: IC12.13 IC13.12
-_N026: IC13.13
-_N027: IC13.6 IC16.5
-_N028: IC13.10 IC16.10
-_N029: IC13.8 R24.1
-_N030: IC13.3 IC16.12
-_N031: IC12.10 IC13.2 IC16.13
-_N032: IC11.3 IC12.2
-_N033: IC12.1 IC12.6 IC20.5
-_N034: IC12.3 IC12.4
-_N035: IC11.6 IC12.5
-_N036: IC12.8 R19.1
-_N037: C11.2 IC11.2 IC16.9 R25.1
-_N038: IC14.1 IC14.3 IC14.5 IC14.9 IC14.11 IC14.13 IC15.2 IC15.3 IC15.5 R3.2
-_N039: IC14.2
-_N040: IC15.9
-_N041: IC15.8 IC19.3 IC19.11 R18.2
-_N042: IC15.1 IC17.8
-_N043: IC15.10 IC15.12 R20.2
-_N044: IC19.2 IC19.9
-_N045: IC11.8 IC11.12 IC19.1
-_N046: IC18.6 IC19.12
-_N047: IC18.13
-_N048: IC17.3 IC17.12
-_N049: IC11.9 IC17.6
-_N050: IC20.8 X1.2
-_N051: IC20.2 IC20.10 IC20.11 R27.2
-_N052: IC11.5 R24.2
-_N053: C8.1 IC22.Rt
-_N054: C8.2 IC22.Rb
-_N055: D3.1 SW_C.1 SW_SHIFT.1 SW_V.1 SW_X.1 SW_Z.1
-_N056: D4.1 SW_5.2 SW_6.2 SW_A.1 SW_B.2 SW_D.1 SW_F.1 SW_G.1 SW_H.2 SW_S.1 SW_T.2 SW_Y.2
-_N057: D5.1 SW_E.1 SW_Q.1 SW_R.1 SW_T.1 SW_W.1
-_N058: D5.2
-_N059: D6.1 SW_1.1 SW_2.1 SW_3.1 SW_4.1 SW_5.1
-_N060: D7.1 SW_0.1 SW_6.1 SW_7.1 SW_8.1 SW_9.1
-_N061: D7.2
-_N062: D8.1 SW_I.1 SW_O.1 SW_P.1 SW_U.1 SW_Y.1
-_N063: D9.1 SW_H.1 SW_J.1 SW_K.1 SW_L.1 SW_NEWLINE.1
-_N064: D10.1 SW_B.1 SW_M.1 SW_N.1 SW_SPACE.1
-_N065: R13.1 R14.2 R15.2 R16.2 R17.2
-_N066: C13.1 C14.2 R34.1
-_N067: R29.1
-_N068: C12.2 R29.2
-_N069: C14.1 R35.2
-_N070: R30.1 R32.1
-_N071: C15.1 IC20.12 R27.1 X1.1
-_N072: C9.2
-_N073: C15.2
+_N024: IC9.1 IC13.9 IC16.8
+_N025: IC11.10 IC11.11 IC21.2 IC21.3
+_N026: IC12.13 IC13.12
+_N027: IC13.13
+_N028: IC13.6 IC16.5
+_N029: IC13.10 IC16.10
+_N030: IC13.8 R24.1
+_N031: IC13.3 IC16.12
+_N032: IC12.10 IC13.2 IC16.13
+_N033: IC11.3 IC12.2
+_N034: IC12.1 IC12.6 IC20.5
+_N035: IC12.3 IC12.4
+_N036: IC11.6 IC12.5
+_N037: IC12.8 R19.1
+_N038: C11.2 IC11.2 IC16.9 R25.1
+_N039: IC14.1 IC14.3 IC14.5 IC14.9 IC14.11 IC14.13 IC15.2 IC15.3 IC15.5 R3.2
+_N040: IC14.2
+_N042: IC15.8 IC19.3 IC19.11 R18.2
+_N043: IC15.1 IC17.8
+_N044: IC15.10 IC15.12 R20.2
+_N045: IC19.2 IC19.9
+_N046: IC11.8 IC11.12 IC19.1
+_N047: IC18.6 IC19.12
+_N048: IC18.13
+_N049: IC17.3 IC17.12
+_N050: IC11.9 IC17.6
+_N051: IC20.8 X1.2
+_N052: IC20.2 IC20.10 IC20.11 R27.2
+_N053: IC11.5 R24.2
+_N054: C8.1 IC22.Rt
+_N055: C8.2 IC22.Rb
+_N056: D3.1 SW_C.1 SW_SHIFT.1 SW_V.1 SW_X.1 SW_Z.1
+_N057: D4.1 SW_5.2 SW_6.2 SW_A.1 SW_B.2 SW_D.1 SW_F.1 SW_G.1 SW_H.2 SW_S.1 SW_T.2 SW_Y.2
+_N058: D5.1 SW_E.1 SW_Q.1 SW_R.1 SW_T.1 SW_W.1
+_N059: D5.2
+_N060: D6.1 SW_1.1 SW_2.1 SW_3.1 SW_4.1 SW_5.1
+_N061: D7.1 SW_0.1 SW_6.1 SW_7.1 SW_8.1 SW_9.1
+_N062: D7.2
+_N063: D8.1 SW_I.1 SW_O.1 SW_P.1 SW_U.1 SW_Y.1
+_N064: D9.1 SW_H.1 SW_J.1 SW_K.1 SW_L.1 SW_NEWLINE.1
+_N065: D10.1 SW_B.1 SW_M.1 SW_N.1 SW_SPACE.1
+_N066: R13.1 R14.2 R15.2 R16.2 R17.2
+_N067: C13.1 C14.2 R34.1
+_N068: R29.1
+_N069: C12.2 R29.2
+_N070: C14.1 R35.2
+_N071: R30.1 R32.1
+_N072: C15.1 IC20.12 R27.1 X1.1
+_N074: C15.2
+_N075: C9.1 IC9.2 R2.1
 
 ## DIAGNOSTICS (read before trusting a net)
 # Pins inferred from the package pinout because the drawing omits the number:
@@ -289,8 +300,8 @@ _N073: C15.2
 #   net 0V also saw: {'/KBD': 1, '0V': 4}
 #   net 5V also saw: {'5V': 3, '0V': 1}
 # Nets with only one pin attached (likely a label the extractor failed to read):
-#   /SYNC 9V _N001 _N002 _N003 _N011 _N012 _N013 _N026 _N039 _N040 _N047
-#   _N058 _N061 _N067 _N072 _N073
+#   /SYNC 9V _N001 _N002 _N003 _N011 _N012 _N013 _N027 _N048
+#   _N059 _N062 _N068 _N074
 # Corrections applied to 46 pins; 16 of them changed the extracted net.
 # Extracted nets that disagreed with the corrections and were overridden:
 #   IC16.4 / IC16.5 - the two pin numbers were swapped by the extractor

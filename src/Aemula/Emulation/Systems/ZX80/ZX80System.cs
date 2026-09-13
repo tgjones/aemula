@@ -31,35 +31,58 @@ public sealed partial class ZX80System : EmulatedSystem
     // machine's only RAM.
     private readonly byte[] _ram = new byte[0x400];
 
-    // IC18, flip-flop A: Q wired back to its own D, the classic toggle-on-
-    // every-rising-edge wiring that divides the master oscillator by 2 to
-    // produce the Z80's own clock. The chip's other flip-flop is part of
-    // the horizontal sync chain, wired up once video timing lands.
-    private readonly Ttl7474Chip _clockDivider;
-
-    private bool _masterClockHigh;
-
-    // IC13: two of its six inverters produce NOT(/MREQ) (gate 1, pins 1->2)
-    // and NOT(A14) (gate 6, pins 13->12) for the ROM/RAM select NAND below -
-    // each net shared between both select gates rather than each having its
-    // own MREQ or address inverter.
+    // A behavioural (not netlist-traced) stand-in for the real board's
+    // address decode: tracing the phase 3 netlist in full turned up that the
+    // real ROM/RAM chip-select network doesn't run through IC11 or IC13 at
+    // all (IC11's four gates are fully spoken for by the video-polarity and
+    // horizontal-counter-reset latches in ZX80System.Video.cs, and IC13's
+    // gate 6 inverts a signal that isn't A14). This pair produces the same
+    // ROM-vs-RAM boolean the real decode does for every address that
+    // matters, so it's kept rather than reworked mid-plan, but it isn't
+    // claiming to be any specific pair of real gates any more.
     private readonly Ttl7404Chip _addressDecodeInverters;
-
-    // IC11: two of its four NANDs turn the two inverted signals above into
-    // the ROM and RAM chip selects. NAND(NOT(A14), NOT(/MREQ)) (gate 4, pins
-    // 12,13->11) is low exactly when A14 is low and /MREQ is asserted - the
-    // ROM's own 16K block. NAND(A14, NOT(/MREQ)) (gate 3, pins 9,10->8) is
-    // the complementary RAM decode. Neither gate looks at A15, which is why
-    // the real board mirrors ROM into 8000-BFFF and RAM into C000-FFFF
-    // rather than trapping those as open bus.
     private readonly Ttl7400Chip _romRamSelect;
+
+    // IC18: two roles on the real board, both modelled on this one
+    // instance. Flip-flop 2 (D2 tied to its own Qn2) divides PHI2X by 2 to
+    // produce the Z80's own clock, PHI. Flip-flop 1 has no clock of its own
+    // (CLK1 is tied to +5V) - it's a pure async latch, part of the
+    // horizontal sync chain wired up in ZX80System.Video.cs.
+    private readonly Ttl7474Chip _ic18;
+
+    // IC20: gate 1 buffers the abstracted master-oscillator toggle below
+    // into PHI2X; gate 2 will XOR the video shift register's output against
+    // the inverse-video latch to produce the composite VIDEO bit, once
+    // phase 4 needs it. Gates 3-4 form the crystal's own Pierce-oscillator
+    // feedback loop - out of scope, like the RF modulator (see the plan's
+    // fidelity notes): X1's oscillation itself is the abstracted toggle
+    // this gate buffers, the same "stop at the analog boundary" convention
+    // as every other exception in this codebase.
+    private readonly Ttl7486Chip _ic20;
+
+    private bool _masterOscillatorHigh;
 
     public ZX80System()
     {
         Cpu = new Z80Chip();
-        _clockDivider = new Ttl7474Chip();
         _addressDecodeInverters = new Ttl7404Chip();
         _romRamSelect = new Ttl7400Chip();
+        _ic18 = new Ttl7474Chip();
+        _ic20 = new Ttl7486Chip();
+
+        _characterLatch = new Ttl74373Chip();
+        _romAddressMuxHigh = new Ttl74157Chip();
+        _romAddressMuxMid = new Ttl74157Chip();
+        _romAddressMuxLow = new Ttl74157Chip();
+        _videoShiftRegister = new Ttl74165Chip();
+        _scanlineCounter = new Ttl7493Chip();
+        _ic11 = new Ttl7400Chip();
+        _ic12 = new Ttl7400Chip();
+        _ic13 = new Ttl7404Chip();
+        _ic15 = new Ttl7405Chip();
+        _ic16 = new Ttl7410Chip();
+        _ic17 = new Ttl7432Chip();
+        _ic19 = new Ttl7474Chip();
 
         LoadRom();
     }
@@ -74,20 +97,30 @@ public sealed partial class ZX80System : EmulatedSystem
 
     public override void Tick()
     {
-        // One master-oscillator edge (see CyclesPerSecond). IC18 flip-flop A
-        // divides it by 2: D is tied to /Q, so it toggles on every rising
-        // edge of the master clock, and its Q drives the Z80's own Clk pin
-        // directly (the two 74LS05 buffer stages the real board adds here
-        // are pure drive-strength, not logic - skipped, same as every other
-        // plain buffer in this codebase).
-        _masterClockHigh = !_masterClockHigh;
+        // One master-oscillator edge (see CyclesPerSecond). X1 itself, and
+        // the Pierce-oscillator feedback pair IC20 builds around it, are the
+        // analog part of the crystal circuit - out of scope the same way the
+        // RF modulator is (see the plan's fidelity notes); this toggle is
+        // the abstracted result, feeding the real IC20 gate that buffers it
+        // into PHI2X.
+        _masterOscillatorHigh = !_masterOscillatorHigh;
 
-        _clockDivider.D1 = _clockDivider.Qn1;
-        _clockDivider.Clk1 = _masterClockHigh;
+        _ic20.A1 = false;
+        _ic20.B1 = _masterOscillatorHigh;
+        var phi2X = _ic20.Y1;
 
-        Cpu.Clk = _clockDivider.Q1;
+        // IC18, flip-flop 2: D tied to its own Qn, the classic toggle-on-
+        // every-rising-edge wiring that divides PHI2X by 2 to produce the
+        // Z80's own clock, PHI. The chip's other flip-flop has no clock of
+        // its own (CLK1 is tied to +5V) and is part of the horizontal sync
+        // chain instead - see ZX80System.Video.cs.
+        _ic18.D2 = _ic18.Qn2;
+        _ic18.Clk2 = phi2X;
+
+        Cpu.Clk = _ic18.Q2;
 
         DoCpuMemoryAccess();
+        TickVideo(phi2X);
     }
 
     private void DoCpuMemoryAccess()
@@ -110,7 +143,7 @@ public sealed partial class ZX80System : EmulatedSystem
 
         if (romSelected && !Cpu.Rd)
         {
-            Cpu.Data = _rom[address & 0x0FFF];
+            Cpu.Data = _rom[GetRomAddress(address)];
         }
 
         if (ramSelected)
@@ -123,6 +156,15 @@ public sealed partial class ZX80System : EmulatedSystem
             {
                 _ram[address & 0x03FF] = Cpu.Data;
             }
+        }
+
+        // The NOP generator: during the T1 (non-refresh) half of an opcode
+        // fetch, IC14/IC15 force the whole data byte to 0x00 unless the CPU
+        // is halted, address bit 15 is clear, or bit 6 of the real byte just
+        // placed on the bus above is set - see TickNopGenerator for why.
+        if (Cpu.Rfsh && !Cpu.M1)
+        {
+            TickNopGenerator();
         }
     }
 

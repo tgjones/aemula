@@ -397,6 +397,18 @@ public sealed partial class Z80Chip
                 MReq = true;
                 break;
 
+            case MemoryReadT1:
+            case MemoryWriteT1:
+            case IoReadT1:
+            case IoWriteT1:
+                // /RFSH is a narrow pulse confined to M1's own refresh half;
+                // it has to release again before any later machine cycle of
+                // the same instruction, or a consumer wired to it (like the
+                // ZX80's video address mux) would wrongly read every
+                // following memory cycle as if it were still that refresh.
+                Rfsh = true;
+                break;
+
             case MemoryReadT3:
                 // The consumer latches the byte off the bus on this edge; the CPU
                 // releases /MREQ and /RD.
