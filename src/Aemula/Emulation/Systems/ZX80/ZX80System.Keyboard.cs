@@ -115,11 +115,16 @@ public sealed partial class ZX80System
     // its pressed keys' columns into the result (open-collector-style, via
     // the diodes) while every other bit stays pulled high - see above for
     // why this skips instantiating IC10's column-side buffers explicitly.
-    // D5 has no keyboard connection and D6 carries the NTSC strap diode, so
-    // both stay forced high; D7 is EAR, read live off IC10's
-    // sixth buffer (see ZX80System.Cassette.cs) - guaranteed driven rather
-    // than floating, since that buffer is only ever enabled for exactly the
-    // read this method runs on.
+    // D5 has no keyboard connection so it stays forced high; D7 is EAR, read
+    // live off IC10's sixth buffer (see ZX80System.Cassette.cs) - guaranteed
+    // driven rather than floating, since that buffer is only ever enabled
+    // for exactly the read this method runs on. D6 is D11, the NTSC strap
+    // diode fitted per the Target configuration - unlike a key row, it isn't
+    // gated by which row address is selected, since the diode sits directly
+    // on the data line rather than behind a row/column crosspoint: every
+    // keyboard-style read pulls it low, which is the signal the ROM's own
+    // code branches on to run the 262-line/60Hz timing this build targets
+    // instead of the 312-line/50Hz PAL default.
     private byte ReadKeyboardMatrix(ushort address)
     {
         var columns = 0x1F;
@@ -133,7 +138,7 @@ public sealed partial class ZX80System
         }
 
         var ear = _cassetteBuffer.Y1 == true ? 0x80 : 0x00;
-        return (byte)(0x60 | ear | columns);
+        return (byte)(0x20 | ear | columns);
     }
 
     internal byte ReadKeyboardMatrixForTest(ushort address) => ReadKeyboardMatrix(address);

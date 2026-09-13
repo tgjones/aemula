@@ -62,6 +62,14 @@ public sealed partial class ZX80System : EmulatedSystem
 
     private bool _masterOscillatorHigh;
 
+    // The ROM/RAM-side half of the split data bus (D0'-D7' on the
+    // schematic) - a genuinely separate value from Cpu.Data (the CPU-side
+    // half D0-D7), joined to it only through the per-bit resistor/gate
+    // combine in CombineSplitDataBus. Sampled in DoCpuMemoryAccess before
+    // the NOP-forcing bank runs, since that bank only ever acts on the
+    // CPU-side half.
+    private byte _farDataBus;
+
     public ZX80System()
     {
         Cpu = new Z80Chip();
@@ -79,6 +87,7 @@ public sealed partial class ZX80System : EmulatedSystem
         _ic11 = new Ttl7400Chip();
         _ic12 = new Ttl7400Chip();
         _ic13 = new Ttl7404Chip();
+        _ic14 = new Ttl7405Chip();
         _ic15 = new Ttl7405Chip();
         _ic16 = new Ttl7410Chip();
         _ic17 = new Ttl7432Chip();
@@ -165,6 +174,16 @@ public sealed partial class ZX80System : EmulatedSystem
                 _ram[address & 0x03FF] = Cpu.Data;
             }
         }
+
+        // IC5's own data inputs (D0'-D7') are wired to the ROM/RAM side of
+        // the split bus, not the CPU-visible side IC14/IC15 are about to
+        // force below - on real hardware the two sides only agree everywhere
+        // except the exact bits the NOP generator pulls down, which is what
+        // lets IC5 latch the true character code while the Z80 sees a NOP.
+        // Captured here, before the NOP-forcing bank runs, since that bank
+        // only ever pulls the CPU-side half (Cpu.Data) down - the far side
+        // it reads from is this one, never the forced result.
+        _farDataBus = Cpu.Data;
 
         // The NOP generator: during the T1 (non-refresh) half of an opcode
         // fetch, IC14/IC15 force the whole data byte to 0x00 unless the CPU

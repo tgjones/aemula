@@ -321,6 +321,133 @@ comes out at 262 lines/60Hz through the existing `Television` NTSC
 pipeline with no decoder changes needed. This is the plan's overall
 **done** milestone.
 
+**Phase 6 addendum — in progress, boot screen still not working.** Two real
+bugs found and fixed (uncommitted) while chasing "why is the screen blank":
+
+1. **D11 was never actually wired.** `ZX80System.Keyboard.cs`'s
+   `ReadKeyboardMatrix` forced D6 high unconditionally (`0x60 | ear |
+   columns`) with a comment noting D6 "carries the NTSC strap diode" but
+   never actually driving it low. Per the Target configuration section, D11
+   should pull D6 low on every keyboard-style read, unconditionally (it
+   isn't gated by row/column like a real key - the diode sits on the data
+   line itself). Fixed to `0x20 | ear | columns`. Confirmed with
+   `--trace-timing`: before the fix, frame geometry drifted from an initial
+   262 lines up toward ~310 lines (the PAL default the ROM falls back to
+   without the strap) and never stabilized; after the fix it converges
+   cleanly to 262.00 lines/frame, matching the NTSC target. This is phase
+   6's own validation goal and now passes.
+2. **The character latch (IC5) was reading the post-NOP-force byte.**
+   `DoCpuMemoryAccess` (`ZX80System.cs`) set `Cpu.Data` from ROM/RAM, then -
+   still within the same call - `TickNopGenerator` could overwrite it to
+   `0x00`. `TickVideo` ran afterward and latched `Cpu.Data` into the
+   character code (`ZX80System.Video.cs`), so on every cycle where the NOP
+   generator actually forced (i.e. almost every real character fetch), the
+   latch saw the forced `0x00` instead of the real character code - the
+   screen would only ever have been able to show character 0 (space).
+   Fixed by capturing the byte into a new `_realDataBus` field before
+   `TickNopGenerator` runs, and reading `_realDataBus` (not `Cpu.Data`) into
+   the character latch. See the fidelity note below - this fix is a patch
+   on an existing shortcut, not a true fix of the underlying modeling gap.
+
+**Still broken: no content ever renders.** Confirmed with
+`Aemula.Console --frames 3000` (~326M ticks, ~25 emulated seconds - far
+longer than any plausible RAM-check delay) that the screen stays blank
+throughout; `Television`'s decoded sample buffer never contains anything
+but sync tip and one paper/ink level (paper), i.e. the video shift
+register's output bit (`QhN`) never toggles from its idle state. Direct
+instrumentation (reflection over `_videoShiftRegister`'s `ShLd` property)
+showed the shift register's load strobe fires **once** across a 30,000,000-
+tick run - it should fire on the order of thousands of times (once per
+character cell). Whatever combination of `phiRisingEdge` /
+`notLatchedNopDecode` (`_characterLatch.Q6`, the latched output of
+`GetNopDecodeSignal`) / `Cpu.MReq` is supposed to produce that strobe in
+`TickVideo`'s `shLd` calculation essentially never lands.
+
+This is *not* simply "needs more boot time before the first frame":
+instrumented tracing of CPU registers at every entry to the ROM's `$0038`
+interrupt handler shows the hardware side of the per-scanline HALT/INT
+handshake looking basically sane at coarse grain - the ROM's own routine
+there (confirmed against the ROM image: `0D C2 45 00 E1 05 C8 CB D9 ED 4F
+FB E9`, i.e. `DEC C / JP NZ,$0045 / POP HL / DEC B / RET Z / SET 3,C / LD
+R,A / EI / JP (HL)`, the well-documented ZX80 scanline-interrupt routine)
+runs with `B`/`C` counting down and `HL` correctly advancing by one display-
+file byte (`0xC02B` -> `0xC02C`) roughly once per real HSYNC line period
+(~828 ticks between successive `$0038` entries, matching
+`DetectedSamplesPerLine`). So the coarse row/line bookkeeping the interrupt
+handler drives isn't obviously broken, yet actual per-character video
+generation (the shift-register load inside a display-file M1, which should
+be happening far more often than this once-per-line interrupt) never
+kicks in. The disconnect between "line-level bookkeeping looks right" and
+"character-level shift-register loading essentially never happens" is
+where the next session should start - likely by instrumenting every M1
+during one of these traced `$0038`-to-`$0038` intervals to see what
+`Cpu.Rfsh`/`Cpu.Address`/`shLd`'s three inputs actually do tick-by-tick,
+since hand-deriving it from the gate equations alone (attempted at length
+this session) did not converge on a definitive answer.
+
+**Fidelity gap worth addressing before debugging further.** The split data
+bus - the plan's own "one genuinely unusual mechanism" - is not actually
+modeled as two physically distinct bus halves joined by resistors, the way
+the plan's "Split data bus" section describes it. It's one shared
+`Cpu.Data` field, and the NOP generator (`IC14`/`IC15`) is modeled as a
+single conditional `Cpu.Data = 0x00` in `DoCpuMemoryAccess` rather than
+eight independent open-collector gates each pulling their own bit low (a
+shortcut phase 3 already took deliberately - see `ZX80System.Video.cs`'s
+`_ic15` field comment: "the real board's IC14 has one gate... folded into a
+single `Cpu.Data = 0x00`... since which of eight near-identical gates
+forces which bit makes no observable difference"). The `_realDataBus` fix
+above is built on top of that same shortcut - it's a shadow copy of
+"`Cpu.Data` before the force," not a real second bus. Functionally this
+should be equivalent (the far side of the real split bus is always exactly
+"what ROM/RAM/keyboard buffer just drove, before any near-side pulldown"),
+but it means this codebase is not modeling the split bus with real chip
+objects the way the rest of the plan's fidelity approach calls for, and
+that shortcut - or a bug in how `_realDataBus` interacts with it - is a
+reasonable suspect for the remaining rendering bug. Worth considering
+whether to model the NOP-forcing bank as real per-bit open-collector gates
+(this codebase already has the pattern for tri-state modeling, e.g.
+`Ttl8T97Chip`/`Ttl74251Chip`'s nullable-bool tri-state outputs) with two
+genuine bus-half byte values joined through the actual resistors, rather
+than continuing to patch the single-field shortcut.
+
+**Fidelity gap addressed (uncommitted).** `IC14` now exists as a real
+`Ttl7405Chip` (it wasn't instantiated at all before), and the NOP-forcing
+bank is modeled as eight real open-collector gates - `IC14`'s six plus two
+of `IC15`'s previously-spare gates - each driven from the same force-enable
+signal and recombined per-bit against `_farDataBus` (renamed from
+`_realDataBus`, now a genuine second bus-half rather than a shadow copy) in
+a new `CombineSplitDataBus` method. `GetNopDecodeSignal`'s D6 test and the
+video shift register's parallel-load inputs were switched from `Cpu.Data`
+to `_farDataBus` too, since both are real far-side (`D0'`-`D7'`) reads on
+the schematic, and reading the post-force `Cpu.Data` (as `GetNopDecodeSignal`
+was doing when called from `TickVideo`) is circular. Building the eight
+gates surfaced a real polarity bug: they were first wired with the gates'
+input tied straight to the OR-gate `release` signal, but `Ttl7405Chip`'s
+inverter convention means a gate only pulls its output low when its input
+is *true* - so this fed the pulldown backwards (forcing bits to 0 exactly
+when the circuit should *release* them, and floating - i.e. leaving them
+alone - exactly when it should force). That regressed 5 of 10
+`--treenode-filter "/*/*/ZX80*/*"` tests, including the basic
+`RunsResetVectorAndInitializesStackPointer` CPU-boot test having nothing to
+do with video, because the forcing bank runs on every M1 fetch system-wide,
+not just during video generation - confirmed against the pre-change tree
+(all 10 passing there) before tracking it down. Fixed by feeding the gates
+`!release` instead. All 10 ZX80 tests pass again after the fix.
+
+This also produced a real change in emulated output: `Aemula.Console --frames
+<n> --screenshot` at several frame counts (30/75/120/210/333) now shows a
+small non-blank mark that changes between two distinct states depending on
+frame count (consistent with a blinking cursor), where before this fix the
+addendum above found the decoded frame buffer held nothing but sync tip and
+one paper level for 3000 frames straight. This is a strong sign the
+shift-register load strobe is now actually firing, though the visible mark
+is a small cursor-shaped artifact near the bottom-left corner rather than a
+recognizable "K" boot prompt - worth checking next whether that position/
+scale is a display-model bug (e.g. a vertical flip) or the shift register is
+still only loading intermittently. Not yet re-instrumented with the
+addendum's own `ShLd`-strobe-count reflection check to confirm the strobe
+rate is now "thousands of times" rather than "once."
+
 **Phase 7 (stretch, explicit follow-up per your steer) — PAL variant**
 Add the 50Hz strapping (no D11, the default BOM) as a build/config option
 on `ZX80System`, and a genuine `TelevisionStandard.Pal` decode path under

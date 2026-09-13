@@ -70,15 +70,22 @@ public sealed partial class ZX80System
     // CS1 corner deferred to phase 4, so they're not modelled.
     private readonly Ttl7404Chip _ic13;
 
-    // IC15: two of its six open-collector inverters have no part in the
-    // NOP-forcing bank the plan describes (that bank is folded into a
-    // single Cpu.Data = 0x00 in DoCpuMemoryAccess, since which of eight
-    // near-identical gates forces which bit makes no observable difference
-    // - the real board's IC14 has one gate, presumably forcing D1, whose
-    // output isn't captured at all in this netlist). Gate 1 here turns the
-    // NOP-release condition into the shared wired-OR node the forcing bank
-    // reads; gate 4 turns /M1 into the level that clocks the sync flip-flop
-    // chain, once per M1 cycle.
+    // IC14: the bulk of the NOP-forcing bank's eight open-collector
+    // pulldowns (see TickNopGenerator/CombineSplitDataBus) - six gates,
+    // six bits. The source netlist only actually confirms one of IC14's
+    // gates as part of this bank (presumably forcing D1; the other five
+    // aren't captured in it at all), but every gate in the bank shares the
+    // same enable input, so which physical gate forces which bit is
+    // unobservable from software - modelling all six here reproduces the
+    // real electrical behavior regardless of the exact assignment.
+    private readonly Ttl7405Chip _ic14;
+
+    // IC15: six gates, three jobs. Gates 1-2 make up the forcing bank's
+    // remaining two bits, alongside IC14's six (same caveat on exact
+    // bit assignment as above). Gate 4 turns /M1 into the level that
+    // clocks the sync flip-flop chain, once per M1 cycle - a confirmed
+    // netlist fact, unrelated to forcing. Gates 3, 5 and 6 are spare in
+    // this model.
     private readonly Ttl7405Chip _ic15;
 
     // IC16/IC17: NAND/OR glue tying the pieces above together - see
@@ -171,14 +178,17 @@ public sealed partial class ZX80System
 
     /// <summary>
     /// IC14/IC15's open-collector data-bus force. Called from
-    /// DoCpuMemoryAccess (after the real ROM/RAM byte for this address is
-    /// already on Cpu.Data) during the non-refresh half of every M1 fetch:
-    /// forces the whole byte to 0x00 unless the CPU is already halted,
-    /// address bit 15 is clear (real code, not the display-file mirror), or
-    /// bit 6 of the real byte is set - the newline character deliberately
-    /// shares its value with the Z80's own HALT opcode (0x76), so letting
-    /// bit-6-set bytes through for real execution is exactly what ends a
-    /// scanline.
+    /// DoCpuMemoryAccess (after the real far-bus byte for this address has
+    /// already been captured into _farDataBus) during the non-refresh half
+    /// of every M1 fetch: drives all eight forcing gates from the same
+    /// enable signal and recombines the far bus through them into Cpu.Data
+    /// - each gate pulls its own bit to 0 when not released, or lets the
+    /// far side's bit through when released, so the whole byte reads 0x00
+    /// unless the CPU is already halted, address bit 15 is clear (real
+    /// code, not the display-file mirror), or bit 6 of the far byte is set
+    /// - the newline character deliberately shares its value with the Z80's
+    /// own HALT opcode (0x76), so letting bit-6-set bytes through for real
+    /// execution is exactly what ends a scanline.
     /// </summary>
     private void TickNopGenerator()
     {
@@ -188,22 +198,61 @@ public sealed partial class ZX80System
         _ic17.B3 = Cpu.M1;
         var release = _ic17.Y3;
 
-        _ic15.A1 = release;
-        var forceNop = _ic15.Y1 is null; // floating (pulled high by R3) = forced.
+        // Each gate is a plain inverter: its input has to be the active-
+        // high "pull this bit low" condition for its open-collector output
+        // to actually go low (Ttl7405Chip.Y is false - driven - only when
+        // A is true, and floats otherwise), so the gates take !release,
+        // not release itself.
+        var force = !release;
 
-        if (forceNop)
-        {
-            Cpu.Data = 0x00;
-        }
+        _ic14.A1 = force;
+        _ic14.A2 = force;
+        _ic14.A3 = force;
+        _ic14.A4 = force;
+        _ic14.A5 = force;
+        _ic14.A6 = force;
+        _ic15.A1 = force;
+        _ic15.A2 = force;
+
+        Cpu.Data = CombineSplitDataBus();
+    }
+
+    /// <summary>
+    /// The per-bit resistor join between the two bus halves: a gate
+    /// floating (null, pulled high by its own resistor - R3 etc.) lets that
+    /// bit follow whatever _farDataBus is driving; a gate actively pulling
+    /// low wins over the far side's resistor regardless of what it's
+    /// driving. All eight gates share one enable input (see
+    /// TickNopGenerator), so in practice every bit resolves the same way at
+    /// once - modelled per-bit anyway so the combine is a real per-gate
+    /// electrical join rather than a single collapsed byte assignment.
+    /// </summary>
+    private byte CombineSplitDataBus()
+    {
+        static int Bit(bool? gateOutput, byte farDataBus, int mask) =>
+            gateOutput is null ? farDataBus & mask : 0;
+
+        return (byte)(
+            Bit(_ic14.Y1, _farDataBus, 0x01) |
+            Bit(_ic14.Y2, _farDataBus, 0x02) |
+            Bit(_ic14.Y3, _farDataBus, 0x04) |
+            Bit(_ic14.Y4, _farDataBus, 0x08) |
+            Bit(_ic14.Y5, _farDataBus, 0x10) |
+            Bit(_ic14.Y6, _farDataBus, 0x20) |
+            Bit(_ic15.Y1, _farDataBus, 0x40) |
+            Bit(_ic15.Y2, _farDataBus, 0x80));
     }
 
     // IC16 gate 2: NAND(/HALT, A15, NOT(D6)) - false exactly when this M1's
     // real byte should be forced to a NOP. Shared between the live decode
     // TickNopGenerator acts on and the latched copy IC5 channel 6 captures
-    // for the shift-register load logic to read back a cycle later.
+    // for the shift-register load logic to read back a cycle later. D6 has
+    // to come off the far bus, not Cpu.Data - reading the CPU-visible side
+    // here would be circular, since that side's own value is what this
+    // decode is about to help decide.
     private bool GetNopDecodeSignal()
     {
-        _ic13.A3 = (Cpu.Data & 0x40) != 0; // D6, off the real byte just read.
+        _ic13.A3 = (_farDataBus & 0x40) != 0; // D6, off the far bus.
         var notD6 = _ic13.Y3;
 
         _ic16.A2 = Cpu.Halt;
@@ -258,15 +307,19 @@ public sealed partial class ZX80System
 
         var nopDecode = GetNopDecodeSignal();
 
+        // D0'-D7', not D0-D7: IC5 reads the ROM/RAM side of the split bus,
+        // which still carries the true character code even on a cycle where
+        // IC14/IC15 are forcing the CPU-visible side to 0x00 - see
+        // _farDataBus's own remarks.
         _characterLatch.Oe = false; // OE tied to 0V - always enabled.
-        _characterLatch.D0 = (Cpu.Data & 0x01) != 0;
-        _characterLatch.D1 = (Cpu.Data & 0x02) != 0;
-        _characterLatch.D2 = (Cpu.Data & 0x04) != 0;
-        _characterLatch.D3 = (Cpu.Data & 0x08) != 0;
-        _characterLatch.D4 = (Cpu.Data & 0x10) != 0;
-        _characterLatch.D5 = (Cpu.Data & 0x20) != 0;
+        _characterLatch.D0 = (_farDataBus & 0x01) != 0;
+        _characterLatch.D1 = (_farDataBus & 0x02) != 0;
+        _characterLatch.D2 = (_farDataBus & 0x04) != 0;
+        _characterLatch.D3 = (_farDataBus & 0x08) != 0;
+        _characterLatch.D4 = (_farDataBus & 0x10) != 0;
+        _characterLatch.D5 = (_farDataBus & 0x20) != 0;
         _characterLatch.D6 = nopDecode;
-        _characterLatch.D7 = (Cpu.Data & 0x80) != 0; // the inverse-video flag.
+        _characterLatch.D7 = (_farDataBus & 0x80) != 0; // the inverse-video flag.
         _characterLatch.Le = le;
 
         // Shift-register load vs. shift, off data bus line D4 (see the
@@ -290,20 +343,23 @@ public sealed partial class ZX80System
 
         _videoShiftRegister.ShLd = shLd;
 
-        // The parallel inputs are the character ROM's bitmap byte,
-        // DoCpuMemoryAccess having already placed it on Cpu.Data via
-        // GetRomAddress during this same refresh cycle. A (LSB) through H
-        // (MSB) load straight off D0-D7, matching the real board's own
-        // wiring, and the class's own shift order (H out first, A last)
-        // shifts pixels out MSB-first as a font bitmap expects.
-        _videoShiftRegister.A = (Cpu.Data & 0x01) != 0;
-        _videoShiftRegister.B = (Cpu.Data & 0x02) != 0;
-        _videoShiftRegister.C = (Cpu.Data & 0x04) != 0;
-        _videoShiftRegister.D = (Cpu.Data & 0x08) != 0;
-        _videoShiftRegister.E = (Cpu.Data & 0x10) != 0;
-        _videoShiftRegister.F = (Cpu.Data & 0x20) != 0;
-        _videoShiftRegister.G = (Cpu.Data & 0x40) != 0;
-        _videoShiftRegister.H = (Cpu.Data & 0x80) != 0;
+        // The parallel inputs are the character ROM's bitmap byte, wired to
+        // the ROM's own D0'-D7' outputs - the far side of the split bus,
+        // same as IC5 above - not the CPU-visible side the NOP-forcing bank
+        // acts on. DoCpuMemoryAccess has already placed this refresh
+        // cycle's ROM byte into _farDataBus via GetRomAddress. A (LSB)
+        // through H (MSB) load straight off D0'-D7', matching the real
+        // board's own wiring, and the class's own shift order (H out
+        // first, A last) shifts pixels out MSB-first as a font bitmap
+        // expects.
+        _videoShiftRegister.A = (_farDataBus & 0x01) != 0;
+        _videoShiftRegister.B = (_farDataBus & 0x02) != 0;
+        _videoShiftRegister.C = (_farDataBus & 0x04) != 0;
+        _videoShiftRegister.D = (_farDataBus & 0x08) != 0;
+        _videoShiftRegister.E = (_farDataBus & 0x10) != 0;
+        _videoShiftRegister.F = (_farDataBus & 0x20) != 0;
+        _videoShiftRegister.G = (_farDataBus & 0x40) != 0;
+        _videoShiftRegister.H = (_farDataBus & 0x80) != 0;
 
         // The inverse-video latch: IC11 gates 1-2 feed a cross-coupled pair
         // on IC12 (gates 1-2), set by a strobe on the same PHI edge used
