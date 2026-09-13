@@ -28,8 +28,12 @@ public sealed partial class ZX80System
         // their shared summing node, so an active sync pulse always wins
         // regardless of what the shift register is doing - the same way a
         // real composite blanking interval overrides picture content
-        // outright rather than blending with it.
-        var sync = _ic19.Q1;
+        // outright rather than blending with it. IC19.Q1 itself idles high
+        // for the whole line and dips low only for the ~20-T-state HSYNC
+        // pulse (the same "low pulse" IC18's own Clr1 already keys off of
+        // to catch the sync event), so the pulse this composite stage needs
+        // to react to is the complement, Qn1.
+        var sync = _ic19.Qn1;
 
         var sample = sync
             ? SyncTipByte

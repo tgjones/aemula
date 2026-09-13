@@ -286,8 +286,25 @@ public sealed class NtscSyncSeparator
             // The sample right after HSYNC's trailing edge is the back
             // porch - after sync, before color burst - which is exactly
             // the "0 IRE" reference point a real decoder's clamp pulse
-            // samples to re-establish black level once per line.
-            _blackLevel += (sampleAfterPulse - _blackLevel) * BlackLevelSmoothingRate;
+            // samples to re-establish black level once per line. Not every
+            // real source actually provides one though: some hardware
+            // (e.g. the ZX80/early ZX81 ULA, well documented as lacking a
+            // back porch entirely) jumps straight from sync into picture
+            // content, so "the sample right after sync" can just as easily
+            // be full white. A period TV never noticed, because its clamp
+            // circuit was a much simpler sync-tip clamp - it pins the sync
+            // tip to a fixed reference every line and never looks at the
+            // back porch at all, so a missing one cost it nothing. This
+            // mirrors that: only trust this sample as a black reference
+            // when it's actually plausible as blanking (closer to the
+            // running black estimate than to white) - otherwise, like a
+            // clamp capacitor given nothing valid to clamp to, hold the
+            // last good value rather than let picture content drag it
+            // toward white.
+            if (sampleAfterPulse < (_blackLevel + _whiteLevel) / 2f)
+            {
+                _blackLevel += (sampleAfterPulse - _blackLevel) * BlackLevelSmoothingRate;
+            }
 
             HSyncDetected = true;
         }
