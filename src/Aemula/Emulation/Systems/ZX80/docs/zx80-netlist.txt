@@ -29,71 +29,99 @@
 #     pattern as the C11/R25 pair on PHI, but off the pre-divide 2PHI instead -
 #     giving the shift register two shift pulses per CPU T-state (8 per M1 cycle,
 #     one per pixel of a character cell).
+# THIRD PASS: IC10 (74LS365) was wrong wholesale - the schematic draws its six
+#   internal buffer pathways in a way the extractor read as "both ends on the
+#   same bus line" for every one of them, which shorts each buffer to a no-op
+#   and was the tell that something was misread (a real buffer's two sides are
+#   never the same net). User-verified pin-by-pin against the PDF directly:
+#   IC10.1/IC10.15 (its two enables, tied together) land on /KBD, not the
+#     auto-named node the first pass gave them - and pick up a second path in
+#     from D11 (see below).
+#   D11's far side (the strap diode the Target configuration section fits for
+#     NTSC) is IC9.5, i.e. genuinely on the D6 net, same as the first pass had it.
+#   Five of the six buffers turn out to sit between a D-bus line and the
+#     keyboard matrix's column wiring - NOT the same net on both pins as
+#     extracted: IC10.4/IC10.6 take the matrix side as their input (A) and
+#     drive D3/D0 (Y); IC10.9/IC10.11/IC10.13 run the other way, taking D1/D2/D4
+#     as input (A) and driving the matrix side (Y) - asymmetric, but that's
+#     what the user's read of the PDF shows, not a transcription slip.
+#   The sixth buffer (IC10.2 -> IC10.3) is the one phase 4's code already
+#     expected to matter: A1 (IC10.2) picks up EAR through C12+R29, biased by
+#     R1; Y1 (IC10.3) drives the real D7 line. This is the cassette EAR
+#     readback the keyboard-matrix comment predicted, now confirmed net-by-net.
+#   EAR and MIC are both genuine schematic labels the extractor's own
+#     diagnostics had already half-found: _N068 (EAR) and _N067 (MIC) were
+#     flagged as suspiciously dangling/passive-only nodes, and the user's pass
+#     confirms both are exactly where the jacks land - the passive networks
+#     around them (R1/C12/R29 for EAR; R34/C13/C14/R35 off SYNC for MIC) were
+#     already correctly extracted, just missing the jack pin itself.
 #
 ## COMPONENTS
-C1 | capacitor | 
-C2 | capacitor | 
-C4 | capacitor | 
-C5 | capacitor | 
-C6 | capacitor | 
+C1 | capacitor |
+C2 | capacitor |
+C4 | capacitor |
+C5 | capacitor |
+C6 | capacitor |
 C8 | capacitor | 22u
 C9 | capacitor | 47p
 C10 | capacitor | 1u
 C11 | capacitor | 47p
-C12 | capacitor | 
+C12 | capacitor |
 C13 | capacitor | 47n
 C14 | capacitor | 47p
 C15 | capacitor | 1K
-D3 | diode | 
-D4 | diode | 
-D5 | diode | 
-D6 | diode | 
-D7 | diode | 
-D8 | diode | 
-D9 | diode | 
-D10 | diode | 
-D11 | diode | 
-IC1 | Z80 (780-1) | 
-IC2 | 8332 ROM | 
-IC3 | 2114 RAM | 
-IC4 | 2114-1 RAM | 
-IC5 | 74LS373 | 
-IC6 | 74LS157 | 
-IC7 | 74LS157 | 
-IC8 | 74LS157 | 
-IC9 | 74LS165 | 
-IC10 | 74LS365 | 
-IC11 | 74LS00 | 
-IC12 | 74LS00 | 
-IC13 | 74LS04 | 
-IC14 | 74LS05 | 
-IC15 | 74LS05 | 
-IC16 | 74LS10 | 
-IC17 | 74LS32 | 
-IC18 | 74LS74 | 
-IC19 | 74LS74 | 
-IC20 | 74LS86 | 
-IC21 | 74LS93 | 
-IC22 | 7805 regulator | 
-J23A | 23-way edge connector | 
-J23B | 23-way edge connector | 
+D3 | diode |
+D4 | diode |
+D5 | diode |
+D6 | diode |
+D7 | diode |
+D8 | diode |
+D9 | diode |
+D10 | diode |
+D11 | diode |
+EAR | jack |
+IC1 | Z80 (780-1) |
+IC2 | 8332 ROM |
+IC3 | 2114 RAM |
+IC4 | 2114-1 RAM |
+IC5 | 74LS373 |
+IC6 | 74LS157 |
+IC7 | 74LS157 |
+IC8 | 74LS157 |
+IC9 | 74LS165 |
+IC10 | 74LS365 |
+IC11 | 74LS00 |
+IC12 | 74LS00 |
+IC13 | 74LS04 |
+IC14 | 74LS05 |
+IC15 | 74LS05 |
+IC16 | 74LS10 |
+IC17 | 74LS32 |
+IC18 | 74LS74 |
+IC19 | 74LS74 |
+IC20 | 74LS86 |
+IC21 | 74LS93 |
+IC22 | 7805 regulator |
+J23A | 23-way edge connector |
+J23B | 23-way edge connector |
+MIC | jack |
 R1 | resistor | 1K
 R2 | resistor | 470
 R3 | resistor | 1K
-R4 | resistor | 
-R5 | resistor | 
-R6 | resistor | 
-R7 | resistor | 
-R8 | resistor | 
-R9 | resistor | 
-R10 | resistor | 
-R11 | resistor | 
-R12 | resistor | 
-R13 | resistor | 
-R14 | resistor | 
-R15 | resistor | 
-R16 | resistor | 
-R17 | resistor | 
+R4 | resistor |
+R5 | resistor |
+R6 | resistor |
+R7 | resistor |
+R8 | resistor |
+R9 | resistor |
+R10 | resistor |
+R11 | resistor |
+R12 | resistor |
+R13 | resistor |
+R14 | resistor |
+R15 | resistor |
+R16 | resistor |
+R17 | resistor |
 R18 | resistor | 1K
 R19 | resistor | 2K2
 R20 | resistor | 330
@@ -109,45 +137,45 @@ R30 | resistor | 1K
 R32 | resistor | 330
 R34 | resistor | 1K
 R35 | resistor | 1M
-SW_0 | keyswitch | 
-SW_1 | keyswitch | 
-SW_2 | keyswitch | 
-SW_3 | keyswitch | 
-SW_4 | keyswitch | 
-SW_5 | keyswitch | 
-SW_6 | keyswitch | 
-SW_7 | keyswitch | 
-SW_8 | keyswitch | 
-SW_9 | keyswitch | 
-SW_A | keyswitch | 
-SW_B | keyswitch | 
-SW_C | keyswitch | 
-SW_D | keyswitch | 
-SW_E | keyswitch | 
-SW_F | keyswitch | 
-SW_G | keyswitch | 
-SW_H | keyswitch | 
-SW_I | keyswitch | 
-SW_J | keyswitch | 
-SW_K | keyswitch | 
-SW_L | keyswitch | 
-SW_M | keyswitch | 
-SW_N | keyswitch | 
-SW_NEWLINE | keyswitch | 
-SW_O | keyswitch | 
-SW_P | keyswitch | 
-SW_Q | keyswitch | 
-SW_R | keyswitch | 
-SW_S | keyswitch | 
-SW_SHIFT | keyswitch | 
-SW_SPACE | keyswitch | 
-SW_T | keyswitch | 
-SW_U | keyswitch | 
-SW_V | keyswitch | 
-SW_W | keyswitch | 
-SW_X | keyswitch | 
-SW_Y | keyswitch | 
-SW_Z | keyswitch | 
+SW_0 | keyswitch |
+SW_1 | keyswitch |
+SW_2 | keyswitch |
+SW_3 | keyswitch |
+SW_4 | keyswitch |
+SW_5 | keyswitch |
+SW_6 | keyswitch |
+SW_7 | keyswitch |
+SW_8 | keyswitch |
+SW_9 | keyswitch |
+SW_A | keyswitch |
+SW_B | keyswitch |
+SW_C | keyswitch |
+SW_D | keyswitch |
+SW_E | keyswitch |
+SW_F | keyswitch |
+SW_G | keyswitch |
+SW_H | keyswitch |
+SW_I | keyswitch |
+SW_J | keyswitch |
+SW_K | keyswitch |
+SW_L | keyswitch |
+SW_M | keyswitch |
+SW_N | keyswitch |
+SW_NEWLINE | keyswitch |
+SW_O | keyswitch |
+SW_P | keyswitch |
+SW_Q | keyswitch |
+SW_R | keyswitch |
+SW_S | keyswitch |
+SW_SHIFT | keyswitch |
+SW_SPACE | keyswitch |
+SW_T | keyswitch |
+SW_U | keyswitch |
+SW_V | keyswitch |
+SW_W | keyswitch |
+SW_X | keyswitch |
+SW_Y | keyswitch |
+SW_Z | keyswitch |
 X1 | crystal |
 
 ## NETS
@@ -155,7 +183,7 @@ X1 | crystal |
 /BUSRQ: IC1.25 J23A.20 R22.2
 /HALT: IC1.18 IC16.3 J23A.13
 /IORQ: IC1.20 IC17.2 IC17.5 IC18.4 J23A.15
-/KBD: IC11.13 IC17.11
+/KBD: D11.1 IC10.1 IC10.15 IC11.13 IC17.11
 /M1: IC1.27 IC15.9 IC17.10 J23A.22
 /MREQ: IC1.19 IC11.1 IC12.12 IC13.1 IC16.11 J23A.14
 /NMI: IC1.17 J23A.12 R12.2
@@ -166,7 +194,7 @@ X1 | crystal |
 /SYNC: IC19.6
 /WAIT: IC1.24 J23A.19 R23.2
 /WR: IC1.22 IC3.10 IC17.4 J23A.17
-0V: C1.2 C2.2 C4.2 C5.2 C6.2 C10.2 C13.2 IC1.29 IC2.12 IC3.9 IC4.9 IC5.1 IC5.10 IC6.8 IC6.15 IC7.8 IC7.15 IC8.8 IC8.15 IC9.8 IC9.10 IC9.15 IC10.8 IC18.2 IC20.1 IC21.10 IC22.Lb J23B.4 J23B.5 R1.2 R2.2 R25.2 R34.2 X1.3
+0V: C1.2 C2.2 C4.2 C5.2 C6.2 C10.2 C13.2 EAR.2 IC1.29 IC2.12 IC3.9 IC4.9 IC5.1 IC5.10 IC6.8 IC6.15 IC7.8 IC7.15 IC8.8 IC8.15 IC9.8 IC9.10 IC9.15 IC10.8 IC18.2 IC20.1 IC21.10 IC22.Lb J23B.4 J23B.5 MIC.2 R1.2 R2.2 R25.2 R34.2 X1.3
 2PHI: C9.2 IC18.11 IC20.3
 5V: C1.1 C2.1 C4.1 C5.1 C6.1 IC1.11 IC2.24 IC3.18 IC4.18 IC5.20 IC6.16 IC7.16 IC8.16 IC9.16 IC10.16 IC18.3 IC18.10 IC19.4 IC19.10 IC19.13 IC20.9 IC20.13 IC21.5 IC22.Lt J23B.1 R3.1 R12.1 R18.1 R20.1 R21.1 R22.1 R23.1 R28.1
 9V: J23B.2
@@ -197,22 +225,24 @@ A7': IC2.1 IC7.12
 A8: IC1.38 IC3.16 IC4.16 IC6.3 J23B.18
 A8': D3.2 IC2.23 IC6.4
 A9: D4.2 IC1.39 IC2.22 IC3.15 IC4.15 J23B.17
-D0: IC1.14 IC9.11 IC10.6 IC10.7 IC14.4 R10.2 R17.1 SW_0.2 SW_1.2 SW_A.2 SW_NEWLINE.2 SW_P.2 SW_Q.2 SW_SHIFT.2 SW_SPACE.2
+D0: IC1.14 IC9.11 IC10.7 IC14.4 R10.2
 D0': IC2.9 IC3.12 IC5.7 J23A.4 R10.1
-D1: IC1.15 IC9.9 IC9.12 IC10.9 IC10.10 R11.2 R16.1 SW_2.2 SW_9.2 SW_L.2 SW_O.2 SW_S.2 SW_W.2 SW_Z.2
+D1: IC1.15 IC9.9 IC9.12 IC10.9 IC14.2 R11.2
 D1': IC2.10 IC3.13 IC5.14 J23A.5 R11.1
-D2: IC1.12 IC9.13 IC10.11 IC10.12 IC14.10 R8.2 R13.2 SW_3.2 SW_8.2 SW_D.2 SW_E.2 SW_I.2 SW_K.2 SW_M.2 SW_X.2
+D2: IC1.12 IC9.13 IC10.11 IC14.10 R8.2
 D2': IC2.11 IC3.11 IC5.17 J23A.6 R8.1
-D3: IC1.8 IC9.14 IC10.4 IC10.5 IC14.6 R5.2 R14.1 SW_4.2 SW_7.2 SW_C.2 SW_F.2 SW_J.2 SW_N.2 SW_R.2 SW_U.2
+D3: IC1.8 IC9.14 IC10.5 IC14.6 R5.2
 D3': IC2.13 IC4.13 IC5.18 J23A.9 R5.1
-D4: IC1.7 IC9.3 IC10.13 IC10.14 IC14.8 R4.2 R15.1 SW_G.2 SW_V.2
+D4: IC1.7 IC9.3 IC10.13 IC14.8 R4.2
 D4': IC2.14 IC4.14 IC5.3 J23A.10 R4.1
 D5: IC1.9 IC9.4 IC14.12 R6.2
 D5': IC2.15 IC4.12 IC5.4 J23A.8 R6.1
 D6: D11.2 IC1.10 IC9.5 IC15.6 R7.2
 D6': IC2.16 IC4.11 IC13.5 J23A.7 R7.1 R28.2
-D7: C12.1 IC1.13 IC9.6 IC10.2 IC10.3 IC15.4 R1.1 R9.2
+D7: IC1.13 IC9.6 IC10.3 IC15.4 R9.2
 D7': IC2.17 IC3.14 IC5.13 J23A.1 R9.1
+EAR: EAR.1 R29.1
+MIC: C13.1 C14.2 MIC.1 R34.1
 PHI: C11.1 IC18.9
 RAM_CS: IC4.8 J23A.2 R19.2
 SYNC: IC18.1 IC19.5 IC21.1 R32.2 R35.1
@@ -238,7 +268,6 @@ _N018: IC5.12 IC11.4
 _N019: IC5.9 IC13.11
 _N020: IC5.8 IC16.6 IC17.9
 _N021: IC5.11 IC13.4
-_N022: D11.1 IC10.1 IC10.15
 _N023: IC9.7 IC20.4
 _N024: IC9.1 IC13.9 IC16.8
 _N025: IC11.10 IC11.11 IC21.2 IC21.3
@@ -282,14 +311,18 @@ _N063: D8.1 SW_I.1 SW_O.1 SW_P.1 SW_U.1 SW_Y.1
 _N064: D9.1 SW_H.1 SW_J.1 SW_K.1 SW_L.1 SW_NEWLINE.1
 _N065: D10.1 SW_B.1 SW_M.1 SW_N.1 SW_SPACE.1
 _N066: R13.1 R14.2 R15.2 R16.2 R17.2
-_N067: C13.1 C14.2 R34.1
-_N068: R29.1
 _N069: C12.2 R29.2
 _N070: C14.1 R35.2
 _N071: R30.1 R32.1
 _N072: C15.1 IC20.12 R27.1 X1.1
 _N074: C15.2
 _N075: C9.1 IC9.2 R2.1
+_N076: IC10.6 R17.1 SW_0.2 SW_1.2 SW_A.2 SW_NEWLINE.2 SW_P.2 SW_Q.2 SW_SHIFT.2 SW_SPACE.2
+_N077: IC10.10 R16.1 SW_2.2 SW_9.2 SW_L.2 SW_O.2 SW_S.2 SW_W.2 SW_Z.2
+_N078: IC10.12 R13.2 SW_3.2 SW_8.2 SW_D.2 SW_E.2 SW_I.2 SW_K.2 SW_M.2 SW_X.2
+_N079: IC10.4 R14.1 SW_4.2 SW_7.2 SW_C.2 SW_F.2 SW_J.2 SW_N.2 SW_R.2 SW_U.2
+_N080: IC10.14 R15.1 SW_G.2 SW_V.2
+_N081: C12.1 IC10.2 R1.1
 
 ## DIAGNOSTICS (read before trusting a net)
 # Pins inferred from the package pinout because the drawing omits the number:
@@ -297,11 +330,15 @@ _N075: C9.1 IC9.2 R2.1
 #   IC18 pin 13 - PR/CLR unnumbered on drawing
 # Nets that collected more than one label. In every case checked these are stray labels
 # picked up by the power-symbol rule, not merged nets - but verify before relying on them:
-#   net 0V also saw: {'/KBD': 1, '0V': 4}
+#   net 0V also saw: {'/KBD': 1, '0V': 4} - explained by the third pass above: /KBD
+#     really does run past IC10.8 (its GND pin) on the way to IC10's enables, so the
+#     extractor's power-symbol rule picked up a genuine nearby label, not a stray one.
 #   net 5V also saw: {'5V': 3, '0V': 1}
 # Nets with only one pin attached (likely a label the extractor failed to read):
 #   /SYNC 9V _N001 _N002 _N003 _N011 _N012 _N013 _N027 _N048
-#   _N059 _N062 _N068 _N074
+#   _N059 _N062 _N074
+#   (_N068 was this list's other entry before the third pass - it's the EAR net,
+#   see above; _N066's own resistor group is genuinely one-sided the same way.)
 # Corrections applied to 46 pins; 16 of them changed the extracted net.
 # Extracted nets that disagreed with the corrections and were overridden:
 #   IC16.4 / IC16.5 - the two pin numbers were swapped by the extractor
@@ -311,3 +348,6 @@ _N075: C9.1 IC9.2 R2.1
 #   R32 and R35 stay on SYNC, where the wiring puts them - worth a second look.
 # IC21: the only connected pins are 1,2,3,5,8,9,10,11 (confirmed by the user). An
 #   unnumbered line touching the box corner was a stray, not a pin, and is dropped.
+# THIRD PASS (IC10/EAR/MIC): every IC10.x pin the first pass had riding directly on
+#   a D-bus or A-bus label was wrong - see the THIRD PASS header note above for the
+#   corrected connectivity and what each of the six buffers actually does.

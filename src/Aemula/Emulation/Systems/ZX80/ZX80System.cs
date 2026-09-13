@@ -84,6 +84,9 @@ public sealed partial class ZX80System : EmulatedSystem
         _ic17 = new Ttl7432Chip();
         _ic19 = new Ttl7474Chip();
 
+        _cassetteBuffer = new Ttl74365Chip();
+        PeripheralRequests = BuildCassettePeripheralRequests();
+
         LoadRom();
     }
 
@@ -119,6 +122,10 @@ public sealed partial class ZX80System : EmulatedSystem
 
         Cpu.Clk = _ic18.Q2;
 
+        // Before DoCpuMemoryAccess: EAR's buffered level has to be settled
+        // on _cassetteBuffer.Y1 before ReadKeyboardMatrix (called from
+        // within it) reads D7 back off that same buffer.
+        TickCassette();
         DoCpuMemoryAccess();
         TickVideo(phi2X);
         TickCompositeVideo();

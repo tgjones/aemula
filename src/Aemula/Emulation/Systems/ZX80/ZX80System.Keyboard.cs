@@ -1,15 +1,20 @@
 namespace Aemula.Emulation.Systems.ZX80;
 
 // The keyboard diode matrix (D3-D10): plain wiring, not a chip class, per
-// the plan's fidelity note. Tracing the hand-derived netlist turned up that
-// IC10 (the 74LS365, labelled "keyboard/cassette buffer" going in) actually
-// takes no part in keyboard sensing at all - every switch's row side goes
-// through a diode straight to an address line, and its column side ties
-// directly onto the CPU's own data bus (D0-D4), pulled up by R10-R17 when
-// open. IC10's inputs and outputs land on those same D-bus nets with no
-// keyboard connection anywhere near it, so it's reserved entirely for the
-// cassette EAR wiring due in phase 5, and the row/column read below is
-// wired straight off Cpu.Address/Cpu.Data instead of through it.
+// the plan's fidelity note - every switch's row side goes through a diode
+// straight to an address line, and its column side feeds into IC10 (the
+// 74LS365 "keyboard/cassette buffer"). Five of IC10's six buffers sit
+// between a column and one of D0-D4, enabled by /KBD - exactly the
+// "this is a keyboard-style I/O read" condition DoCpuMemoryAccess already
+// gates ReadKeyboardMatrix on (GetKbdSignal, in ZX80System.Video.cs). A
+// buffer just passes its column's level straight through unchanged whenever
+// it's enabled, and it's only ever enabled during that same read, so
+// computing the column bits directly here and placing them on Cpu.Data
+// produces the identical byte without a second, redundant copy of that
+// gating - the same pragmatic call the ROM/RAM address decode makes in
+// ZX80System.cs. IC10's sixth buffer is the cassette EAR path (see
+// ZX80System.Cassette.cs), which is why the read below pulls D7 from there
+// instead of computing it locally.
 //
 // Row selection normally passes through IC6/7/8 (the same muxes
 // ZX80System.Video.cs uses for the ROM address), which pick the CPU's own
@@ -106,12 +111,15 @@ public sealed partial class ZX80System
         _ => null,
     };
 
-    // The 74LS365's absence (see above) means this is a plain read of
-    // whichever address lines are driven low: each selected row ANDs its
-    // pressed keys' columns into the result (open-collector-style, via the
-    // diodes) while every other bit stays pulled high. D5-D7 have no
-    // keyboard connection at all - D6 gets the NTSC strap diode in phase 6,
-    // D7 the cassette EAR input in phase 5, both idle-high until then.
+    // Reads whichever address lines are driven low: each selected row ANDs
+    // its pressed keys' columns into the result (open-collector-style, via
+    // the diodes) while every other bit stays pulled high - see above for
+    // why this skips instantiating IC10's column-side buffers explicitly.
+    // D5 has no keyboard connection and D6 carries the NTSC strap diode, so
+    // both stay forced high; D7 is EAR, read live off IC10's
+    // sixth buffer (see ZX80System.Cassette.cs) - guaranteed driven rather
+    // than floating, since that buffer is only ever enabled for exactly the
+    // read this method runs on.
     private byte ReadKeyboardMatrix(ushort address)
     {
         var columns = 0x1F;
@@ -124,7 +132,8 @@ public sealed partial class ZX80System
             }
         }
 
-        return (byte)(0xE0 | columns);
+        var ear = _cassetteBuffer.Y1 == true ? 0x80 : 0x00;
+        return (byte)(0x60 | ear | columns);
     }
 
     internal byte ReadKeyboardMatrixForTest(ushort address) => ReadKeyboardMatrix(address);

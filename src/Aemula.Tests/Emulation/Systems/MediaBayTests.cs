@@ -63,6 +63,15 @@ public class MediaBayTests
     }
 
     [Test]
+    public async Task TheZX80ExposesTheDecksBay()
+    {
+        using var rig = EmulatedSystems.FindById("zx80")!.Build(ExpansionSlotConfiguration.Empty);
+
+        await Assert.That(rig.MediaBays.Count).IsEqualTo(1);
+        await Assert.That(rig.MediaBays[0].Id).IsEqualTo("cassette");
+    }
+
+    [Test]
     public async Task TheAppleIWithAnEmptyExpansionSlotExposesNoBays()
     {
         using var rig = EmulatedSystems.FindById("applei")!
