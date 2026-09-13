@@ -5,6 +5,7 @@ using Aemula.Emulation.Systems.AppleII.Debugging;
 using Aemula.Emulation.Systems.Atari2600.Debugging;
 using Aemula.Emulation.Systems.Nes.Debugging;
 using Aemula.Emulation.Systems.SpaceInvaders.Debugging;
+using Aemula.Emulation.Systems.ZX80.Debugging;
 
 namespace Aemula.UI.Debugging;
 
@@ -21,6 +22,7 @@ public static class DebuggerUIFactory
         Atari2600Debugger d => new Atari2600DebuggerUI(d),
         NesDebugger d => new NesDebuggerUI(d),
         SpaceInvadersDebugger d => new SpaceInvadersDebuggerUI(d),
+        ZX80Debugger d => new ZX80DebuggerUI(d),
         _ => throw new NotSupportedException($"No DebuggerUI registered for {debugger.GetType()}."),
     };
 }
