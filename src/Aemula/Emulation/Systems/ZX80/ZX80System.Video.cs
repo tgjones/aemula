@@ -115,6 +115,19 @@ public sealed partial class ZX80System
     // Tick()-wide pulse on the edge instead.
     private bool _previousPhi;
 
+    // See TickVideo's inverse-video latch remarks: the real inverter feeding
+    // IC11's reset input sits two gate-stages downstream of the same narrow
+    // phi-differentiator spike the set input reacts to directly, so its
+    // output only reflects a pulse a tick after the spike that caused it -
+    // by which point the spike itself (and so the set condition) is over.
+    private bool _previousNotShLd;
+
+    // /MREQ as the board saw it immediately *before* the PHI edge that made
+    // the spike above. The Z80's outputs lag their own clock edge by far
+    // longer than the spike lasts, so the two gates the spike feeds never
+    // see this edge's new /MREQ - see TickVideo's load-strobe remarks.
+    private bool _preEdgeMReq = true;
+
     /// <summary>
     /// The ROM's real address (0-4095): A9-A11 are wired straight from the
     /// CPU's own address pins with no mux at all (the Z80's I register,
@@ -347,12 +360,29 @@ public sealed partial class ZX80System
         var phiRisingEdge = phi && !_previousPhi;
         _previousPhi = phi;
 
+        // The two gates the spike feeds - IC16 gate 3 below and IC11 gate 1
+        // further down - both take /MREQ straight off the Z80's own pin. That
+        // pin is a strict AND-term with a ~20ns event, so *when* in the edge it
+        // is sampled is the whole design: on a real Z80 an output only responds
+        // to a clock edge after tdCr ~85-110ns, several times the spike's own
+        // width, so a spike co-timed with a PHI rising edge is long over before
+        // /MREQ reacts to that same edge. The gates therefore see the *previous*
+        // level, which is what makes the strobe land exactly once per M1 cycle:
+        // /MREQ is genuinely released only across T4 falling -> T1 rising (the
+        // one window where /RFSH is still low and the I:R refresh address - and
+        // so the character ROM's byte - is still on the bus), while the T3
+        // rising release, which would otherwise open a second bogus window, is
+        // still propagating when the spike passes. Both facts confirmed
+        // pin-by-pin against FlawlessZ80, the transistor-level part.
+        var spikeMReq = _preEdgeMReq;
+        _preEdgeMReq = Cpu.MReq;
+
         _ic13.A5 = _characterLatch.Q6 ?? false; // last cycle's latched NOP decode.
         var notLatchedNopDecode = _ic13.Y5;
 
         _ic16.A3 = phiRisingEdge;
         _ic16.B3 = notLatchedNopDecode;
-        _ic16.C3 = Cpu.MReq; // this gate takes raw /MREQ, unlike gate 1's active-high input above.
+        _ic16.C3 = spikeMReq; // this gate takes raw /MREQ, unlike gate 1's active-high input above.
         var shLd = _ic16.Y3;
 
         _videoShiftRegister.ShLd = shLd;
@@ -381,15 +411,33 @@ public sealed partial class ZX80System
         // (via IC13 gate 4 and R24 in series - a plain wire for this
         // model's purposes). Qbar is the composite VIDEO bit's second XOR
         // input, wired up once phase 4 needs it.
-        _ic11.A1 = Cpu.MReq; // raw /MREQ, unlike IC16 gate 1's active-high input above.
+        _ic11.A1 = spikeMReq; // raw /MREQ, unlike IC16 gate 1's active-high input above.
         _ic11.B1 = phiRisingEdge;
         var setBar = _ic11.Y1;
 
+        // IC11 gate1's B1 (phiRisingEdge, above) and this gate's B2 both
+        // ultimately trace back to the same narrow phi-differentiator spike,
+        // but B2 gets there through two more gate stages (IC16 gate3's NAND
+        // and this inverter) that a real 74LS-series part takes several ns
+        // to settle through - long enough that the spike itself (~20ns) has
+        // already ended by the time this inverter's output catches up. This
+        // model's gates settle within the same tick with no such delay, so
+        // without emulating that lag, B1 and B2 would both read this same
+        // tick's pulse and the set/reset inputs below could assert together
+        // - electrically impossible on the real board (confirmed against
+        // real hardware behavior), since /MREQ+phiRisingEdge (set's own
+        // condition) is a strict prerequisite of notShLd (reset's), so
+        // reset asserting would always mean set was asserting too. Feeding
+        // B2 last tick's value instead of this tick's reproduces the real
+        // stage delay: by the tick this inverter's output would reflect a
+        // pulse, the one-tick-wide phiRisingEdge pulse that would let set
+        // assert has already passed.
         _ic13.A4 = shLd;
         var notShLd = _ic13.Y4;
         _ic11.A2 = _characterLatch.Q7 ?? false; // the inverse-video flag.
-        _ic11.B2 = notShLd;
+        _ic11.B2 = _previousNotShLd;
         var resetBar = _ic11.Y2;
+        _previousNotShLd = notShLd;
 
         _ic12.A1 = _ic12.Y2;
         _ic12.B1 = setBar;

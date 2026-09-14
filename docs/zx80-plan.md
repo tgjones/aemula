@@ -478,6 +478,135 @@ on-screen position (bottom-left rather than top-left) is still unexplained,
 worth checking next along with whether the remaining gap is a display/
 timing offset or something further in the shift-out/composite-video path.
 
+(The bottom-left cursor position turned out not to be a bug at all - that's
+where the ZX80's `K` cursor is actually supposed to sit.)
+
+**Found and fixed the actual remaining bug: the video ROM read was gated on
+`Cpu.Rd`, which the real Z80 never asserts during refresh.** The shift
+register was loading correctly (the `ShLd` strobe fix above was real), but
+always with stale data, which is why every glyph rendered as a uniform
+block instead of its real bitmap. `DoCpuMemoryAccess`
+(`ZX80System.cs`) only wrote the ROM byte into `Cpu.Data` under
+`if (romSelected && !Cpu.Rd)` - correct for a normal T1/T2 opcode fetch
+(where `/RD` genuinely is asserted), but the character-ROM bitmap fetch this
+whole video trick depends on happens during the *refresh* half (T3/T4) of a
+display-file M1, and confirmed against `Z80Chip.cs`'s own tick sequencing,
+`/RD` is never asserted there - a real Z80 refresh cycle has no read strobe
+at all. A real 2332 mask ROM has no read/write pin to begin with; its
+outputs are enabled purely by chip-select (`romSelected`, already correctly
+gated on `/MREQ` via the address-decode pair), so gating on `Rd` was an
+emulation-only mistake, not a hardware fact - the RAM below still needs the
+`Rd`/`Wr` split since it's genuinely bidirectional, but the ROM never did.
+Fixed by dropping the `!Cpu.Rd` condition from the ROM branch. All 10 ZX80
+tests still pass, and `Aemula.Console --screenshot` now renders the actual
+`K` glyph (confirmed both visually and via raw pixel dump showing real
+internal bitmap structure, not a uniform fill) at the correct bottom-left
+cursor position, and typing a key (tested with `p`, which the ROM
+auto-tokenizes to the `PRINT` keyword) both renders the new token and
+advances the cursor - the two behaviors the user had already independently
+observed as "something is working."
+
+**The striping is fixed: the shift register was being reloaded three times
+per character.** The open question from the previous session - whether
+`setBar` (IC11 gate 1 = `NAND(/MREQ, phi-spike)`) really fires on every M1
+cycle with no dependency on the character's own data - had two answers, and
+both were needed.
+
+*Yes, `setBar` is genuinely unconditional, and that is the design.* It is not
+a signal that computes a per-character value; it is the latch's "default to
+normal video" re-arm, fired once per character time. Only an inverse-video
+character follows it with a reset (IC11 gate 2, gated on the latched `D7`
+flag), and because the reset path runs two further gate-stages behind the
+same ~20ns spike, the two pulses are consecutive rather than simultaneous on
+real hardware - set first, reset after it has released. A default plus a
+conditional override, not a data-dependent computation. So there was no
+missing qualifier to find in the netlist; the previous session was right not
+to invent one.
+
+*But it was firing three times per character, not once, and so was the load
+strobe `SH/LD` beside it.* Traced against `FlawlessZ80` - the
+transistor-level part, which ships in the `FlawlessChips` package this repo
+already references for the 6502/2A03 - the real M1 cycle is:
+
+```
+T1^  /M1=0  /MREQ=1  /RFSH=1   address <- new PC
+T1v         /MREQ=0  /RD=0
+T3^  /M1=1  /MREQ=1  /RFSH=0   address <- I:R
+T3v         /MREQ=0            refresh pulse begins
+T4^         /MREQ=0            still low
+T4v         /MREQ=1            refresh pulse ends; /RFSH and I:R stay put
+```
+
+`SH/LD` needs `/MREQ` *high* at a PHI rising edge, so on real hardware there
+is exactly one qualifying edge per M1 - `T1^`, sitting inside the window that
+opens at `T4v`, where `/RFSH` is still low and the `I:R` refresh address (and
+so the character ROM's bitmap byte) is still on the bus. That is the whole
+trick: the byte fetched during the refresh half is loaded on the boundary
+into the next M1, and its 8 pixels then shift out at 2PHI across exactly that
+M1's four T-states. One character per M1 cycle, self-clocking.
+
+Two model defects were opening two extra windows:
+
+1. **`Z80Chip` released the refresh `/MREQ` pulse half a T-state early** - on
+   T4 rising rather than T4 falling, so the pulse was half its real width.
+   This is a genuine chip-model bug, not a ZX80 one; fixed in `OnClkFalling`,
+   with `Z80ChipM1TimingTests` updated (it had codified the wrong edge in a
+   hand-written expectation). All 1356 FUSE bus-timing tests still pass.
+2. **The `/MREQ` release at `T3^` was instantaneous.** A real Z80 output
+   responds to its own clock edge only after `tdCr` ~85-110ns, several times
+   the differentiator spike's ~20ns width, so a spike co-timed with `T3^` is
+   long gone before `/MREQ` reacts to that edge. The gates the spike feeds
+   (IC16 gate 3 and IC11 gate 1) now sample the pre-edge `/MREQ` - the same
+   kind of propagation-delay modelling the inverse-video latch's reset input
+   already needed, and for the same underlying reason.
+
+With both fixed the `SH/LD` falling-edge count drops to exactly a third of
+what it was, the inverse-video latch settles once per character and holds for
+the whole cell, and `Aemula.Console --screenshot` renders the `K` cursor as a
+clean solid inverse-video block with the glyph cut out of it, where before
+every cell was shot through with the `#+#+#+#+` alternating-column striping
+(the shift register restarting every two pixels). Typing still works and is
+visibly cleaner too. All 10 ZX80 tests pass.
+
+**The dark bar at the far left of the cursor's line turned out to be a
+decoder defect, not a ZX80 one - fixed in `NtscRasterOscillators`.** Reading
+the raw sample back out of `Television.SampleBuffer` showed it was sync tip
+(`RawSample` 0), not picture black (57), sitting at columns 79-85 with active
+video starting at 80. The ZX80's own contribution is real and faithful: it has
+no hardware line-timing generator, so line length is whatever the ROM's
+display routine takes, and exactly one line per frame - the one closing the
+cursor's character row - runs 832 ticks instead of 828, one Z80 T-state long.
+That is the source of the real machine's famously unstable picture.
+
+What turned a 4-tick wobble into a visible bar was the decoder. Two things,
+both now fixed:
+
+1. The horizontal oscillator hard-reset its phase on every accepted HSYNC.
+   A real receiver's horizontal AFC filters the phase error into the
+   oscillator's *frequency* and never yanks the phase - directly-triggered
+   horizontal sync was abandoned around 1950 precisely because noise dragged
+   the picture with it. (Vertical really is directly triggered, and was
+   already right; that is why a misadjusted vertical hold rolls while a
+   horizontal one tears and pulls back in.)
+2. `CurrentRow` divided the vertical ramp by the *live* horizontal period
+   estimate, making the row index a quotient of two independently moving
+   quantities. One long line nudged the estimate up, which rescaled the row
+   axis underneath the ramp, and the row index stepped **backwards** (225 ->
+   224) - so 86 samples of the next line, sync pulse included, were written
+   over a row already drawn. The scale is now latched at each vertical
+   retrace, which is what a real yoke's fixed sensitivity amounts to.
+
+The second one was also a live bug well beyond this artifact: `FrameRunner`
+defines a frame as "a wrap of `CurrentRow` back to a lower value", so every
+spurious backwards row counted as a frame boundary. `--frames N` was running
+roughly half the frames asked for on this system - now 217,462 ticks/frame,
+matching the 216,911 measured straight off the line timings.
+
+Overscan (a real set's visible aperture is smaller than the active raster)
+was considered as a way to hide the bar and is written up separately in
+`television-overscan-plan.md`. It is no longer needed for that and was not
+done.
+
 **Phase 7 (stretch, explicit follow-up per your steer) — PAL variant**
 Add the 50Hz strapping (no D11, the default BOM) as a build/config option
 on `ZX80System`, and a genuine `TelevisionStandard.Pal` decode path under

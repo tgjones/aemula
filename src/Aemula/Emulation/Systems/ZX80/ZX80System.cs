@@ -158,7 +158,16 @@ public sealed partial class ZX80System : EmulatedSystem
         _romRamSelect.B4 = notMReq;
         var romSelected = !_romRamSelect.Y4;
 
-        if (romSelected && !Cpu.Rd)
+        // Unlike the RAM below, this isn't gated on Cpu.Rd: a real mask ROM
+        // has no read/write pin at all, so its outputs are enabled purely by
+        // chip-select (romSelected, itself already gated on /MREQ) - and the
+        // Z80 never asserts /RD during the refresh half of an M1 cycle,
+        // which is exactly when this same ROM access has to fire to put the
+        // character bitmap byte on the bus for the video shift register.
+        // Gating on Rd here silently broke that: the CPU-side (T1/T2) fetch
+        // still worked since /RD is asserted there, but the refresh-side
+        // (T3/T4) bitmap fetch this whole video trick depends on never ran.
+        if (romSelected)
         {
             Cpu.Data = _rom[GetRomAddress(address)];
         }
