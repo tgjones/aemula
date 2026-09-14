@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+
 namespace Aemula.Emulation.Systems.ZX80;
 
 // The keyboard diode matrix (D3-D10): plain wiring, not a chip class, per
@@ -31,37 +34,146 @@ public sealed partial class ZX80System
     // row's column N is currently held down. Matches the standard Sinclair
     // matrix (confirmed against the netlist's own diode/switch nets, modulo
     // a few column pins the extractor mis-clustered onto row nets - the
-    // clean majority of the matrix already matched this layout exactly).
+    // clean majority of the matrix already matched this layout exactly) and
+    // against the ROM's own unshifted key table at $006C, which lists every
+    // non-SHIFT crosspoint in row/column order. Rebuilt from _heldKeys on
+    // every key event rather than edited in place, since SHIFT's crosspoint
+    // is shared by every held key that needs it.
     private readonly byte[] _keyMatrixRows = new byte[8];
+
+    // Every host key currently holding a crosspoint down, keyed by its
+    // modifier-independent identity so a key-up releases what its key-down
+    // pressed even if host Shift changed in between - and each remembering
+    // whether it also needs the ZX80's SHIFT, decided once at key-down.
+    private readonly Dictionary<Key, (int Row, int Column, bool Shift)> _heldKeys = [];
+
+    private bool _hostLeftShiftHeld;
+    private bool _hostRightShiftHeld;
 
     public override void OnKeyEvent(KeyEvent keyEvent)
     {
-        var position = MapKeyToMatrixPosition(keyEvent.Key);
-        if (position is null)
+        if (keyEvent.Key is Key.LeftShift or Key.RightShift)
+        {
+            // Host Shift never touches the matrix by itself: the ZX80's
+            // SHIFT crosspoint is driven by whichever held keys need it, so
+            // a host character that's shifted on the host but not on the
+            // ZX80 (or vice versa) still types the right thing.
+            if (keyEvent.Key == Key.LeftShift)
+            {
+                _hostLeftShiftHeld = keyEvent.IsDown;
+            }
+            else
+            {
+                _hostRightShiftHeld = keyEvent.IsDown;
+            }
+            return;
+        }
+
+        if (keyEvent.IsDown)
+        {
+            if (ResolveMatrixPosition(keyEvent, _hostLeftShiftHeld || _hostRightShiftHeld) is not { } position)
+            {
+                return;
+            }
+            _heldKeys[keyEvent.Key] = position;
+        }
+        else if (!_heldKeys.Remove(keyEvent.Key))
         {
             return;
         }
 
-        var (row, column) = position.Value;
-        var bit = (byte)(1 << column);
-
-        if (keyEvent.IsDown)
+        Array.Clear(_keyMatrixRows);
+        foreach (var (row, column, shift) in _heldKeys.Values)
         {
-            _keyMatrixRows[row] |= bit;
-        }
-        else
-        {
-            _keyMatrixRows[row] &= (byte)~bit;
+            _keyMatrixRows[row] |= (byte)(1 << column);
+            if (shift)
+            {
+                _keyMatrixRows[0] |= 1;
+            }
         }
     }
+
+    // The character the host produced wins whenever the ZX80 keyboard has a
+    // key for it, so the host keycap legend is what gets typed: host
+    // Shift+' types '"' (ZX80 SHIFT+Y), host '=' types '=' (ZX80 SHIFT+L).
+    // Anything the ZX80 has no key for - uppercase letters, '!', '@' and so
+    // on - falls back to the host key's position on the ZX80 matrix with
+    // host Shift passed through, which keeps every SHIFT legend that has no
+    // host character reachable: Shift+A-T for the block graphics, Shift+1-4
+    // for NOT/AND/THEN/TO, Shift+B for OR, Shift+H for **, Shift+Return for
+    // EDIT. The cursor keys, HOME and RUBOUT live on SHIFT+5-9/0, whose host
+    // characters on most layouts ('%', '(', ')' ...) resolve as symbols
+    // instead, so the host's own arrow/Home/Backspace keys drive those.
+    private static (int Row, int Column, bool Shift)? ResolveMatrixPosition(KeyEvent keyEvent, bool hostShift)
+    {
+        if (keyEvent.Character is { } character && MapCharacterToMatrixPosition(character) is { } symbol)
+        {
+            return symbol;
+        }
+
+        switch (keyEvent.Key)
+        {
+            case Key.Left: return (3, 4, true);  // SHIFT+5
+            case Key.Down: return (4, 4, true);  // SHIFT+6
+            case Key.Up: return (4, 3, true);    // SHIFT+7
+            case Key.Right: return (4, 2, true); // SHIFT+8
+            case Key.Home: return (4, 1, true);  // SHIFT+9
+            case Key.Backspace or Key.Delete: return (4, 0, true); // SHIFT+0, RUBOUT
+        }
+
+        // A letter typed without a host Shift event (Aemula.Console's
+        // --input, say, which sends 'P' as its own Key) still belongs on the
+        // letter's key - the ZX80 has only one letter case.
+        var key = keyEvent.Character is { } letter && char.IsAsciiLetter(letter)
+            ? (Key)char.ToLowerInvariant(letter)
+            : keyEvent.Key;
+
+        return MapKeyToMatrixPosition(key) is { } position
+            ? (position.Row, position.Column, hostShift)
+            : null;
+    }
+
+    // The ZX80's digits and punctuation, including the SHIFT legends that
+    // print as ordinary characters (the ROM's shifted key table at $0093;
+    // a few of them - ';', '/', '*', '=', '+', '-', '<', '>', ',' - arrive
+    // as single-character tokens rather than character codes, but display
+    // identically). Digits are here rather than left to the positional
+    // fallback so a layout that shifts its digits (AZERTY) doesn't turn
+    // them into SHIFT+digit.
+    private static (int Row, int Column, bool Shift)? MapCharacterToMatrixPosition(char character) => character switch
+    {
+        >= '1' and <= '5' => (3, character - '1', false),
+        '0' => (4, 0, false),
+        >= '6' and <= '9' => (4, '9' - character + 1, false),
+        '.' => (7, 1, false),
+
+        ':' => (0, 1, true),
+        ';' => (0, 2, true),
+        '?' => (0, 3, true),
+        '/' => (0, 4, true),
+        '*' => (5, 0, true),
+        ')' => (5, 1, true),
+        '(' => (5, 2, true),
+        '$' => (5, 3, true),
+        '"' => (5, 4, true),
+        '=' => (6, 1, true),
+        '+' => (6, 2, true),
+        '-' => (6, 3, true),
+        '£' => (7, 0, true),
+        ',' => (7, 1, true),
+        '>' => (7, 2, true),
+        '<' => (7, 3, true),
+
+        _ => null,
+    };
 
     // Row 0 is A8 (D3's row) through row 7 A15 (D10's row); column 0 is D0
     // through column 4 D4 - the same left-to-right order the netlist's
     // clean column assignments show for every row (SHIFT/A/Q/1/0/P/NEWLINE/
-    // SPACE always land on D0, and so on rightward).
+    // SPACE always land on D0, and so on rightward). SHIFT itself has no
+    // entry: OnKeyEvent drives its crosspoint from the held keys instead.
     private static (int Row, int Column)? MapKeyToMatrixPosition(Key key) => key switch
     {
-        Key.LeftShift or Key.RightShift => (0, 0),
         Key.Z => (0, 1),
         Key.X => (0, 2),
         Key.C => (0, 3),
@@ -104,9 +216,10 @@ public sealed partial class ZX80System
         Key.H => (6, 4),
 
         Key.Space => (7, 0),
-        Key.B => (7, 1),
+        (Key)'.' => (7, 1),
         Key.M => (7, 2),
         Key.N => (7, 3),
+        Key.B => (7, 4),
 
         _ => null,
     };

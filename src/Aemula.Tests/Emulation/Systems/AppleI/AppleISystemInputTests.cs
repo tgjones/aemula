@@ -63,7 +63,8 @@ public class AppleISystemInputTests
 
     // The exact shape the console harness delivers a typed character in
     // (InputScript.TypeCharacter): a key-down carrying the resolved
-    // character directly.
+    // character directly. Its later key-up is omitted - the Apple I ignores
+    // key-ups.
     private static void TypeKey(AppleISystem system, char character) =>
         system.OnKeyEvent(new KeyEvent
         {

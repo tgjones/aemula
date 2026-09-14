@@ -63,6 +63,7 @@ public enum Key
     Down,
     Left,
     Right,
+    Home,
     RightShift,
     LeftShift,
 }
