@@ -67,6 +67,75 @@ public class NtscRasterOscillatorsTests
     }
 
     [Test]
+    public async Task RowNeverMovesBackwardsWhenALineRunsLong()
+    {
+        // A real vertical deflection ramp only ever sweeps downward, so the
+        // row a sample lands on can only increase until the field ends. That
+        // used to be violable: CurrentRow divided the ramp by the *live*
+        // horizontal period estimate, so a long scanline nudging that
+        // estimate up rescaled the row axis underneath the ramp and the row
+        // index stepped backwards - writing the next line's samples, sync
+        // pulse included, over a row already drawn. A real ZX80 field does
+        // exactly this (the line closing the cursor's character row runs one
+        // T-state long) and it put a dark bar inside the visible picture.
+        //
+        // The anomaly here is deliberately far larger than the ZX80's own
+        // four samples. The row index only steps backwards when the rescale
+        // happens to carry the quotient down across an integer, so a small
+        // anomaly reproduces the fault only for the rows that happen to sit
+        // just above one - real, but a coincidence, and not something to
+        // hang a regression test on. Sized so the crossing is arithmetic
+        // instead: 50 samples long moves a converged ~910 estimate by 5
+        // (a tenth of the error, per HorizontalSmoothingRate), and 5/910 of
+        // the ramp's ~200-line depth is over a line's worth of rescale, so
+        // the pre-fix code must cross an integer boundary downward wherever
+        // the anomaly lands. Still inside the 15% capture range, so the
+        // pulse is genuinely accepted rather than rejected as noise.
+        const int lineLength = 910;
+        const int syncWidth = 67;
+        const int anomalousLineIndex = 200;
+        const int anomalyExtraSamples = 50;
+
+        var samples = new List<byte>();
+
+        for (var line = 0; line < 250; line++)
+        {
+            var length = line == anomalousLineIndex ? lineLength + anomalyExtraSamples : lineLength;
+            for (var i = 0; i < length; i++)
+            {
+                samples.Add(i < syncWidth ? (byte)0 : (byte)255);
+            }
+        }
+
+        var separator = new NtscSyncSeparator();
+        var oscillators = new NtscRasterOscillators();
+
+        var previousRow = -1;
+        var backwardsSteps = 0;
+
+        foreach (var sample in samples)
+        {
+            separator.Process(sample);
+            oscillators.Process(separator.HSyncDetected, separator.VSyncDetected);
+
+            var row = oscillators.CurrentRow;
+
+            // Row 0 is a genuine field wrap, not a backwards step. This
+            // signal carries no VSYNC, so the vertical oscillator free-runs
+            // and wraps on its own - the flywheel behaving, and still a
+            // legitimate way to reach a lower row.
+            if (previousRow >= 0 && row < previousRow && row != 0)
+            {
+                backwardsSteps++;
+            }
+
+            previousRow = row;
+        }
+
+        await Assert.That(backwardsSteps).IsEqualTo(0);
+    }
+
+    [Test]
     public async Task FailsToLockOntoOutOfRangeSyncTiming()
     {
         // A bogus "sync" pulse train at a period nowhere near any real

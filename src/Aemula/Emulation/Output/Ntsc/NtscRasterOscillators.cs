@@ -13,14 +13,39 @@ namespace Aemula.Emulation.Output.Ntsc;
 // The key thing that makes this behave like a *real* TV rather than a
 // magic perfect clock: a real horizontal/vertical oscillator is a
 // free-running thing with its own natural period (like a horizontal-hold
-// knob's center frequency), which incoming HSYNC/VSYNC pulses only gently
-// pull into phase - within a limited "capture range" - rather than being
-// directly driven by them. Pulses that land outside that capture range are
-// noise, not sync, and get ignored; and if no valid pulses show up for a
-// while, the oscillator just keeps going on its own (a "flywheel"),
+// knob's center frequency), which incoming HSYNC/VSYNC pulses pull into
+// phase - within a limited "capture range" - rather than being a clock
+// that sync simply defines. Pulses that land outside that capture range
+// are noise, not sync, and get ignored; and if no valid pulses show up for
+// a while, the oscillator just keeps going on its own (a "flywheel"),
 // producing a torn or rolling picture rather than freezing or crashing.
 // This is what makes the whole decoder behave sensibly - not perfectly,
 // but the same way a real set would - on a badly out-of-spec signal.
+//
+// The two are not pulled into phase the same way, because on a real
+// receiver they genuinely aren't the same kind of circuit. Composite sync
+// leaves the sync separator and splits two ways:
+//
+//   Horizontal goes to an AFC ("flywheel sync"): a phase detector compares
+//   the incoming pulse against a waveform derived from the horizontal
+//   output stage's own flyback, and the error runs through an RC
+//   "anti-hunt" filter that nudges the oscillator's *frequency*. The
+//   oscillator's phase is never yanked to the pulse. Directly-triggered
+//   horizontal sync was abandoned around 1950 for exactly this reason: a
+//   noise pulse landing mid-line would drag the phase with it and shred
+//   the picture. It's also why a misadjusted horizontal hold skews and
+//   tears and then pulls itself back in.
+//
+//   Vertical goes through an integrator network to a blocking oscillator
+//   or multivibrator that the resulting broad pulse triggers outright. The
+//   vertical hold control sets it to free-run slightly slow so that sync
+//   triggers it early every field. That really is a hard reset - which is
+//   why a misadjusted vertical hold *rolls* rather than tearing: the
+//   oscillator is free-running, never being triggered at all.
+//
+// Both behaviors come out of one PullInOscillator, parameterized by how
+// much of a phase error one accepted pulse is allowed to remove - see
+// HorizontalPhaseCorrectionRate/VerticalPhaseCorrectionRate below.
 public sealed class NtscRasterOscillators
 {
     // Horizontal capture range and smoothing: pulses within 15% of the
@@ -52,6 +77,27 @@ public sealed class NtscRasterOscillators
     // how many pulses it offers.
     private const float MaxPeriodDriftFraction = 0.2f;
 
+    // How much of a measured phase error one accepted pulse is allowed to
+    // remove - the difference in *kind* between the two oscillators, per the
+    // class remarks above, expressed as one number each.
+    //
+    // Horizontal is the AFC's anti-hunt filter: 5% per line, so a phase error
+    // decays with a time constant of ~20 lines (~1.3ms, comfortably inside a
+    // field, which is the pull-in speed real AFC designs aim for). The point
+    // is the *stiffness*, not the exact figure - a single stray pulse moves
+    // the phase by a twentieth of its own error rather than capturing it
+    // outright, and a genuine one-off timing wobble in the source is absorbed
+    // as a sub-sample-per-line drift rather than a step. Setting this to 1
+    // would turn the horizontal oscillator back into the directly-triggered
+    // design that AFC replaced.
+    private const float HorizontalPhaseCorrectionRate = 0.05f;
+
+    // Vertical is a trigger, so its correction is the whole error: the
+    // integrated sync pulse fires the oscillator and that *is* the new phase.
+    // 1 here reproduces a plain "Position = 0" snap exactly (see
+    // PullInOscillator.Accept) - it isn't an approximation of one.
+    private const float VerticalPhaseCorrectionRate = 1f;
+
     // A real vertical sync region is several HSYNC-width-or-broader pulses
     // in a row (equalizing + broad serration pulses), not one - see the
     // class remarks on NtscSyncSeparator. Any VSYNC-classified pulse
@@ -66,18 +112,39 @@ public sealed class NtscRasterOscillators
     private readonly PullInOscillator _horizontal = new(
         NtscTiming.NominalSamplesPerLine,
         HorizontalCaptureRangeFraction,
-        HorizontalSmoothingRate);
+        HorizontalSmoothingRate,
+        HorizontalPhaseCorrectionRate);
 
     private readonly PullInOscillator _vertical = new(
         NtscTiming.NominalSamplesPerField,
         VerticalCaptureRangeFraction,
-        VerticalSmoothingRate);
+        VerticalSmoothingRate,
+        VerticalPhaseCorrectionRate);
 
     // How long it's been since the last VSYNC-classified pulse was even
     // considered (accepted or not) - the debounce gate described above.
     // Seeded huge so the very first VSYNC pulse in a stream is always
     // considered.
     private float _samplesSinceLastVSyncCandidate = 1e12f;
+
+    // The samples-per-line figure CurrentRow divides the vertical ramp by,
+    // held fixed for a whole field and only re-read at each vertical
+    // boundary. On a real set the vertical deflection's ramp maps to a
+    // physical height through the yoke's sensitivity - a fixed circuit
+    // constant, not something that moves while the field is being drawn -
+    // and this is the modelling equivalent.
+    //
+    // Reading _horizontal.PeriodEstimate live here instead (which is what
+    // this did) makes the row index a quotient of two independently moving
+    // quantities, so a horizontal period estimate that grows mid-field
+    // silently rescales the whole row axis underneath the ramp. The row
+    // index can then step *backwards* even though the ramp only ever
+    // advances - and it did: one long scanline in a ZX80 field nudged the
+    // estimate up, the row index went 225 -> 224, and the next line's
+    // samples (its sync pulse included) were written back over a row
+    // already drawn, as a dark bar inside the visible picture. A real
+    // vertical ramp cannot revisit a height it has already swept past.
+    private float _rowScaleSamplesPerLine = NtscTiming.NominalSamplesPerLine;
 
     /// <summary>
     /// The raster column (sample position within the current line) of the
@@ -87,9 +154,13 @@ public sealed class NtscRasterOscillators
 
     /// <summary>
     /// The raster row (line position within the current field) of the
-    /// sample just processed.
+    /// sample just processed - how far down its own ramp the vertical
+    /// oscillator has swept, measured in line-heights. Monotonic within a
+    /// field by construction: the ramp only advances, and the scale it is
+    /// divided by is held fixed across the field (see
+    /// <see cref="_rowScaleSamplesPerLine"/>).
     /// </summary>
-    public int CurrentRow => (int)(_vertical.Position / _horizontal.PeriodEstimate);
+    public int CurrentRow => (int)(_vertical.Position / _rowScaleSamplesPerLine);
 
     /// <summary>
     /// The current running estimate of samples-per-line, measured from real
@@ -129,7 +200,13 @@ public sealed class NtscRasterOscillators
         // both this codebase's test signals, doesn't line up with
         // horizontal line boundaries - can always be offered on the exact
         // sample it was detected on.
-        _vertical.Tick(offerVSync);
+        if (_vertical.Tick(offerVSync))
+        {
+            // Vertical retrace: the one moment the row scale can change
+            // without rewriting the field currently being drawn - see
+            // _rowScaleSamplesPerLine.
+            _rowScaleSamplesPerLine = _horizontal.PeriodEstimate;
+        }
     }
 
     // Shared pull-in/flywheel logic behind both oscillators above - one
@@ -148,10 +225,16 @@ public sealed class NtscRasterOscillators
     //      nominal either, even starting from a bad first measurement.
     //   2. A flywheel free-run: Position keeps advancing every Tick
     //      regardless of whether a pulse was accepted, wrapping back to
-    //      zero (and reporting a boundary crossing) either when a pulse is
-    //      accepted or, with no pulse in sight, whenever a full period's
-    //      worth of samples has simply gone by on its own.
-    private sealed class PullInOscillator(float nominalPeriod, float captureRangeFraction, float smoothingRate)
+    //      zero (and reporting a boundary crossing) when a full period's
+    //      worth of samples has gone by on its own. An accepted pulse also
+    //      reports a boundary crossing, and pulls Position toward the
+    //      pulse by phaseCorrectionRate's share of the error - a whole
+    //      trigger at 1, an AFC's filtered nudge below that.
+    private sealed class PullInOscillator(
+        float nominalPeriod,
+        float captureRangeFraction,
+        float smoothingRate,
+        float phaseCorrectionRate)
     {
         private readonly float _nominalPeriod = nominalPeriod;
 
@@ -257,9 +340,20 @@ public sealed class NtscRasterOscillators
                             target,
                             _nominalPeriod * (1 - MaxPeriodDriftFraction),
                             _nominalPeriod * (1 + MaxPeriodDriftFraction));
+
+                        Accept(phaseCorrectionRate);
+                    }
+                    else
+                    {
+                        // The first pulse doesn't correct a phase, it
+                        // establishes one - there's nothing to filter
+                        // toward yet, the same reason it doesn't touch
+                        // PeriodEstimate either. A real set has to grab an
+                        // arbitrary first reference the same way, before
+                        // its AFC has any error to work on.
+                        Accept(1f);
                     }
 
-                    Accept();
                     return true;
                 }
 
@@ -290,7 +384,11 @@ public sealed class NtscRasterOscillators
                         _nominalPeriod * (1 - MaxPeriodDriftFraction),
                         _nominalPeriod * (1 + MaxPeriodDriftFraction));
 
-                    Accept();
+                    // Re-lock takes the phase outright, not filtered -
+                    // lock was lost, so there is no useful phase to
+                    // preserve, and the same reasoning that skips
+                    // smoothing on PeriodEstimate just above applies here.
+                    Accept(1f);
                     return true;
                 }
 
@@ -307,9 +405,37 @@ public sealed class NtscRasterOscillators
             return false;
         }
 
-        private void Accept()
+        // Pulls Position toward this pulse by rate's share of the phase
+        // error, rather than assigning it. At rate 1 that is arithmetically
+        // identical to the "Position = 0" this used to do; below 1 it is an
+        // AFC's filtered correction - see HorizontalPhaseCorrectionRate.
+        private void Accept(float rate)
         {
-            Position = 0;
+            // Signed, and wrapped into +/- half a period: a pulse arriving
+            // slightly *early* catches Position just short of a full period,
+            // which is a small negative error, not an enormous positive one.
+            // Without the wrap that reads as nearly a whole period of error
+            // and gets "corrected" the long way round.
+            var phaseError = Position;
+            if (phaseError > PeriodEstimate * 0.5f)
+            {
+                phaseError -= PeriodEstimate;
+            }
+
+            Position -= phaseError * rate;
+
+            // A partial correction can leave Position a little outside
+            // [0, PeriodEstimate); a full one lands exactly on 0 or exactly
+            // on PeriodEstimate, which is the same instant one period later.
+            if (Position < 0f)
+            {
+                Position += PeriodEstimate;
+            }
+            else if (Position >= PeriodEstimate)
+            {
+                Position -= PeriodEstimate;
+            }
+
             _samplesSinceAccepted = 0;
             _hasEverAccepted = true;
             _consistentOfferStreak = 0;
