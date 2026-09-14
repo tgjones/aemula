@@ -29,9 +29,10 @@ namespace Aemula.Console;
 //         reset, clear-screen) and every connected peripheral's controls (the
 //         cassette deck's tape-play, tape-rewind)
 //
-//   - a double-quoted string, typed one character per frame into the
-//     system's keyboard through the same OnKeyEvent path the UI uses (the
-//     Apple I keyboard, say). A comma inside the quotes is literal, not an
+//   - a double-quoted string, typed into the system's keyboard through the
+//     same OnKeyEvent path the UI uses (the Apple I keyboard, say) - one
+//     key press and release per character, a character every
+//     FramesPerTypedKey frames. A comma inside the quotes is literal, not an
 //     item separator. Recognised escapes: \n / \r -> Return (CR), \e ->
 //     Escape, \t -> Tab, \\ -> backslash, \" -> quote.
 //
@@ -43,11 +44,21 @@ public sealed class InputScript
 
     private readonly record struct TypedKey(int Frame, char Character);
 
-    // Frames between successive typed characters. WozMon's echo can block for
-    // close to a whole frame while a character commits to the display rings,
-    // so one clear frame per key keeps a fast burst from overrunning the
-    // keyboard strobe before the program has read it.
-    private const int FramesPerTypedKey = 2;
+    // Frames from one typed character's key-down to the next's. WozMon's
+    // echo can block for close to a whole frame while a character commits to
+    // the display rings, and the ZX80 ROM redraws its whole screen after
+    // accepting a key and then needs to see every key up for a few frames
+    // before it takes another (2 released frames drop keys; 4 are enough on
+    // a short line), so this leaves headroom for a busier screen's longer
+    // redraw.
+    private const int FramesPerTypedKey = 10;
+
+    // Frames each typed key stays held before its key-up. A keyboard matrix
+    // the ROM scans in software (the ZX80's) only registers a key it sees
+    // down across more than one scan, and a key that's never released reads
+    // as held forever; the Apple I's encoded keyboard just ignores the
+    // key-up.
+    private const int TypedKeyHoldFrames = 4;
 
     private readonly List<ScheduledEvent> _events;
     private readonly List<TypedKey> _typedKeys;
@@ -189,7 +200,11 @@ public sealed class InputScript
         {
             if (typed.Frame == framesCompleted)
             {
-                TypeCharacter(rig.System, typed.Character);
+                TypeCharacter(rig.System, typed.Character, isDown: true);
+            }
+            else if (typed.Frame + TypedKeyHoldFrames == framesCompleted)
+            {
+                TypeCharacter(rig.System, typed.Character, isDown: false);
             }
         }
     }
@@ -216,15 +231,15 @@ public sealed class InputScript
         });
     }
 
-    // Delivers one character as the key-down event a system's OnKeyEvent maps
-    // to ASCII (Character carries the resolved character directly, the way
-    // EmulationWindow would have resolved it from a real keypress). A system
-    // with no keyboard handler ignores it.
-    private static void TypeCharacter(EmulatedSystem system, char character)
+    // Delivers one character as the key event a system's OnKeyEvent maps to
+    // its keyboard (Character carries the resolved character directly, the
+    // way EmulationWindow would have resolved it from a real keypress). A
+    // system with no keyboard handler ignores it.
+    private static void TypeCharacter(EmulatedSystem system, char character, bool isDown)
     {
         system.OnKeyEvent(new KeyEvent
         {
-            IsDown = true,
+            IsDown = isDown,
             Key = (Key)character,
             Character = character,
         });
