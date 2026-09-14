@@ -12,7 +12,15 @@ namespace Aemula.Tests.Emulation.Chips.Z80;
 //   T3 up    opcode latched off the data bus; /MREQ //RD //M1 released;
 //            /RFSH low, address bus = I:R, R does its 7-bit increment
 //   T3 down  /MREQ pulses low again for the refresh
-//   T4 up    refresh /MREQ released
+//   T4 up    refresh /MREQ still low - the pulse is a full T-state wide
+//   T4 down  refresh /MREQ released; /RFSH and the I:R address stay put, so
+//            the refresh address is still on the bus, valid, with /MREQ
+//            released, right through to T1 of the next cycle. The ZX80's
+//            character-ROM load strobe is built out of exactly that window
+//            (see ZX80System.Video.cs), which is what makes the half-T-state
+//            here worth asserting rather than approximating - the edges below
+//            were checked pin-by-pin against FlawlessZ80, the transistor-level
+//            part, not just read off the manual's diagram.
 //
 // One T-state is one full CLK period: chip.Clk = true; chip.Clk = false;
 public class Z80ChipM1TimingTests
@@ -69,11 +77,16 @@ public class Z80ChipM1TimingTests
         await Assert.That(cpu.Rfsh).IsFalse();
         await Assert.That(cpu.Address).IsEqualTo((ushort)0x7AFF);
 
-        // --- T4 rising: refresh /MREQ released --------------------------
+        // --- T4 rising: the refresh /MREQ pulse is still low ---------------
         cpu.Clk = true;
         await Assert.That(cpu.CurrentState).IsEqualTo(Z80Chip.TState.T4);
-        await Assert.That(cpu.MReq).IsTrue();
+        await Assert.That(cpu.MReq).IsFalse();
+
+        // --- T4 falling: refresh /MREQ released, refresh address still held -
         cpu.Clk = false;
+        await Assert.That(cpu.MReq).IsTrue();
+        await Assert.That(cpu.Rfsh).IsFalse();
+        await Assert.That(cpu.Address).IsEqualTo((ushort)0x7AFF);
     }
 
     [Test]

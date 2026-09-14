@@ -392,11 +392,6 @@ public sealed partial class Z80Chip
                 R = (byte)((R & 0x80) | ((R + 1) & 0x7F));
                 break;
 
-            case OpcodeFetchT4:
-                // The refresh /MREQ pulse ends.
-                MReq = true;
-                break;
-
             case MemoryReadT1:
             case MemoryWriteT1:
             case IoReadT1:
@@ -459,10 +454,6 @@ public sealed partial class Z80Chip
                 Address = (ushort)((I << 8) | R);
                 R = (byte)((R & 0x80) | ((R + 1) & 0x7F));
                 break;
-
-            case InterruptAckT4:
-                MReq = true;
-                break;
         }
 
         // Opcode-specific microcode. Runs after the generic pin sequencing so it
@@ -516,9 +507,22 @@ public sealed partial class Z80Chip
 
             case OpcodeFetchT3:
             case InterruptAckT3:
-                // The refresh /MREQ pulse: low from T3 falling until T4 rising.
-                // The interrupt-acknowledge cycle refreshes exactly like an M1.
+                // The refresh /MREQ pulse: low from T3 falling until T4 falling,
+                // a full T-state wide. The interrupt-acknowledge cycle refreshes
+                // exactly like an M1.
                 MReq = false;
+                break;
+
+            case OpcodeFetchT4:
+            case InterruptAckT4:
+                // The refresh /MREQ pulse ends - on T4 *falling*, not T4 rising.
+                // /RFSH stays low and the I:R refresh address stays on the bus
+                // across this edge and on into T1 of the next cycle, so the
+                // window between here and that T1 rising edge is the one moment
+                // in an M1 where the refresh address is valid with /MREQ
+                // released; the ZX80 builds its character-ROM load strobe out of
+                // exactly that window (see ZX80System.Video.cs).
+                MReq = true;
                 break;
 
             case IoReadT3:
