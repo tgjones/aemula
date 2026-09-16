@@ -822,26 +822,43 @@ public sealed class LogicAnalyzerWindow : DebuggerWindow
     // than aliasing to whatever one sample happened to land on that pixel.
     private static unsafe void DrawEnvelopeTrace(Channel channel, Vector4 color, bool isAnalog, ReadOnlySpan<ulong> buffer, int capacity, long visStart, int visibleCount, int bucketCount)
     {
-        Span<double> mins = stackalloc double[bucketCount];
-        Span<double> maxes = stackalloc double[bucketCount];
-        Span<double> xs = stackalloc double[bucketCount];
+        Span<double> bucketMins = stackalloc double[bucketCount];
+        Span<double> bucketMaxes = stackalloc double[bucketCount];
 
-        var actualBucketCount = SampleDecimator.ComputeMinMaxEnvelope(buffer, capacity, visStart, visibleCount, bucketCount, mins, maxes);
+        var actualBucketCount = SampleDecimator.ComputeMinMaxEnvelope(buffer, capacity, visStart, visibleCount, bucketCount, bucketMins, bucketMaxes);
 
         if (isAnalog)
         {
             var scale = (channel.AnalogMax - channel.AnalogMin) / 255.0;
             for (var i = 0; i < actualBucketCount; i++)
             {
-                mins[i] = channel.AnalogMin + mins[i] * scale;
-                maxes[i] = channel.AnalogMin + maxes[i] * scale;
+                bucketMins[i] = channel.AnalogMin + bucketMins[i] * scale;
+                bucketMaxes[i] = channel.AnalogMin + bucketMaxes[i] * scale;
             }
         }
+
+        // Each bucket contributes two plotted points, at its own start and end
+        // x (both holding that bucket's min/max), rather than one point at its
+        // midpoint. PlotShaded/PlotLine draw straight lines between consecutive
+        // points, so a single midpoint per bucket would connect one bucket's
+        // height to the next with a sloped ramp - misrepresenting a signal
+        // that's actually flat across each bucket and steps instantly at the
+        // boundary. A true square wave decimated down to one midpoint per
+        // bucket reads as smoothed/triangular; doubling each bucket's point
+        // turns those diagonal ramps into the flat-then-vertical steps that
+        // match what the signal actually did.
+        var pointCount = actualBucketCount * 2;
+        Span<double> xs = stackalloc double[pointCount];
+        Span<double> mins = stackalloc double[pointCount];
+        Span<double> maxes = stackalloc double[pointCount];
 
         for (var i = 0; i < actualBucketCount; i++)
         {
             var (rangeStart, rangeEnd) = SampleDecimator.GetBucketRange(visibleCount, actualBucketCount, i);
-            xs[i] = visStart + (rangeStart + rangeEnd) * 0.5;
+            xs[2 * i] = visStart + rangeStart;
+            xs[2 * i + 1] = visStart + rangeEnd;
+            mins[2 * i] = mins[2 * i + 1] = bucketMins[i];
+            maxes[2 * i] = maxes[2 * i + 1] = bucketMaxes[i];
         }
 
         ImPlot.PushStyleColor(ImPlotCol.Line, color);
@@ -851,8 +868,8 @@ public sealed class LogicAnalyzerWindow : DebuggerWindow
         fixed (double* minsPtr = mins)
         fixed (double* maxesPtr = maxes)
         {
-            ImPlot.PlotShaded("##data"u8, xsPtr, minsPtr, maxesPtr, actualBucketCount);
-            ImPlot.PlotLine("##dataMax"u8, xsPtr, maxesPtr, actualBucketCount);
+            ImPlot.PlotShaded("##data"u8, xsPtr, minsPtr, maxesPtr, pointCount);
+            ImPlot.PlotLine("##dataMax"u8, xsPtr, maxesPtr, pointCount);
         }
 
         ImPlot.PopStyleColor(2);
