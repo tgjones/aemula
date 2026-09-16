@@ -29,6 +29,8 @@ public sealed class DisassemblyWindow(Debugger debugger) : DebuggerWindow
     private const float HeatLogScaleMax = 16f;
     private const float MaxHeatAlpha = 0.35f;
 
+    private const float ScrollbarMarkerWidth = 4f;
+
     private readonly List<DisassemblyLine> _disassembly = [];
 
     private int _previousPC;
@@ -387,6 +389,14 @@ public sealed class DisassemblyWindow(Debugger debugger) : DebuggerWindow
                 ImGui.EndTable();
             }
 
+            // Drawn while the child is still current, so GetWindowPos/Size
+            // reflect its fixed outer rect rather than anything scrolled -
+            // ImGui has no API to decorate its native scrollbar directly, so
+            // this is a self-drawn strip pinned to the same right edge
+            // instead, mapping each marker's line index to a Y fraction of
+            // the full listing rather than the current scroll position.
+            DrawScrollbarMarkers(lastPC);
+
             ImGui.PopStyleVar();
         }
         ImGui.EndChild();
@@ -430,6 +440,68 @@ public sealed class DisassemblyWindow(Debugger debugger) : DebuggerWindow
         }
 
         ImGui.EndChild();
+    }
+
+    // Self-drawn scrollbar-decoration strip (see the DrawOverride call site) -
+    // a thin red tick per enabled execution breakpoint plus a yellow one for
+    // the current PC, positioned along the child window's right edge by
+    // their line index's fraction of the full listing. Byte/word watchpoints
+    // are skipped: their addresses are data, not necessarily a disassembled
+    // instruction row this listing has an index for.
+    private void DrawScrollbarMarkers(ushort lastPC)
+    {
+        if (_disassembly.Count == 0)
+        {
+            return;
+        }
+
+        var executionTypeIndex = -1;
+        var typeNames = debugger.Breakpoints.BreakpointTypeNames;
+        for (var t = 0; t < typeNames.Count; t++)
+        {
+            if (typeNames[t] == BreakpointManager.ExecutionTypeLabel)
+            {
+                executionTypeIndex = t;
+                break;
+            }
+        }
+
+        var windowPos = ImGui.GetWindowPos();
+        var windowSize = ImGui.GetWindowSize();
+        var drawList = ImGui.GetWindowDrawList();
+
+        void DrawMarker(int index, uint color)
+        {
+            var t = index / (float)_disassembly.Count;
+            var y = windowPos.Y + t * windowSize.Y;
+            var x = windowPos.X + windowSize.X - ScrollbarMarkerWidth;
+            drawList.AddRectFilled(new Vector2(x, y - 1f), new Vector2(x + ScrollbarMarkerWidth, y + 1f), color);
+        }
+
+        if (executionTypeIndex >= 0)
+        {
+            for (var i = 0; i < debugger.Breakpoints.NumBreakpoints; i++)
+            {
+                ref var breakpoint = ref debugger.Breakpoints.GetBreakpoint(i);
+                if (breakpoint.Type != executionTypeIndex || !breakpoint.Enabled)
+                {
+                    continue;
+                }
+
+                var breakpointAddress = breakpoint.Address;
+                var index = _disassembly.FindIndex(x => x.Instruction?.AddressNumeric == breakpointAddress);
+                if (index >= 0)
+                {
+                    DrawMarker(index, 0xFF0000FF);
+                }
+            }
+        }
+
+        var pcIndex = _disassembly.FindIndex(x => x.Instruction?.AddressNumeric == lastPC);
+        if (pcIndex >= 0)
+        {
+            DrawMarker(pcIndex, 0xFF00FFFF);
+        }
     }
 
     // Fixed accent colors, one per MnemonicCategory - like TelevisionWindow's
