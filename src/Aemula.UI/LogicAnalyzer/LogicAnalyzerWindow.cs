@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Numerics;
@@ -650,18 +651,45 @@ public sealed class LogicAnalyzerWindow : DebuggerWindow
                 }
                 else
                 {
-                    Span<double> xs = visibleCount <= MaxBucketCount ? stackalloc double[visibleCount] : new double[visibleCount];
-                    Span<double> ys = visibleCount <= MaxBucketCount ? stackalloc double[visibleCount] : new double[visibleCount];
-                    FillVisibleSamples(channel, visStart, visibleCount, xs, ys);
-
-                    if (isDigital)
+                    void DrawExact(Span<double> xs, Span<double> ys)
                     {
-                        DrawDigitalTrace(channel, color, visStart, visibleCount, xs, ys);
+                        FillVisibleSamples(channel, visStart, visibleCount, xs, ys);
+
+                        if (isDigital)
+                        {
+                            DrawDigitalTrace(channel, color, visStart, visibleCount, xs, ys);
+                        }
+                        else
+                        {
+                            ScaleAnalogSamples(channel, ys);
+                            DrawAnalogTrace(channel, color, visStart, visibleCount, xs, ys);
+                        }
+                    }
+
+                    // Below the decimation threshold, visibleCount can still exceed
+                    // MaxBucketCount on an unusually wide plot (threshold * plotWidthPixels
+                    // > MaxBucketCount) - rented rather than heap-allocated so this path
+                    // never generates per-frame garbage either, matching the decimated
+                    // path's fixed-size stackalloc buffers.
+                    if (visibleCount <= MaxBucketCount)
+                    {
+                        Span<double> xs = stackalloc double[visibleCount];
+                        Span<double> ys = stackalloc double[visibleCount];
+                        DrawExact(xs, ys);
                     }
                     else
                     {
-                        ScaleAnalogSamples(channel, ys);
-                        DrawAnalogTrace(channel, color, visStart, visibleCount, xs, ys);
+                        var xsRented = ArrayPool<double>.Shared.Rent(visibleCount);
+                        var ysRented = ArrayPool<double>.Shared.Rent(visibleCount);
+                        try
+                        {
+                            DrawExact(xsRented.AsSpan(0, visibleCount), ysRented.AsSpan(0, visibleCount));
+                        }
+                        finally
+                        {
+                            ArrayPool<double>.Shared.Return(xsRented);
+                            ArrayPool<double>.Shared.Return(ysRented);
+                        }
                     }
                 }
             }
@@ -965,12 +993,25 @@ public sealed class LogicAnalyzerWindow : DebuggerWindow
         var channelIndex = _channelIndex[channel];
         var buffer = _recorder.GetChannelBuffer(channelIndex);
         var capacity = _recorder.Capacity;
+        var physStart = (int)(visStart % capacity);
+        var wraps = (long)physStart + visibleCount > capacity;
 
-        for (var i = 0; i < visibleCount; i++)
+        if (!wraps)
         {
-            var absoluteIndex = visStart + i;
-            xs[i] = absoluteIndex;
-            ys[i] = buffer[(int)(absoluteIndex % capacity)];
+            for (var i = 0; i < visibleCount; i++)
+            {
+                xs[i] = visStart + i;
+                ys[i] = buffer[physStart + i];
+            }
+        }
+        else
+        {
+            for (var i = 0; i < visibleCount; i++)
+            {
+                var absoluteIndex = visStart + i;
+                xs[i] = absoluteIndex;
+                ys[i] = buffer[(int)(absoluteIndex % capacity)];
+            }
         }
     }
 
