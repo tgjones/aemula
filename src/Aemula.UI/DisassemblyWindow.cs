@@ -14,6 +14,13 @@ public sealed class DisassemblyWindow(Debugger debugger) : DebuggerWindow
     private const float MnemonicColumnWidth = 50f;
     private const float AnnotationColumnWidth = 90f;
 
+    // Same yellow/red accent hues as the PC triangle and breakpoint dot
+    // drawn in the gutter, just translucent - these mark rows rather than
+    // precise points, so they're a wash behind the text rather than an
+    // opaque fill.
+    private static readonly uint PcRowTintColor = ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 1f, 0f, 0.35f));
+    private static readonly uint BreakpointRowTintColor = ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 0f, 0f, 0.18f));
+
     private readonly List<DisassemblyLine> _disassembly = [];
 
     private int _previousPC;
@@ -158,6 +165,24 @@ public sealed class DisassemblyWindow(Debugger debugger) : DebuggerWindow
                         {
                             case DisassemblyLineType.Instruction:
                                 var instruction = line.Instruction!.Value;
+                                var isCurrentPC = instruction.AddressNumeric == lastPC;
+
+                                // PC tint wins when a row is both the current PC and a
+                                // breakpoint - the triangle marker is still the precise PC
+                                // indicator, and the breakpoint dot itself renders in the
+                                // gutter below regardless of which tint the row gets.
+                                if (isCurrentPC)
+                                {
+                                    ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg1, PcRowTintColor);
+                                }
+                                else
+                                {
+                                    var rowBreakpointIndex = debugger.Breakpoints.FindIndex(BreakpointManager.ExecutionTypeLabel, instruction.AddressNumeric);
+                                    if (rowBreakpointIndex >= 0 && debugger.Breakpoints.GetBreakpoint(rowBreakpointIndex).Enabled)
+                                    {
+                                        ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg1, BreakpointRowTintColor);
+                                    }
+                                }
 
                                 ImGui.TableNextColumn();
 
@@ -186,7 +211,7 @@ public sealed class DisassemblyWindow(Debugger debugger) : DebuggerWindow
                                     drawList.AddCircle(breakpointCircleMiddle, 7, 0xFF0000FF);
                                 }
 
-                                if (instruction.AddressNumeric == lastPC)
+                                if (isCurrentPC)
                                 {
                                     var a = new Vector2(pos.X + 2, pos.Y);
                                     var b = new Vector2(pos.X + 12, pos.Y + rowHeightDiv2);
@@ -198,7 +223,7 @@ public sealed class DisassemblyWindow(Debugger debugger) : DebuggerWindow
                                 ImGui.Text($"{instruction.Address}:");
 
                                 ImGui.TableNextColumn();
-                                ImGui.Text(instruction.RawBytes);
+                                ImGui.TextColored(disabledColorVector, instruction.RawBytes);
 
                                 ImGui.TableNextColumn();
                                 ImGui.Text(instruction.Disassembly);
