@@ -54,6 +54,20 @@ public sealed class LogicAnalyzerWindow : DebuggerWindow
     // channel row's name cell, in the channel's own trace color.
     private const float ChannelColorBarWidth = 4f;
 
+    // Below this many raw samples per screen pixel, every raw sample still gets
+    // its own pixel column's worth of resolution and the exact per-sample path
+    // renders unchanged. Above it, per-frame work would otherwise keep scaling
+    // with the buffer depth rather than the screen width, so rendering switches
+    // to SampleDecimator's bucketed reduction instead - see DrawChannelRow.
+    private const double DecimationThresholdSamplesPerPixel = 2.0;
+
+    // Upper bound on how many buckets a decimated row ever reduces down to
+    // (and, doubling up, the largest visibleCount the exact path will still
+    // stackalloc its scratch arrays for rather than renting them) - a safety
+    // net against pathologically wide plot widths, since real screens don't
+    // have anywhere near this many distinguishable pixel columns.
+    private const int MaxBucketCount = 4096;
+
     private readonly Debugger _debugger;
     private readonly IReadOnlyList<ChannelNode> _roots;
     private readonly LogicAnalyzerRecorder _recorder;
@@ -618,22 +632,38 @@ public sealed class LogicAnalyzerWindow : DebuggerWindow
 
         if (visibleCount > 0)
         {
-            Span<double> xs = visibleCount <= 4096 ? stackalloc double[visibleCount] : new double[visibleCount];
-            Span<double> ys = visibleCount <= 4096 ? stackalloc double[visibleCount] : new double[visibleCount];
-            FillVisibleSamples(channel, visStart, visibleCount, xs, ys);
+            // ImPlot.GetPlotSize() (rather than the DrawOverride-level plotWidthPixels
+            // estimate used for zoom math) is this row's own actual plot pixel width -
+            // only valid to call between Begin/EndPlot, which is why this lives here
+            // rather than being threaded down from DrawOverride.
+            var plotWidthPixels = ImPlot.GetPlotSize().X;
+            var samplesPerPixel = plotWidthPixels > 0 ? visibleCount / plotWidthPixels : 0.0;
 
-            if (isDigital)
+            if ((isDigital || isAnalog) && samplesPerPixel > DecimationThresholdSamplesPerPixel)
             {
-                DrawDigitalTrace(channel, color, visStart, visibleCount, xs, ys);
-            }
-            else if (isAnalog)
-            {
-                ScaleAnalogSamples(channel, ys);
-                DrawAnalogTrace(channel, color, visStart, visibleCount, xs, ys);
+                var bucketCount = Math.Clamp((int)Math.Ceiling(plotWidthPixels), 1, MaxBucketCount);
+                var buffer = _recorder.GetChannelBuffer(_channelIndex[channel]);
+                DrawEnvelopeTrace(channel, color, isAnalog, buffer, _recorder.Capacity, visStart, visibleCount, bucketCount);
             }
             else
             {
-                DrawBusTrace(channel, color, visStart, visibleCount, ys);
+                Span<double> xs = visibleCount <= MaxBucketCount ? stackalloc double[visibleCount] : new double[visibleCount];
+                Span<double> ys = visibleCount <= MaxBucketCount ? stackalloc double[visibleCount] : new double[visibleCount];
+                FillVisibleSamples(channel, visStart, visibleCount, xs, ys);
+
+                if (isDigital)
+                {
+                    DrawDigitalTrace(channel, color, visStart, visibleCount, xs, ys);
+                }
+                else if (isAnalog)
+                {
+                    ScaleAnalogSamples(channel, ys);
+                    DrawAnalogTrace(channel, color, visStart, visibleCount, xs, ys);
+                }
+                else
+                {
+                    DrawBusTrace(channel, color, visStart, visibleCount, ys);
+                }
             }
         }
 
@@ -728,6 +758,74 @@ public sealed class LogicAnalyzerWindow : DebuggerWindow
             if (index >= 0 && index < visibleCount)
             {
                 ImGui.SetTooltip($"{channel.Name}: {FormatUnitValue(ys[index], channel.AnalogUnit)}");
+            }
+        }
+    }
+
+    // Used once samplesPerPixel climbs past DecimationThresholdSamplesPerPixel:
+    // instead of handing ImPlot one point per raw sample (far more geometry than
+    // the screen can distinguish), SampleDecimator reduces the visible range to
+    // one min/max pair per bucket - each bucket's pixel-width span of raw samples
+    // collapsed to the extremes a signal actually reached there - and PlotShaded
+    // fills between them. At the threshold boundary every bucket contains <=1 raw
+    // sample, so min==max everywhere and this reads as the same line
+    // DrawDigitalTrace/DrawAnalogTrace draw - no visual pop switching between the
+    // two. Away from that boundary, a quiet/steady stretch still reads as a thin
+    // trace, while anything toggling faster than screen resolution can show
+    // individually reads as a filled "busy" band - the honest picture, rather
+    // than aliasing to whatever one sample happened to land on that pixel.
+    private static unsafe void DrawEnvelopeTrace(Channel channel, Vector4 color, bool isAnalog, ReadOnlySpan<ulong> buffer, int capacity, long visStart, int visibleCount, int bucketCount)
+    {
+        Span<double> mins = stackalloc double[bucketCount];
+        Span<double> maxes = stackalloc double[bucketCount];
+        Span<double> xs = stackalloc double[bucketCount];
+
+        var actualBucketCount = SampleDecimator.ComputeMinMaxEnvelope(buffer, capacity, visStart, visibleCount, bucketCount, mins, maxes);
+
+        if (isAnalog)
+        {
+            var scale = (channel.AnalogMax - channel.AnalogMin) / 255.0;
+            for (var i = 0; i < actualBucketCount; i++)
+            {
+                mins[i] = channel.AnalogMin + mins[i] * scale;
+                maxes[i] = channel.AnalogMin + maxes[i] * scale;
+            }
+        }
+
+        for (var i = 0; i < actualBucketCount; i++)
+        {
+            var (rangeStart, rangeEnd) = SampleDecimator.GetBucketRange(visibleCount, actualBucketCount, i);
+            xs[i] = visStart + (rangeStart + rangeEnd) * 0.5;
+        }
+
+        ImPlot.PushStyleColor(ImPlotCol.Line, color);
+        ImPlot.PushStyleColor(ImPlotCol.Fill, new Vector4(color.X, color.Y, color.Z, 0.35f));
+
+        fixed (double* xsPtr = xs)
+        fixed (double* minsPtr = mins)
+        fixed (double* maxesPtr = maxes)
+        {
+            ImPlot.PlotShaded("##data"u8, xsPtr, minsPtr, maxesPtr, actualBucketCount);
+            ImPlot.PlotLine("##dataMax"u8, xsPtr, maxesPtr, actualBucketCount);
+        }
+
+        ImPlot.PopStyleColor(2);
+
+        if (ImPlot.IsPlotHovered())
+        {
+            // Indices into mins/maxes no longer correspond 1:1 to sample offsets
+            // once they're a decimated envelope, so the tooltip reads the single
+            // nearest raw sample straight back out of the ring buffer instead -
+            // cheap (one lookup), and always reports a real recorded value.
+            var mouse = ImPlot.GetPlotMousePos();
+            var nearestIndex = (long)Math.Round(mouse.X);
+            if (nearestIndex >= visStart && nearestIndex < visStart + visibleCount)
+            {
+                var raw = buffer[(int)(nearestIndex % capacity)];
+                var text = isAnalog
+                    ? FormatUnitValue(channel.AnalogMin + raw * ((channel.AnalogMax - channel.AnalogMin) / 255.0), channel.AnalogUnit)
+                    : raw != 0 ? "H" : "L";
+                ImGui.SetTooltip($"{channel.Name}: {text}");
             }
         }
     }
