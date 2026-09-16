@@ -8,6 +8,12 @@ namespace Aemula.UI;
 
 public sealed class DisassemblyWindow(Debugger debugger) : DebuggerWindow
 {
+    private const float GutterColumnWidth = 24f;
+    private const float AddressColumnWidth = 50f;
+    private const float BytesColumnWidth = 70f;
+    private const float MnemonicColumnWidth = 50f;
+    private const float AnnotationColumnWidth = 90f;
+
     private readonly List<DisassemblyLine> _disassembly = [];
 
     private int _previousPC;
@@ -112,85 +118,114 @@ public sealed class DisassemblyWindow(Debugger debugger) : DebuggerWindow
             var rowHeight = ImGui.GetTextLineHeight();
             var rowHeightDiv2 = (int)(rowHeight / 2.0f);
 
-            var clipper = new ImGuiListClipper();
-            clipper.Begin(_disassembly.Count, lineHeight);
+            var disabledColor = ImGui.GetColorU32(ImGuiCol.TextDisabled);
+            var disabledColorVector = ImGui.ColorConvertU32ToFloat4(disabledColor);
 
-            const byte grayColor = 0x99;
-            var grayColorVector = new Vector4(new Vector3(grayColor / (float)0xFF), 1.0f);
-
-            while (clipper.Step())
+            if (ImGui.BeginTable(
+                "##disassembly_table"u8,
+                (int)DisassemblyColumn.Count,
+                ImGuiTableFlags.None,
+                availableSize))
             {
-                for (var i = clipper.DisplayStart; i < clipper.DisplayEnd; i++)
+                // Gutter holds the breakpoint hit-test button and the PC/
+                // breakpoint markers, drawn straight into the draw list rather
+                // than as cell text - it never needs to hold anything wider
+                // than that, so it's the one column not marked NoClip below.
+                ImGui.TableSetupColumn("##gutter"u8, ImGuiTableColumnFlags.WidthFixed, GutterColumnWidth);
+                // Address/Bytes/Mnemonic are NoClip so a long combined string
+                // (still the case for Mnemonic until instructions carry a
+                // separately-formatted Operand) overflows into the next empty
+                // column instead of being cut off, rather than each column
+                // needing to be sized for a worst-case string.
+                ImGui.TableSetupColumn("##address"u8, ImGuiTableColumnFlags.WidthFixed | ImGuiTableColumnFlags.NoClip, AddressColumnWidth);
+                ImGui.TableSetupColumn("##bytes"u8, ImGuiTableColumnFlags.WidthFixed | ImGuiTableColumnFlags.NoClip, BytesColumnWidth);
+                ImGui.TableSetupColumn("##mnemonic"u8, ImGuiTableColumnFlags.WidthFixed | ImGuiTableColumnFlags.NoClip, MnemonicColumnWidth);
+                ImGui.TableSetupColumn("##operand"u8, ImGuiTableColumnFlags.WidthStretch);
+                ImGui.TableSetupColumn("##annotation"u8, ImGuiTableColumnFlags.WidthFixed, AnnotationColumnWidth);
+
+                var clipper = new ImGuiListClipper();
+                clipper.Begin(_disassembly.Count, lineHeight);
+
+                while (clipper.Step())
                 {
-                    var line = _disassembly[i];
-
-                    var pos = ImGui.GetCursorScreenPos();
-                    var drawList = ImGui.GetWindowDrawList();
-
-                    switch (line.Type)
+                    for (var i = clipper.DisplayStart; i < clipper.DisplayEnd; i++)
                     {
-                        case DisassemblyLineType.Instruction:
-                            var instruction = line.Instruction!.Value;
-                            ImGui.PushID(instruction.AddressNumeric);
-                            if (ImGui.InvisibleButton("##breakpoint", new Vector2(16, rowHeight)))
-                            {
-                                debugger.Breakpoints.ToggleExecutionBreakpoint(instruction.AddressNumeric);
-                            }
-                            ImGui.PopID();
+                        var line = _disassembly[i];
 
-                            var breakpointCircleMiddle = new Vector2(pos.X + 7, pos.Y + rowHeightDiv2);
-                            var breakpointIndex = debugger.Breakpoints.FindIndex(BreakpointManager.ExecutionTypeLabel, instruction.AddressNumeric);
-                            if (breakpointIndex >= 0)
-                            {
-                                var breakpoint = debugger.Breakpoints.GetBreakpoint(breakpointIndex);
-                                var breakpointColor = breakpoint.Enabled
-                                    ? 0xFF0000FF
-                                    : 0xFF000088;
-                                drawList.AddCircleFilled(breakpointCircleMiddle, 7, breakpointColor);
-                            }
-                            else if (ImGui.IsItemHovered())
-                            {
-                                drawList.AddCircle(breakpointCircleMiddle, 7, 0xFF0000FF);
-                            }
+                        ImGui.TableNextRow();
 
-                            if (instruction.AddressNumeric == lastPC)
-                            {
-                                var a = new Vector2(pos.X + 2, pos.Y);
-                                var b = new Vector2(pos.X + 12, pos.Y + rowHeightDiv2);
-                                var c = new Vector2(pos.X + 2, pos.Y + rowHeight);
-                                drawList.AddTriangleFilled(a, b, c, 0xFF00FFFF);
-                            }
+                        switch (line.Type)
+                        {
+                            case DisassemblyLineType.Instruction:
+                                var instruction = line.Instruction!.Value;
 
-                            ImGui.SameLine();
-                            ImGui.Text($"{instruction.Address}:   ");
+                                ImGui.TableNextColumn();
 
-                            ImGui.SameLine();
-                            ImGui.Text($"{instruction.RawBytes}");
+                                var pos = ImGui.GetCursorScreenPos();
+                                var drawList = ImGui.GetWindowDrawList();
 
-                            ImGui.SameLine(250);
-                            ImGui.Text(instruction.Disassembly);
+                                ImGui.PushID(instruction.AddressNumeric);
+                                if (ImGui.InvisibleButton("##breakpoint", new Vector2(GutterColumnWidth, rowHeight)))
+                                {
+                                    debugger.Breakpoints.ToggleExecutionBreakpoint(instruction.AddressNumeric);
+                                }
+                                ImGui.PopID();
 
-                            // TODO: Show CPU ticks.
-                            break;
+                                var breakpointCircleMiddle = new Vector2(pos.X + 7, pos.Y + rowHeightDiv2);
+                                var breakpointIndex = debugger.Breakpoints.FindIndex(BreakpointManager.ExecutionTypeLabel, instruction.AddressNumeric);
+                                if (breakpointIndex >= 0)
+                                {
+                                    var breakpoint = debugger.Breakpoints.GetBreakpoint(breakpointIndex);
+                                    var breakpointColor = breakpoint.Enabled
+                                        ? 0xFF0000FF
+                                        : 0xFF000088;
+                                    drawList.AddCircleFilled(breakpointCircleMiddle, 7, breakpointColor);
+                                }
+                                else if (ImGui.IsItemHovered())
+                                {
+                                    drawList.AddCircle(breakpointCircleMiddle, 7, 0xFF0000FF);
+                                }
 
-                        case DisassemblyLineType.Text:
-                            ImGui.TextColored(grayColorVector, line.Text);
-                            break;
+                                if (instruction.AddressNumeric == lastPC)
+                                {
+                                    var a = new Vector2(pos.X + 2, pos.Y);
+                                    var b = new Vector2(pos.X + 12, pos.Y + rowHeightDiv2);
+                                    var c = new Vector2(pos.X + 2, pos.Y + rowHeight);
+                                    drawList.AddTriangleFilled(a, b, c, 0xFF00FFFF);
+                                }
 
-                        case DisassemblyLineType.LineSeparator:
-                            ImGui.SetCursorPosX(24);
-                            ImGui.TextColored(grayColorVector, line.Text);
-                            break;
+                                ImGui.TableNextColumn();
+                                ImGui.Text($"{instruction.Address}:");
 
-                        case DisassemblyLineType.Ellipsis:
-                            ImGui.SetCursorPosX(24);
-                            ImGui.TextColored(grayColorVector, line.Text);
-                            break;
+                                ImGui.TableNextColumn();
+                                ImGui.Text(instruction.RawBytes);
 
-                        default:
-                            throw new InvalidOperationException();
+                                ImGui.TableNextColumn();
+                                ImGui.Text(instruction.Disassembly);
+
+                                // TODO: Show CPU ticks.
+                                break;
+
+                            case DisassemblyLineType.Text:
+                                ImGui.TableNextColumn();
+                                ImGui.TableNextColumn();
+                                ImGui.TextColored(disabledColorVector, line.Text);
+                                break;
+
+                            case DisassemblyLineType.LineSeparator:
+                            case DisassemblyLineType.Ellipsis:
+                                ImGui.TableNextColumn();
+                                ImGui.TableNextColumn();
+                                ImGui.TextColored(disabledColorVector, line.Text);
+                                break;
+
+                            default:
+                                throw new InvalidOperationException();
+                        }
                     }
                 }
+
+                ImGui.EndTable();
             }
 
             ImGui.PopStyleVar();
@@ -230,5 +265,16 @@ public sealed class DisassemblyWindow(Debugger debugger) : DebuggerWindow
         Text,
         LineSeparator,
         Ellipsis,
+    }
+
+    private enum DisassemblyColumn
+    {
+        Gutter,
+        Address,
+        Bytes,
+        Mnemonic,
+        Operand,
+        Annotation,
+        Count,
     }
 }
