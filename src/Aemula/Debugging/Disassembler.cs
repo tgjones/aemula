@@ -9,11 +9,19 @@ public abstract class Disassembler(DebuggerMemoryCallbacks memoryCallbacks)
 
     public readonly DisassemblyEntry[] Cache = new DisassemblyEntry[0x10000];
 
+    // How many times each address has been the target of an instruction
+    // fetch - incremented unconditionally on every OnAddressExecuting call
+    // (unlike Cache, which only records the first disassembly of an
+    // address), so it stays a true execution count for the heatmap in
+    // DisassemblyWindow rather than a "seen at least once" flag.
+    public readonly int[] ExecutionCounts = new int[0x10000];
+
     internal bool Changed;
 
     public void Reset()
     {
         Array.Clear(Cache);
+        Array.Clear(ExecutionCounts);
 
         var startAddresses = new List<ushort>();
         var labels = new Dictionary<ushort, string>();
@@ -72,6 +80,8 @@ public abstract class Disassembler(DebuggerMemoryCallbacks memoryCallbacks)
 
     public void OnAddressExecuting(ushort address)
     {
+        ExecutionCounts[address]++;
+
         if (Cache[address].Instruction != null)
         {
             return;
