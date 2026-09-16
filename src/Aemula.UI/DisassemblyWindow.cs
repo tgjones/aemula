@@ -252,7 +252,23 @@ public sealed class DisassemblyWindow(Debugger debugger) : DebuggerWindow
                                     ImGui.TextColored(GetOperandKindColor(instruction.OperandKind), instruction.Operand);
                                 }
 
-                                // TODO: Show CPU ticks.
+                                // Zero means "hasn't completed an execution yet" - sparse is
+                                // expected (most of a listing is unexecuted) and left blank
+                                // rather than shown as "0c", which would misleadingly read as
+                                // a measurement rather than an absence of one. Explicit
+                                // TableSetColumnIndex rather than another TableNextColumn
+                                // since the Operand column above is sometimes skipped.
+                                var lastCycles = debugger.LastExecutionCycles[instruction.AddressNumeric];
+                                if (lastCycles > 0)
+                                {
+                                    ImGui.TableSetColumnIndex((int)DisassemblyColumn.Annotation);
+                                    var cyclesText = $"{lastCycles}c";
+                                    var cyclesTextWidth = ImGui.CalcTextSize(cyclesText).X;
+                                    var availableWidth = ImGui.GetContentRegionAvail().X;
+                                    ImGui.SetCursorPosX(ImGui.GetCursorPosX() + MathF.Max(0f, availableWidth - cyclesTextWidth));
+                                    ImGui.TextColored(disabledColorVector, cyclesText);
+                                }
+
                                 break;
 
                             case DisassemblyLineType.Text:
