@@ -77,7 +77,12 @@ internal sealed class Atari2600Debugger : Debugger
 
     protected override Disassembler CreateDisassembler()
     {
-        return new Mos6502Disassembler(MemoryCallbacks, Equates, hasNmi: false, hasIrq: false);
+        return new Mos6502Disassembler(
+            MemoryCallbacks,
+            Equates,
+            hasNmi: false,
+            hasIrq: false,
+            new Mos6502RegisterCallbacks(() => _system.Cpu.X, () => _system.Cpu.Y));
     }
 
     protected override void TickSystem()

@@ -15,6 +15,7 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
         {
             WriteInstructions(c);
             WriteDisassembler(c);
+            WriteEffectiveAddressKinds(c);
         });
     }
 
@@ -229,6 +230,57 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
         sb.AppendLine("}");
 
         context.AddSource("Mos6502.Disassembler.generated.cs", sb.ToString());
+    }
+
+    // Mos6502EffectiveAddressKind (hand-written in Aemula.Emulation.Chips.Mos6502)
+    // names the addressing modes whose target depends on live X/Y register
+    // state - Mos6502Disassembler.TryGetEffectiveAddress needs to know which
+    // shape an opcode uses, but that's exactly the AddressingMode fact this
+    // generator already has per opcode at codegen-authoring time, so it's
+    // baked in as a literal here rather than re-derived at runtime from
+    // operand text.
+    private static void WriteEffectiveAddressKinds(IncrementalGeneratorPostInitializationContext context)
+    {
+        var sb = new StringBuilder();
+
+        sb.AppendLine("namespace Aemula.Emulation.Chips.Mos6502");
+        sb.AppendLine("{");
+        sb.AppendLine("    partial class Mos6502Chip");
+        sb.AppendLine("    {");
+        sb.AppendLine("        public static Mos6502EffectiveAddressKind GetEffectiveAddressKind(byte opcode)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            switch (opcode)");
+        sb.AppendLine("            {");
+
+        foreach (var instruction in OrderedInstructions)
+        {
+            var kind = instruction.AddressingMode switch
+            {
+                AddressingMode.ZeroPageX => "ZeroPageX",
+                AddressingMode.ZeroPageY => "ZeroPageY",
+                AddressingMode.AbsoluteX => "AbsoluteX",
+                AddressingMode.AbsoluteY => "AbsoluteY",
+                AddressingMode.IndexedIndirectX => "IndexedIndirectX",
+                AddressingMode.IndirectIndexedY => "IndirectIndexedY",
+                AddressingMode.Indirect => "Indirect",
+                _ => null,
+            };
+
+            if (kind == null)
+            {
+                continue;
+            }
+
+            sb.AppendLine($"                case 0x{instruction.Opcode:X2}: return Mos6502EffectiveAddressKind.{kind};");
+        }
+
+        sb.AppendLine("                default: return Mos6502EffectiveAddressKind.None;");
+        sb.AppendLine("            }");
+        sb.AppendLine("        }");
+        sb.AppendLine("    }");
+        sb.AppendLine("}");
+
+        context.AddSource("Mos6502.EffectiveAddressKinds.generated.cs", sb.ToString());
     }
 
     private enum AddressingMode

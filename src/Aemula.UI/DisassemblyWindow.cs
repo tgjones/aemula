@@ -250,6 +250,20 @@ public sealed class DisassemblyWindow(Debugger debugger) : DebuggerWindow
                                 {
                                     ImGui.TableNextColumn();
                                     ImGui.TextColored(GetOperandKindColor(instruction.OperandKind), instruction.Operand);
+
+                                    // Only meaningful for the instruction actually at PC - X/Y
+                                    // (or the pointed-to memory) could be anything the next time
+                                    // any other row's instruction runs, so this is recomputed
+                                    // live every frame rather than cached.
+                                    if (isCurrentPC)
+                                    {
+                                        var effectiveAddress = debugger.Disassembler.TryGetEffectiveAddress(instruction);
+                                        if (effectiveAddress != null)
+                                        {
+                                            ImGui.SameLine();
+                                            ImGui.TextColored(disabledColorVector, $"; (${effectiveAddress.Value.Address:X4}) = ${effectiveAddress.Value.Value:X2}");
+                                        }
+                                    }
                                 }
 
                                 // Zero means "hasn't completed an execution yet" - sparse is

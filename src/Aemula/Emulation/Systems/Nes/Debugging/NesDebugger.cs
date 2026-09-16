@@ -39,7 +39,10 @@ public sealed class NesDebugger : Debugger
 
     protected override Disassembler CreateDisassembler()
     {
-        return new Mos6502Disassembler(MemoryCallbacks, Equates);
+        return new Mos6502Disassembler(
+            MemoryCallbacks,
+            Equates,
+            registerCallbacks: new Mos6502RegisterCallbacks(() => _nes.Cpu.CpuCore.X, () => _nes.Cpu.CpuCore.Y));
     }
 
     protected override void TickSystem()

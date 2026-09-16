@@ -78,6 +78,17 @@ public abstract class Disassembler(DebuggerMemoryCallbacks memoryCallbacks)
 
     protected abstract DisassembledInstruction DisassembleInstruction(ushort address);
 
+    /// <summary>
+    /// For an indexed/indirect instruction, what address and byte value its
+    /// operand actually resolves to right now - only meaningful for the
+    /// instruction currently at PC (X/Y or the pointed-to memory could be
+    /// anything the next time any other row's instruction runs), so callers
+    /// should only call this for that one row. Returns null for addressing
+    /// modes where the operand already is the effective address (or there is
+    /// none) and for chips that don't implement this at all.
+    /// </summary>
+    public virtual (ushort Address, byte Value)? TryGetEffectiveAddress(in DisassembledInstruction instruction) => null;
+
     public void OnAddressExecuting(ushort address)
     {
         ExecutionCounts[address]++;

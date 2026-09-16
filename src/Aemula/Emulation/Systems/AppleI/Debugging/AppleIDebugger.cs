@@ -31,7 +31,10 @@ public sealed class AppleIDebugger : Debugger
 
     protected override Disassembler CreateDisassembler()
     {
-        return new Mos6502Disassembler(MemoryCallbacks, new Dictionary<ushort, string>());
+        return new Mos6502Disassembler(
+            MemoryCallbacks,
+            new Dictionary<ushort, string>(),
+            registerCallbacks: new Mos6502RegisterCallbacks(() => _appleI.Cpu.X, () => _appleI.Cpu.Y));
     }
 
     protected override void TickSystem()
