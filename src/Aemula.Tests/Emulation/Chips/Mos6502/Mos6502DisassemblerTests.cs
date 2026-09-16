@@ -5,12 +5,53 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Aemula.Debugging;
+using Aemula.Emulation.Chips.Mos6502;
 using Aemula.Emulation.Chips.Mos6502.Debugging;
 
 namespace Aemula.Tests.Emulation.Chips.Mos6502;
 
 public class Mos6502DisassemblerTests
 {
+    [Test]
+    public async Task AllOpcodesHaveMnemonicAndCategorization()
+    {
+        for (var opcode = 0; opcode <= 0xFF; opcode++)
+        {
+            var bytesAtAddress = new byte[] { (byte)opcode, 0x00, 0x00 };
+
+            var instruction = Mos6502Chip.DisassembleInstruction(
+                0,
+                address => bytesAtAddress[address],
+                []);
+
+            await Assert.That(instruction.Mnemonic).IsNotEmpty();
+
+            // JAM and NOP are the only mnemonics without a more specific category -
+            // anything else reporting Other means a new opcode was added to
+            // Mos6502CodeGenerator.Instructions without a matching entry in
+            // MnemonicCategories (which the generator would otherwise have thrown
+            // on at codegen time, but that's cheap insurance against it silently
+            // stopping being exhaustive some other way).
+            if (instruction.Mnemonic is not ("JAM" or "NOP"))
+            {
+                await Assert.That(instruction.MnemonicCategory).IsNotEqualTo(MnemonicCategory.Other);
+            }
+
+            // An empty Operand always pairs with OperandKind.None (accumulator/
+            // implied addressing); a non-empty Operand should always carry a real
+            // kind, or DisassemblyWindow's operand coloring silently falls back to
+            // plain text for it.
+            if (instruction.Operand.Length == 0)
+            {
+                await Assert.That(instruction.OperandKind).IsEqualTo(OperandKind.None);
+            }
+            else
+            {
+                await Assert.That(instruction.OperandKind).IsNotEqualTo(OperandKind.None);
+            }
+        }
+    }
+
     [Test]
     public async Task CanDisassembleSimpleInstructions()
     {

@@ -510,6 +510,11 @@ public class Z80Disassembler : Disassembler
             bool hasNext,
             JumpTarget? jumpTarget)
         {
+            // Mnemonic/operand aren't split out per opcode here yet (unlike
+            // Mos6502) - the whole line goes into Mnemonic with an empty
+            // Operand, which DisassembledInstruction.Disassembly reassembles
+            // back into exactly this string, and MnemonicCategory.Other
+            // renders in the plain text color until that split happens.
             return new DisassembledInstruction(
                 opcode,
                 address,
@@ -517,6 +522,9 @@ public class Z80Disassembler : Disassembler
                 instructionSizeInBytes,
                 rawBytes,
                 disassembly,
+                MnemonicCategory.Other,
+                "",
+                OperandKind.None,
                 hasNext ? (ushort)(address + instructionSizeInBytes) : null,
                 jumpTarget);
         }
