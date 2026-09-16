@@ -42,6 +42,11 @@ public abstract class Debugger
     private ushort _previousExecutionAddress;
     private bool _hasPreviousExecution;
 
+    // One-shot "run to cursor" target (see RunToAddress) - unlike a regular
+    // breakpoint, hitting it clears it rather than leaving a permanent entry
+    // in BreakpointManager behind.
+    private ushort? _runToAddress;
+
     /// <summary>
     /// Raised once per tick actually executed (free-run or single-step alike,
     /// since both funnel through <see cref="RunForDuration"/>). Used by
@@ -68,6 +73,7 @@ public abstract class Debugger
             Disassembler.Reset();
             Array.Clear(LastExecutionCycles);
             _hasPreviousExecution = false;
+            _runToAddress = null;
         };
 
         ActiveStepModeIndex = 1;
@@ -76,6 +82,18 @@ public abstract class Debugger
     }
 
     protected abstract Disassembler CreateDisassembler();
+
+    /// <summary>
+    /// Runs until PC reaches <paramref name="address"/>, then stops - a
+    /// one-shot target rather than a permanent breakpoint, cleared the
+    /// moment it's hit (see RunForDuration). Doesn't itself resume a stopped
+    /// debugger; callers set <see cref="Stopped"/> = false alongside this,
+    /// the same way the "Continue" action does.
+    /// </summary>
+    public void RunToAddress(ushort address)
+    {
+        _runToAddress = address;
+    }
 
     public void RunForDuration(TimeSpan duration)
     {
@@ -102,7 +120,12 @@ public abstract class Debugger
 
             if (previousPC != LastPC)
             {
-                if (Breakpoints.ShouldBreak(LastPC))
+                if (_runToAddress == LastPC)
+                {
+                    _runToAddress = null;
+                    Stopped = true;
+                }
+                else if (Breakpoints.ShouldBreak(LastPC))
                 {
                     Stopped = true;
                 }

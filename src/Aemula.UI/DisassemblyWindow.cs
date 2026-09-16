@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Numerics;
 using Aemula.Debugging;
 using Hexa.NET.ImGui;
@@ -31,6 +32,11 @@ public sealed class DisassemblyWindow(Debugger debugger) : DebuggerWindow
     private readonly List<DisassemblyLine> _disassembly = [];
 
     private int _previousPC;
+
+    // Goto-address input box state and the scroll-lock toggle that keeps it
+    // from immediately fighting the PC auto-scroll (see DrawOverride).
+    private string _gotoAddressInput = string.Empty;
+    private bool _scrollLocked;
 
     public override string DisplayName => "Disassembly";
 
@@ -112,6 +118,31 @@ public sealed class DisassemblyWindow(Debugger debugger) : DebuggerWindow
                     debugger.ActiveStepModeIndex = i;
                     debugger.Stopped = false;
                 }
+            }
+        }
+
+        ImGui.SetNextItemWidth(ImGui.GetFontSize() * 5f);
+        var gotoSubmitted = ImGui.InputText(
+            "##gotoAddress",
+            ref _gotoAddressInput,
+            5,
+            ImGuiInputTextFlags.CharsHexadecimal | ImGuiInputTextFlags.CharsUppercase | ImGuiInputTextFlags.EnterReturnsTrue);
+        ImGui.SameLine();
+        var gotoClicked = ImGui.Button("Go to Address"u8);
+        ImGui.SameLine();
+        // Gates the PC auto-scroll below so it doesn't yank the view back to
+        // PC while manually browsing after a goto-address jump - the two
+        // would otherwise fight each other every frame PC keeps moving.
+        ImGui.Checkbox("Scroll Lock"u8, ref _scrollLocked);
+
+        int? gotoIndexToScrollTo = null;
+        if ((gotoSubmitted || gotoClicked) &&
+            ushort.TryParse(_gotoAddressInput, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var gotoAddress))
+        {
+            var index = _disassembly.FindIndex(x => x.Instruction?.AddressNumeric == gotoAddress);
+            if (index >= 0)
+            {
+                gotoIndexToScrollTo = index;
             }
         }
 
@@ -208,6 +239,55 @@ public sealed class DisassemblyWindow(Debugger debugger) : DebuggerWindow
                                 var drawList = ImGui.GetWindowDrawList();
 
                                 ImGui.PushID(instruction.AddressNumeric);
+
+                                // Row-wide hit target for the right-click context menu, under
+                                // the breakpoint button below - AllowOverlap lets that button
+                                // still receive its own left-click despite this spanning the
+                                // same area, and resetting the cursor back to pos afterward is
+                                // what makes the two occupy the same screen rect rather than
+                                // the button landing below this row.
+                                ImGui.Selectable("##row", false, ImGuiSelectableFlags.SpanAllColumns | ImGuiSelectableFlags.AllowOverlap, new Vector2(0, rowHeight));
+
+                                if (ImGui.BeginPopupContextItem("##rowContext"))
+                                {
+                                    if (ImGui.MenuItem("Toggle Breakpoint"))
+                                    {
+                                        debugger.Breakpoints.ToggleExecutionBreakpoint(instruction.AddressNumeric);
+                                    }
+                                    if (ImGui.MenuItem("Add Byte Watchpoint Here"))
+                                    {
+                                        debugger.Breakpoints.AddValueByteBreakpoint(true, instruction.AddressNumeric);
+                                    }
+                                    if (ImGui.MenuItem("Add Word Watchpoint Here"))
+                                    {
+                                        debugger.Breakpoints.AddValueWordBreakpoint(true, instruction.AddressNumeric);
+                                    }
+
+                                    ImGui.Separator();
+
+                                    if (ImGui.MenuItem("Run to Cursor"))
+                                    {
+                                        debugger.RunToAddress(instruction.AddressNumeric);
+                                        debugger.ActiveStepModeIndex = -1;
+                                        debugger.Stopped = false;
+                                    }
+
+                                    ImGui.Separator();
+
+                                    if (ImGui.MenuItem("Copy Address"))
+                                    {
+                                        ImGui.SetClipboardText(instruction.Address);
+                                    }
+                                    if (ImGui.MenuItem("Copy Bytes"))
+                                    {
+                                        ImGui.SetClipboardText(instruction.RawBytes);
+                                    }
+
+                                    ImGui.EndPopup();
+                                }
+
+                                ImGui.SetCursorScreenPos(pos);
+
                                 if (ImGui.InvisibleButton("##breakpoint", new Vector2(GutterColumnWidth, rowHeight)))
                                 {
                                     debugger.Breakpoints.ToggleExecutionBreakpoint(instruction.AddressNumeric);
@@ -311,29 +391,45 @@ public sealed class DisassemblyWindow(Debugger debugger) : DebuggerWindow
         }
         ImGui.EndChild();
 
+        if (gotoIndexToScrollTo != null)
+        {
+            ScrollToIndex(gotoIndexToScrollTo.Value, lineHeight, availableSize);
+        }
+
         if (lastPC != _previousPC)
         {
-            // TODONT: Don't search whole array.
-            var indexToScrollTo = _disassembly.FindIndex(x => x.Instruction?.AddressNumeric == lastPC);
-
-            if (indexToScrollTo >= 0)
+            // Scroll-lock only gates this auto-follow, not a goto-address jump
+            // (above) - a user asking to go somewhere specific should always
+            // get there, even with the lock on.
+            if (!_scrollLocked)
             {
-                ImGui.BeginChild("##disassembly_listing"u8);
+                // TODONT: Don't search whole array.
+                var indexToScrollTo = _disassembly.FindIndex(x => x.Instruction?.AddressNumeric == lastPC);
 
-                var lineTop = indexToScrollTo * lineHeight;
-                var lineBottom = lineTop + lineHeight;
-                var scrollY = ImGui.GetScrollY();
-
-                if (lineTop < scrollY || lineBottom > scrollY + availableSize.Y)
+                if (indexToScrollTo >= 0)
                 {
-                    ImGui.SetScrollY(lineTop - availableSize.Y * 0.5f);
+                    ScrollToIndex(indexToScrollTo, lineHeight, availableSize);
                 }
-
-                ImGui.EndChild();
             }
 
             _previousPC = lastPC;
         }
+    }
+
+    private void ScrollToIndex(int index, float lineHeight, Vector2 availableSize)
+    {
+        ImGui.BeginChild("##disassembly_listing"u8);
+
+        var lineTop = index * lineHeight;
+        var lineBottom = lineTop + lineHeight;
+        var scrollY = ImGui.GetScrollY();
+
+        if (lineTop < scrollY || lineBottom > scrollY + availableSize.Y)
+        {
+            ImGui.SetScrollY(lineTop - availableSize.Y * 0.5f);
+        }
+
+        ImGui.EndChild();
     }
 
     // Fixed accent colors, one per MnemonicCategory - like TelevisionWindow's

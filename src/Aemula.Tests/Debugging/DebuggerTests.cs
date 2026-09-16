@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Aemula.Debugging;
 using Aemula.Emulation.Chips.Mos6502.Debugging;
@@ -69,6 +70,43 @@ public class DebuggerTests
         await Assert.That(debugger.LastExecutionCycles[0x1004]).IsEqualTo(0);
     }
 
+    [Test]
+    public async Task RunToAddressStopsOnceAndDoesNotStopAgainOnceCleared()
+    {
+        var debugger = CreateDebugger();
+        // A little "loop": 0x1000 -> 0x1002 -> 0x1004 -> back to 0x1000.
+        debugger.ScriptedFetches.Enqueue(0x1000);
+        debugger.ScriptedFetches.Enqueue(0x1002);
+        debugger.ScriptedFetches.Enqueue(0x1004);
+        debugger.ScriptedFetches.Enqueue(0x1000);
+
+        debugger.RunToAddress(0x1002);
+        debugger.RunForDuration(TimeSpan.FromSeconds(1)); // 10 ticks - plenty to reach it
+
+        await Assert.That(debugger.Stopped).IsTrue();
+        await Assert.That(debugger.LastPC).IsEqualTo((ushort)0x1002);
+
+        // One-shot: resuming and coming back around to 0x1002 again (or
+        // running past whatever's left of the script) shouldn't re-trigger
+        // it, since RunForDuration clears it the moment it's hit.
+        debugger.Stopped = false;
+        debugger.RunForDuration(TimeSpan.FromSeconds(1));
+
+        await Assert.That(debugger.Stopped).IsFalse();
+    }
+
+    [Test]
+    public async Task RunToAddressDoesNotItselfResumeAStoppedDebugger()
+    {
+        var debugger = new FakeDebugger(new FakeSystem());
+
+        debugger.RunToAddress(0x1002);
+
+        // Debugger starts Stopped (see Debugger's constructor) - setting a
+        // run-to-cursor target is not itself a "Continue".
+        await Assert.That(debugger.Stopped).IsTrue();
+    }
+
     private static FakeDebugger CreateDebugger()
     {
         var system = new FakeSystem();
@@ -89,8 +127,24 @@ public class DebuggerTests
     private sealed class FakeDebugger(EmulatedSystem system)
         : Debugger(system, new DebuggerMemoryCallbacks(_ => 0, (_, _) => { }))
     {
+        // One scripted fetch consumed per tick, mimicking a real chip
+        // debugger's TickSystem override calling OnAddressExecuting on
+        // sync - lets RunToAddress tests drive LastPC through a known
+        // sequence without a real chip.
+        public Queue<ushort> ScriptedFetches { get; } = new();
+
         protected override Disassembler CreateDisassembler() => new Mos6502Disassembler(MemoryCallbacks, []);
 
         public void Fetch(ushort address) => OnAddressExecuting(address);
+
+        protected override void TickSystem()
+        {
+            base.TickSystem();
+
+            if (ScriptedFetches.Count > 0)
+            {
+                OnAddressExecuting(ScriptedFetches.Dequeue());
+            }
+        }
     }
 }
