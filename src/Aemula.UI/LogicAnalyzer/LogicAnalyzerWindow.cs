@@ -638,32 +638,50 @@ public sealed class LogicAnalyzerWindow : DebuggerWindow
             // rather than being threaded down from DrawOverride.
             var plotWidthPixels = ImPlot.GetPlotSize().X;
             var samplesPerPixel = plotWidthPixels > 0 ? visibleCount / plotWidthPixels : 0.0;
+            var decimate = samplesPerPixel > DecimationThresholdSamplesPerPixel;
 
-            if ((isDigital || isAnalog) && samplesPerPixel > DecimationThresholdSamplesPerPixel)
+            if (isDigital || isAnalog)
             {
-                var bucketCount = Math.Clamp((int)Math.Ceiling(plotWidthPixels), 1, MaxBucketCount);
-                var buffer = _recorder.GetChannelBuffer(_channelIndex[channel]);
-                DrawEnvelopeTrace(channel, color, isAnalog, buffer, _recorder.Capacity, visStart, visibleCount, bucketCount);
-            }
-            else
-            {
-                Span<double> xs = visibleCount <= MaxBucketCount ? stackalloc double[visibleCount] : new double[visibleCount];
-                Span<double> ys = visibleCount <= MaxBucketCount ? stackalloc double[visibleCount] : new double[visibleCount];
-                FillVisibleSamples(channel, visStart, visibleCount, xs, ys);
-
-                if (isDigital)
+                if (decimate)
                 {
-                    DrawDigitalTrace(channel, color, visStart, visibleCount, xs, ys);
-                }
-                else if (isAnalog)
-                {
-                    ScaleAnalogSamples(channel, ys);
-                    DrawAnalogTrace(channel, color, visStart, visibleCount, xs, ys);
+                    var bucketCount = Math.Clamp((int)Math.Ceiling(plotWidthPixels), 1, MaxBucketCount);
+                    var buffer = _recorder.GetChannelBuffer(_channelIndex[channel]);
+                    DrawEnvelopeTrace(channel, color, isAnalog, buffer, _recorder.Capacity, visStart, visibleCount, bucketCount);
                 }
                 else
                 {
-                    DrawBusTrace(channel, color, visStart, visibleCount, ys);
+                    Span<double> xs = visibleCount <= MaxBucketCount ? stackalloc double[visibleCount] : new double[visibleCount];
+                    Span<double> ys = visibleCount <= MaxBucketCount ? stackalloc double[visibleCount] : new double[visibleCount];
+                    FillVisibleSamples(channel, visStart, visibleCount, xs, ys);
+
+                    if (isDigital)
+                    {
+                        DrawDigitalTrace(channel, color, visStart, visibleCount, xs, ys);
+                    }
+                    else
+                    {
+                        ScaleAnalogSamples(channel, ys);
+                        DrawAnalogTrace(channel, color, visStart, visibleCount, xs, ys);
+                    }
                 }
+            }
+            else
+            {
+                // Bus always runs through SampleDecimator, not just once decimate is
+                // true - unlike Digital/Analog's separate exact-vs-envelope draw
+                // calls, Bus keeps one run-merging draw loop for both regimes (see
+                // DrawBusTrace), and below the threshold requesting exactly
+                // visibleCount buckets makes that loop degenerate to one raw sample
+                // per bucket - the same per-sample runs it always drew - so nothing
+                // about its look changes there. Only once decimate is true does the
+                // bucket count actually clamp down to plot width, bounding the rect
+                // count that would otherwise scale with however many transitions a
+                // fast-toggling bus made while zoomed out.
+                var bucketCount = decimate
+                    ? Math.Clamp((int)Math.Ceiling(plotWidthPixels), 1, MaxBucketCount)
+                    : Math.Min(visibleCount, MaxBucketCount);
+                var buffer = _recorder.GetChannelBuffer(_channelIndex[channel]);
+                DrawBusTrace(channel, color, buffer, _recorder.Capacity, visStart, visibleCount, bucketCount);
             }
         }
 
@@ -830,55 +848,75 @@ public sealed class LogicAnalyzerWindow : DebuggerWindow
         }
     }
 
-    // Hex-banded bus rendering: one filled/outlined rectangle per run of equal
-    // samples, so edges land exactly at value-change points, with the hex value
-    // centered in the rectangle when there's room for it. ImPlot has no built-in
-    // "bus" mark, so this draws directly into plot pixel space via
-    // GetPlotDrawList()/PlotToPixels().
-    private static void DrawBusTrace(Channel channel, Vector4 color, long visStart, int visibleCount, ReadOnlySpan<double> ys)
+    // Hex-banded bus rendering: one filled/outlined rectangle per run of equal,
+    // non-mixed buckets, so edges land exactly at value-change points, with the
+    // hex value centered in the rectangle when there's room for it. ImPlot has
+    // no built-in "bus" mark, so this draws directly into plot pixel space via
+    // GetPlotDrawList()/PlotToPixels(). Always goes through SampleDecimator
+    // first (see the DrawChannelRow call site for why that's safe below the
+    // decimation threshold too) rather than scanning raw samples directly, so
+    // this loop's own rect count is bounded by bucketCount regardless of how
+    // many raw value transitions occurred in the visible range. A run of
+    // MIXED buckets - several different values occurred somewhere inside a
+    // bucket too narrow to show them individually - draws as a visually
+    // distinct lighter band with no text, since no single hex value would be
+    // meaningful there.
+    private static void DrawBusTrace(Channel channel, Vector4 color, ReadOnlySpan<ulong> buffer, int capacity, long visStart, int visibleCount, int requestedBucketCount)
     {
         const double BandTop = 0.85;
         const double BandBottom = 0.15;
 
         var nibbles = (channel.BitWidth + 3) / 4;
         var fillColor = ImGui.GetColorU32(new Vector4(color.X, color.Y, color.Z, 0.35f));
+        var mixedFillColor = ImGui.GetColorU32(new Vector4(color.X, color.Y, color.Z, 0.15f));
         var borderColor = ImGui.GetColorU32(color);
         var textColor = ImGui.GetColorU32(ImGuiCol.Text);
+
+        Span<ulong> values = stackalloc ulong[requestedBucketCount];
+        Span<bool> isMixed = stackalloc bool[requestedBucketCount];
+        var bucketCount = SampleDecimator.ComputeConstantOrMixed(buffer, capacity, visStart, visibleCount, requestedBucketCount, values, isMixed);
 
         var drawList = ImPlot.GetPlotDrawList();
 
         ImPlot.PushPlotClipRect();
 
         var runStart = 0;
-        while (runStart < visibleCount)
+        while (runStart < bucketCount)
         {
-            var value = ys[runStart];
+            var value = values[runStart];
+            var mixed = isMixed[runStart];
 
             var runEnd = runStart + 1;
-            while (runEnd < visibleCount && ys[runEnd] == value)
+            while (runEnd < bucketCount && isMixed[runEnd] == mixed && (mixed || values[runEnd] == value))
             {
                 runEnd++;
             }
 
-            // Right edge is deliberately allowed to land one sample past the
-            // window for the last run - PushPlotClipRect() above clips it back
-            // to the axis limit, and it avoids the last (possibly one-sample-wide)
-            // run collapsing to a zero-width band.
-            var pMin = ImPlot.PlotToPixels(visStart + runStart, BandTop);
-            var pMax = ImPlot.PlotToPixels(visStart + runEnd, BandBottom);
+            // The last bucket's own range always ends at exactly visibleCount
+            // (see SampleDecimator.GetBucketRange), so - unlike the old
+            // per-sample run loop - there's no need to deliberately overshoot
+            // the window to avoid a zero-width last band.
+            var (rangeStart, _) = SampleDecimator.GetBucketRange(visibleCount, bucketCount, runStart);
+            var (_, rangeEnd) = SampleDecimator.GetBucketRange(visibleCount, bucketCount, runEnd - 1);
 
-            drawList.AddRectFilled(pMin, pMax, fillColor);
+            var pMin = ImPlot.PlotToPixels(visStart + rangeStart, BandTop);
+            var pMax = ImPlot.PlotToPixels(visStart + rangeEnd, BandBottom);
+
+            drawList.AddRectFilled(pMin, pMax, mixed ? mixedFillColor : fillColor);
             drawList.AddRect(pMin, pMax, borderColor);
 
-            var text = ((ulong)value).ToString($"X{nibbles}");
-            var textSize = ImGui.CalcTextSize(text);
-            var segmentWidth = pMax.X - pMin.X;
-            if (textSize.X + 4f <= segmentWidth)
+            if (!mixed)
             {
-                var textPos = new Vector2(
-                    pMin.X + (segmentWidth - textSize.X) * 0.5f,
-                    (pMin.Y + pMax.Y - textSize.Y) * 0.5f);
-                drawList.AddText(textPos, textColor, text);
+                var text = value.ToString($"X{nibbles}");
+                var textSize = ImGui.CalcTextSize(text);
+                var segmentWidth = pMax.X - pMin.X;
+                if (textSize.X + 4f <= segmentWidth)
+                {
+                    var textPos = new Vector2(
+                        pMin.X + (segmentWidth - textSize.X) * 0.5f,
+                        (pMin.Y + pMax.Y - textSize.Y) * 0.5f);
+                    drawList.AddText(textPos, textColor, text);
+                }
             }
 
             runStart = runEnd;
@@ -889,13 +927,37 @@ public sealed class LogicAnalyzerWindow : DebuggerWindow
         if (ImPlot.IsPlotHovered())
         {
             var mouse = ImPlot.GetPlotMousePos();
-            var index = (int)Math.Floor(mouse.X - visStart);
-            if (index >= 0 && index < visibleCount)
+            var localOffset = (int)Math.Floor(mouse.X - visStart);
+            if (localOffset >= 0 && localOffset < visibleCount)
             {
-                var value = (ulong)ys[index];
-                ImGui.SetTooltip($"{channel.Name}: {value.ToString($"X{nibbles}")}");
+                var bucket = FindBucket(localOffset, visibleCount, bucketCount);
+                // Constant buckets already carry their value from the decimation
+                // pass above, no re-read needed; a mixed bucket has no single
+                // value that would be meaningful to show.
+                ImGui.SetTooltip(isMixed[bucket]
+                    ? $"{channel.Name}: (changing)"
+                    : $"{channel.Name}: {values[bucket].ToString($"X{nibbles}")}");
             }
         }
+    }
+
+    // Bucket ranges are equal-ish but not equal-width (see
+    // SampleDecimator.GetBucketRange), so the bucket covering a given raw
+    // sample offset has to be found by walking boundaries rather than a
+    // single division - cheap since it only runs once per frame, for whichever
+    // one row is currently hovered.
+    private static int FindBucket(int localOffset, int count, int bucketCount)
+    {
+        for (var bucket = 0; bucket < bucketCount; bucket++)
+        {
+            var (_, rangeEnd) = SampleDecimator.GetBucketRange(count, bucketCount, bucket);
+            if (localOffset < rangeEnd)
+            {
+                return bucket;
+            }
+        }
+
+        return bucketCount - 1;
     }
 
     private void FillVisibleSamples(Channel channel, long visStart, int visibleCount, Span<double> xs, Span<double> ys)
