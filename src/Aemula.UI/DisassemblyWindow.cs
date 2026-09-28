@@ -22,13 +22,6 @@ public sealed class DisassemblyWindow(Debugger debugger) : DebuggerWindow
     private static readonly uint PcRowTintColor = ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 1f, 0f, 0.35f));
     private static readonly uint BreakpointRowTintColor = ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 0f, 0f, 0.18f));
 
-    // log2(executionCount + 1) reaches this at 65535 executions, so a line
-    // that's run tens of thousands of times (a realistic hot loop within a
-    // few seconds of emulation) is already at full heat rather than needing
-    // millions of hits to visibly saturate.
-    private const float HeatLogScaleMax = 16f;
-    private const float MaxHeatAlpha = 0.35f;
-
     private const float ScrollbarMarkerWidth = 4f;
 
     private readonly List<DisassemblyLine> _disassembly = [];
@@ -206,17 +199,6 @@ public sealed class DisassemblyWindow(Debugger debugger) : DebuggerWindow
                             case DisassemblyLineType.Instruction:
                                 var instruction = line.Instruction!.Value;
                                 var isCurrentPC = instruction.AddressNumeric == lastPC;
-
-                                // Heat sits on RowBg0 (the base layer) so PC/breakpoint tints
-                                // on RowBg1 always composite over it - a breakpoint on a hot
-                                // loop line still reads clearly as a breakpoint rather than
-                                // being washed out by how often that line has executed.
-                                var executionCount = debugger.Disassembler.ExecutionCounts[instruction.AddressNumeric];
-                                if (executionCount > 0)
-                                {
-                                    var heat = Math.Clamp(MathF.Log2(executionCount + 1) / HeatLogScaleMax, 0f, 1f);
-                                    ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 0.45f, 0.1f, heat * MaxHeatAlpha)));
-                                }
 
                                 // PC tint wins when a row is both the current PC and a
                                 // breakpoint - the triangle marker is still the precise PC
