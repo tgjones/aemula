@@ -326,7 +326,7 @@ public sealed class DisassemblyWindow(Debugger debugger) : DebuggerWindow
                                 ImGui.TextColored(disabledColorVector, instruction.RawBytes);
 
                                 ImGui.TableNextColumn();
-                                ImGui.TextColored(GetMnemonicCategoryColor(instruction.MnemonicCategory), instruction.Mnemonic);
+                                ImGui.Text(instruction.Mnemonic);
 
                                 if (instruction.Operand.Length > 0)
                                 {
@@ -504,32 +504,7 @@ public sealed class DisassemblyWindow(Debugger debugger) : DebuggerWindow
         }
     }
 
-    // Fixed accent colors, one per MnemonicCategory - like TelevisionWindow's
-    // hand-picked signal-overlay palette, these mark a semantic category
-    // ImGui has no built-in style role for, so they're not theme-derived.
-    // Other (uncategorized - currently every Z80/Intel8080 instruction, until
-    // their own mnemonic/operand split lands) falls back to the theme's
-    // normal text color rather than a fixed hue, so it reads as "not yet
-    // colorized" rather than as its own category.
-    private static Vector4 GetMnemonicCategoryColor(MnemonicCategory category) => category switch
-    {
-        MnemonicCategory.Branch => new Vector4(1.00f, 0.62f, 0.30f, 1f),
-        MnemonicCategory.Call => new Vector4(0.75f, 0.55f, 1.00f, 1f),
-        MnemonicCategory.Return => new Vector4(1.00f, 0.45f, 0.70f, 1f),
-        MnemonicCategory.LoadStore => new Vector4(0.40f, 0.70f, 1.00f, 1f),
-        MnemonicCategory.Arithmetic => new Vector4(0.50f, 0.90f, 0.50f, 1f),
-        MnemonicCategory.Logic => new Vector4(0.40f, 0.90f, 0.90f, 1f),
-        MnemonicCategory.Stack => new Vector4(0.85f, 0.75f, 0.35f, 1f),
-        MnemonicCategory.Transfer => new Vector4(0.70f, 0.70f, 0.95f, 1f),
-        MnemonicCategory.FlagOp => new Vector4(0.80f, 0.80f, 0.50f, 1f),
-        MnemonicCategory.IO => new Vector4(0.95f, 0.40f, 0.80f, 1f),
-        _ => ImGui.ColorConvertU32ToFloat4(ImGui.GetColorU32(ImGuiCol.Text)),
-    };
-
-    // Fixed accent colors, one per OperandKind - a separate palette from
-    // MnemonicCategory's so the two dimensions stay visually distinguishable
-    // (an operand is always tinted, even on a still-uncategorized Other
-    // mnemonic, since OperandKind is independent of that split).
+    // Fixed accent colors, one per OperandKind.
     private static Vector4 GetOperandKindColor(OperandKind kind) => kind switch
     {
         OperandKind.Immediate => new Vector4(0.60f, 0.90f, 0.60f, 1f),
