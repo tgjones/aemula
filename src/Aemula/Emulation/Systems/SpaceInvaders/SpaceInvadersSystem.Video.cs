@@ -14,7 +14,7 @@ namespace Aemula.Emulation.Systems.SpaceInvaders;
 // scanner has already claimed.
 //
 // The 74166 video shift register consumes the scanner's fetched byte,
-// serialized per pixel clock straight into Display - see
+// serialized per pixel clock into the composite video output - see
 // TickVideoShiftRegister.
 public sealed partial class SpaceInvadersSystem
 {
@@ -159,8 +159,8 @@ public sealed partial class SpaceInvadersSystem
     }
 
     /// <summary>
-    /// Drives the shift register (<c>4F</c>) and, from its Qh
-    /// output, writes one pixel into <see cref="Display"/> per pixel clock.
+    /// Drives the shift register (<c>4F</c>), whose Qh output is one pixel
+    /// per pixel clock.
     /// Runs after <c>TickVideoTiming</c> (see <c>Tick</c>) specifically so
     /// H/V/HBLANK/VBLANK have already been advanced to this tick's real,
     /// post-edge state before anything below reads them - the load
@@ -184,14 +184,13 @@ public sealed partial class SpaceInvadersSystem
             // Not real hardware behavior for the Hblank/Vblank part (the
             // 74166 has no enable pin and would keep clocking through
             // blanking on real silicon too) - but since blanking is never
-            // read into Display either way, there's nothing to gain from
-            // modelling it. v < 0x20 only ever happens during this system's
+            // output either way, there's nothing to gain from modelling it. v < 0x20 only ever happens during this system's
             // own cold-start settling (see SpaceInvadersSystemVideoTimingTests'
             // own note on the same quirk) - real V never revisits below
             // 0x20 once steady state is reached, and $2000-$23FF is free
             // work RAM, not VRAM - so this guards against a one-time,
-            // non-representative pass permanently leaking scan-address
-            // garbage into Display rows that should stay untouched.
+            // non-representative pass leaking a scan-address pass into
+            // the shift register that real hardware never sees.
             return;
         }
 
@@ -220,9 +219,5 @@ public sealed partial class SpaceInvadersSystem
 
         _videoShiftRegister.Clk = false;
         _videoShiftRegister.Clk = true;
-
-        var outputValue = _videoShiftRegister.Qh ? (byte)0xFF : (byte)0;
-
-        Display.Data[v * 256 + h] = new RgbaByte(outputValue, outputValue, outputValue, 0xFF);
     }
 }

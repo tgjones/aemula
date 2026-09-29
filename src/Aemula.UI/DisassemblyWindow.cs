@@ -13,7 +13,8 @@ public sealed class DisassemblyWindow(Debugger debugger) : DebuggerWindow
     private const float AddressColumnWidth = 50f;
     private const float BytesColumnWidth = 70f;
     private const float MnemonicColumnWidth = 50f;
-    private const float AnnotationColumnWidth = 90f;
+    // Widest cycles text the annotation column shows ("current/total").
+    private const string AnnotationWidestText = "00/00";
 
     // Same yellow/red accent hues as the PC triangle and breakpoint dot
     // drawn in the gutter, just translucent - these mark rows rather than
@@ -153,9 +154,13 @@ public sealed class DisassemblyWindow(Debugger debugger) : DebuggerWindow
 
             ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(8, 3));
 
-            lineHeight = ImGui.GetTextLineHeightWithSpacing();
-
             var rowHeight = ImGui.GetTextLineHeight();
+
+            // Table rows are spaced by cell padding, not item spacing. The clipper
+            // and scroll math need the real stride: if it's off, the error
+            // accumulates over the whole listing and the last rows end up clipped
+            // when scrolled to the bottom.
+            lineHeight = rowHeight + ImGui.GetStyle().CellPadding.Y * 2;
             var rowHeightDiv2 = (int)(rowHeight / 2.0f);
 
             var disabledColor = ImGui.GetColorU32(ImGuiCol.TextDisabled);
@@ -181,7 +186,9 @@ public sealed class DisassemblyWindow(Debugger debugger) : DebuggerWindow
                 ImGui.TableSetupColumn("##bytes"u8, ImGuiTableColumnFlags.WidthFixed | ImGuiTableColumnFlags.NoClip, BytesColumnWidth);
                 ImGui.TableSetupColumn("##mnemonic"u8, ImGuiTableColumnFlags.WidthFixed | ImGuiTableColumnFlags.NoClip, MnemonicColumnWidth);
                 ImGui.TableSetupColumn("##operand"u8, ImGuiTableColumnFlags.WidthStretch);
-                ImGui.TableSetupColumn("##annotation"u8, ImGuiTableColumnFlags.WidthFixed, AnnotationColumnWidth);
+                // Sized to the cycles text itself, so it doesn't take space from the
+                // stretchy Operand column when the pane is narrow.
+                ImGui.TableSetupColumn("##annotation"u8, ImGuiTableColumnFlags.WidthFixed, ImGui.CalcTextSize(AnnotationWidestText).X);
 
                 var clipper = new ImGuiListClipper();
                 clipper.Begin(_disassembly.Count, lineHeight);
@@ -354,16 +361,27 @@ public sealed class DisassemblyWindow(Debugger debugger) : DebuggerWindow
                                 break;
 
                             case DisassemblyLineType.Text:
-                                ImGui.TableNextColumn();
-                                ImGui.TableNextColumn();
-                                ImGui.TextColored(disabledColorVector, line.Text);
-                                break;
-
                             case DisassemblyLineType.LineSeparator:
                             case DisassemblyLineType.Ellipsis:
+                                // Labels (Text) start in the gutter column, flush with the
+                                // breakpoint markers; separators and ellipses stay in the
+                                // address column.
                                 ImGui.TableNextColumn();
-                                ImGui.TableNextColumn();
+                                if (line.Type != DisassemblyLineType.Text)
+                                {
+                                    ImGui.TableNextColumn();
+                                }
+                                // These strings (labels especially) are wider than their
+                                // starting column, and NoClip on the later columns doesn't
+                                // stop the cell clip rect cutting them off - widen the clip
+                                // rect to the whole row instead.
+                                var textPos = ImGui.GetCursorScreenPos();
+                                ImGui.PushClipRect(
+                                    new Vector2(textPos.X, textPos.Y),
+                                    new Vector2(textPos.X + availableSize.X, textPos.Y + rowHeight),
+                                    false);
                                 ImGui.TextColored(disabledColorVector, line.Text);
+                                ImGui.PopClipRect();
                                 break;
 
                             default:
@@ -374,14 +392,6 @@ public sealed class DisassemblyWindow(Debugger debugger) : DebuggerWindow
 
                 ImGui.EndTable();
             }
-
-            // Drawn while the child is still current, so GetWindowPos/Size
-            // reflect its fixed outer rect rather than anything scrolled -
-            // ImGui has no API to decorate its native scrollbar directly, so
-            // this is a self-drawn strip pinned to the same right edge
-            // instead, mapping each marker's line index to a Y fraction of
-            // the full listing rather than the current scroll position.
-            DrawScrollbarMarkers(lastPC);
 
             ImGui.PopStyleVar();
         }
@@ -426,68 +436,6 @@ public sealed class DisassemblyWindow(Debugger debugger) : DebuggerWindow
         }
 
         ImGui.EndChild();
-    }
-
-    // Self-drawn scrollbar-decoration strip (see the DrawOverride call site) -
-    // a thin red tick per enabled execution breakpoint plus a yellow one for
-    // the current PC, positioned along the child window's right edge by
-    // their line index's fraction of the full listing. Byte/word watchpoints
-    // are skipped: their addresses are data, not necessarily a disassembled
-    // instruction row this listing has an index for.
-    private void DrawScrollbarMarkers(ushort lastPC)
-    {
-        if (_disassembly.Count == 0)
-        {
-            return;
-        }
-
-        var executionTypeIndex = -1;
-        var typeNames = debugger.Breakpoints.BreakpointTypeNames;
-        for (var t = 0; t < typeNames.Count; t++)
-        {
-            if (typeNames[t] == BreakpointManager.ExecutionTypeLabel)
-            {
-                executionTypeIndex = t;
-                break;
-            }
-        }
-
-        var windowPos = ImGui.GetWindowPos();
-        var windowSize = ImGui.GetWindowSize();
-        var drawList = ImGui.GetWindowDrawList();
-
-        void DrawMarker(int index, uint color)
-        {
-            var t = index / (float)_disassembly.Count;
-            var y = windowPos.Y + t * windowSize.Y;
-            var x = windowPos.X + windowSize.X - ScrollbarMarkerWidth;
-            drawList.AddRectFilled(new Vector2(x, y - 1f), new Vector2(x + ScrollbarMarkerWidth, y + 1f), color);
-        }
-
-        if (executionTypeIndex >= 0)
-        {
-            for (var i = 0; i < debugger.Breakpoints.NumBreakpoints; i++)
-            {
-                ref var breakpoint = ref debugger.Breakpoints.GetBreakpoint(i);
-                if (breakpoint.Type != executionTypeIndex || !breakpoint.Enabled)
-                {
-                    continue;
-                }
-
-                var breakpointAddress = breakpoint.Address;
-                var index = _disassembly.FindIndex(x => x.Instruction?.AddressNumeric == breakpointAddress);
-                if (index >= 0)
-                {
-                    DrawMarker(index, 0xFF0000FF);
-                }
-            }
-        }
-
-        var pcIndex = _disassembly.FindIndex(x => x.Instruction?.AddressNumeric == lastPC);
-        if (pcIndex >= 0)
-        {
-            DrawMarker(pcIndex, 0xFF00FFFF);
-        }
     }
 
     // Fixed accent colors, one per OperandKind.

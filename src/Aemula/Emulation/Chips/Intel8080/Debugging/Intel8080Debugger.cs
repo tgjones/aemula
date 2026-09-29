@@ -10,6 +10,8 @@ public sealed class Intel8080Debugger : CpuDebugger
     private int _startState;
     private int _lastPolledState;
     private bool _lastPolledFetching;
+    private bool _lastPolledWriting;
+    private bool _memoryWriteCycle;
 
     public Intel8080Debugger(Intel8080Chip cpu)
     {
@@ -33,6 +35,27 @@ public sealed class Intel8080Debugger : CpuDebugger
         var fetching = _cpu.Sync && _cpu.Data == Intel8080Chip.StatusWordFetch;
         var started = fetching && !_lastPolledFetching;
         _lastPolledFetching = fetching;
+
+        address = _cpu.Address;
+        return started;
+    }
+
+    /// <remarks>
+    /// /WR is also asserted for output cycles, so the status word latched
+    /// during SYNC says whether this is a memory (or stack) write. /WR goes
+    /// high again at the start of every machine cycle, so its falling edge
+    /// marks each write.
+    /// </remarks>
+    public override bool PollWrite(out ushort address)
+    {
+        if (_cpu.Sync)
+        {
+            _memoryWriteCycle = _cpu.Data is Intel8080Chip.StatusWordMemoryWrite or Intel8080Chip.StatusWordStackWrite;
+        }
+
+        var writing = !_cpu.Wr && _memoryWriteCycle;
+        var started = writing && !_lastPolledWriting;
+        _lastPolledWriting = writing;
 
         address = _cpu.Address;
         return started;

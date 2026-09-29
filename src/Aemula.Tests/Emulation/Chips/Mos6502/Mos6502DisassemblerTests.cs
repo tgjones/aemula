@@ -199,6 +199,44 @@ public class Mos6502DisassemblerTests
     }
 
     [Test]
+    public async Task WritesRedisassembleCodeCopiedIntoRamAfterFirstDisassembly()
+    {
+        var memory = new byte[0x10000];
+
+        // RESET: JSR $0090, then JMP-to-self. $0090 is still zero-filled
+        // when disassembly starts, as RAM is when a ROM calls a routine it
+        // copies into zero page later.
+        memory[0xF000] = 0x20; memory[0xF001] = 0x90; memory[0xF002] = 0x00;
+        memory[0xF003] = 0x4C; memory[0xF004] = 0x03; memory[0xF005] = 0xF0;
+        memory[0xFFFC] = 0x00; memory[0xFFFD] = 0xF0;
+
+        var disassembler = new Mos6502Disassembler(
+            new DebuggerMemoryCallbacks(address => memory[address], (address, value) => memory[address] = value),
+            [],
+            hasNmi: false,
+            hasIrq: false);
+
+        disassembler.Reset();
+
+        await Assert.That(disassembler.Cache[0x0090].Instruction!.Value.Mnemonic).IsEqualTo("BRK");
+        // BRK doesn't fall through into the following zero bytes.
+        await Assert.That(disassembler.Cache[0x0091].Instruction).IsNull();
+
+        // Code copied in later: LDA #$05 / RTS.
+        memory[0x0090] = 0xA9; memory[0x0091] = 0x05; memory[0x0092] = 0x60;
+
+        // The write itself, then the read-back a cycle later.
+        disassembler.OnDataWritten(0x0090);
+        disassembler.OnDataWritten(0x0091);
+        disassembler.OnDataWritten(0x0092);
+        disassembler.ReseedInvalidated();
+
+        await Assert.That(disassembler.Cache[0x0090].Instruction!.Value.Disassembly).IsEqualTo("LDA #$05");
+        await Assert.That(disassembler.Cache[0x0090].Label).IsEqualTo("Subroutine");
+        await Assert.That(disassembler.Cache[0x0092].Instruction!.Value.Mnemonic).IsEqualTo("RTS");
+    }
+
+    [Test]
     public async Task CanDisassembleSimpleInstructions()
     {
         var bytes = DasmHelper.Assemble(@"

@@ -16,7 +16,6 @@ internal sealed class SpaceInvadersDebuggerUI(SpaceInvadersDebugger debugger) : 
 
         result.Add(new CpuStateWindow(_system.Cpu));
 
-        result.Add(new ScreenDisplayWindow(_system.Display, 90));
         result.Add(new TelevisionWindow(_system.Television));
         result.Add(new LogicAnalyzerWindow(debugger, _system.CreateChannelNodes()));
     }

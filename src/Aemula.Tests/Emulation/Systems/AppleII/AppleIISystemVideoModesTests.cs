@@ -33,19 +33,6 @@ public class AppleIISystemVideoModesTests
         }
     }
 
-    private static bool DisplayContainsColor(AppleIISystem system, byte r, byte g, byte b)
-    {
-        foreach (var pixel in system.Display.Data)
-        {
-            if (pixel.R == r && pixel.G == g && pixel.B == b)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     [Test]
     public async Task ModeSwitchesSurviveInterleavedUnrelatedAccesses()
     {
@@ -94,7 +81,7 @@ public class AppleIISystemVideoModesTests
     }
 
     [Test]
-    public async Task LoresColorBlockRendersFromScreenNibbles()
+    public async Task LoresNibblesDriveTheVideoDataLine()
     {
         var system = new AppleIISystem();
 
@@ -104,21 +91,74 @@ public class AppleIISystemVideoModesTests
         system.WriteByteDebug(0xC056, 0); // LORES
         system.WriteByteDebug(0xC054, 0); // PAGE1
 
-        // Fill all of PAGE1 TEXT/LORES memory with a byte whose low nibble
-        // is color 1 (magenta) and high nibble is color 2 (dark blue), so
-        // the test doesn't need to reproduce the scrambled address formula
-        // to find a byte the scanner will actually read.
+        // Low nibble 0 (upper half of each 8-line text row) and high
+        // nibble F (lower half): black is a dark line, white a solid one.
+        // Filling all of PAGE1 avoids reproducing the scrambled address
+        // formula to find a byte the scanner will actually read.
+        for (var address = 0x400; address <= 0x7FF; address++)
+        {
+            system.WriteByteDebug((ushort)address, 0xF0);
+        }
+
+        var frame = AppleIIVideoFrame.Capture(system);
+
+        // Lines 0-3 of each text row are the upper half (VC low).
+        await Assert.That(frame.AnyLit(96, 99)).IsFalse();
+        await Assert.That(frame.AllLit(100, 103)).IsTrue();
+    }
+
+    [Test]
+    public async Task LoresColorNibbleMatchesSatherWorkedExample()
+    {
+        var system = new AppleIISystem();
+
+        BootToIdle(system);
+
+        system.WriteByteDebug(0xC050, 0); // GRAPHICS
+        system.WriteByteDebug(0xC056, 0); // LORES
+        system.WriteByteDebug(0xC054, 0); // PAGE1
+
+        for (var address = 0x400; address <= 0x7FF; address++)
+        {
+            system.WriteByteDebug((ushort)address, 0x99);
+        }
+
+        var frame = AppleIIVideoFrame.Capture(system);
+
+        // Sather p.8-23: nibble 1001 gives "10011001100110" on an even
+        // video cycle and "01100110011001" on an odd one; adjacent cells
+        // alternate.
+        var even = "10011001100110";
+        var odd = "01100110011001";
+
+        for (var cell = 0; cell < AppleIIVideoFrame.Cells; cell++)
+        {
+            await Assert.That(frame.CellBits(50, cell)).IsEqualTo(cell % 2 == 0 ? even : odd);
+        }
+    }
+
+    [Test]
+    public async Task DifferentLoresColorsProduceDifferentBitStreams()
+    {
+        var system = new AppleIISystem();
+
+        BootToIdle(system);
+
+        system.WriteByteDebug(0xC050, 0); // GRAPHICS
+        system.WriteByteDebug(0xC056, 0); // LORES
+        system.WriteByteDebug(0xC054, 0); // PAGE1
+
+        // Color 1 in the upper half of each text row, color 2 in the lower.
         for (var address = 0x400; address <= 0x7FF; address++)
         {
             system.WriteByteDebug((ushort)address, 0x21);
         }
 
-        TickOneFrame(system);
+        var frame = AppleIIVideoFrame.Capture(system);
 
-        // LoresPalette[1] (magenta) and LoresPalette[2] (dark blue) in
-        // AppleIISystem.Video.cs.
-        await Assert.That(DisplayContainsColor(system, 0xFF, 0x00, 0x8C)).IsTrue();
-        await Assert.That(DisplayContainsColor(system, 0x15, 0x10, 0xFF)).IsTrue();
+        await Assert.That(frame.CellBits(96, 0)).IsNotEqualTo(frame.CellBits(100, 0));
+        await Assert.That(frame.CellBits(96, 0)).IsEqualTo(frame.CellBits(97, 0));
+        await Assert.That(frame.CellBits(100, 0)).IsEqualTo(frame.CellBits(103, 0));
     }
 
     [Test]
@@ -131,33 +171,26 @@ public class AppleIISystemVideoModesTests
         system.WriteByteDebug(0xC050, 0); // GRAPHICS
         system.WriteByteDebug(0xC056, 0); // LORES
 
-        // PAGE1 memory gets color 1 (magenta); PAGE2 memory gets color 12
-        // (light green).
+        // PAGE1 memory is black (no lit bits); PAGE2 memory is white.
         for (var address = 0x400; address <= 0x7FF; address++)
         {
-            system.WriteByteDebug((ushort)address, 0x11);
+            system.WriteByteDebug((ushort)address, 0x00);
         }
 
         for (var address = 0x800; address <= 0xBFF; address++)
         {
-            system.WriteByteDebug((ushort)address, 0xCC);
+            system.WriteByteDebug((ushort)address, 0xFF);
         }
 
         system.WriteByteDebug(0xC054, 0); // PAGE1
-        TickOneFrame(system);
+        var page1 = AppleIIVideoFrame.Capture(system);
 
-        await Assert.That(DisplayContainsColor(system, 0xFF, 0x00, 0x8C)).IsTrue();
-        await Assert.That(DisplayContainsColor(system, 0x00, 0xFF, 0x00)).IsFalse();
+        await Assert.That(page1.AnyLit(0, 191)).IsFalse();
 
         system.WriteByteDebug(0xC055, 0); // PAGE2
+        var page2 = AppleIIVideoFrame.Capture(system);
 
-        // Every visible position is re-fetched and redrawn every frame, so
-        // one more frame is enough for PAGE2's color to fully replace
-        // PAGE1's at every position that was showing it.
-        TickOneFrame(system);
-
-        await Assert.That(DisplayContainsColor(system, 0x00, 0xFF, 0x00)).IsTrue();
-        await Assert.That(DisplayContainsColor(system, 0xFF, 0x00, 0x8C)).IsFalse();
+        await Assert.That(page2.AllLit(0, 191)).IsTrue();
     }
 
     [Test]
@@ -179,64 +212,51 @@ public class AppleIISystemVideoModesTests
             system.WriteByteDebug((ushort)address, 0b0101_0101);
         }
 
-        TickOneFrame(system);
+        var frame = AppleIIVideoFrame.Capture(system);
 
         var expectedLit = new[] { true, false, true, false, true, false, true };
 
-        // Row 100 is comfortably inside the visible 192-line HIRES picture,
-        // away from any HBL/VBL edge effects; every 7-pixel cell across
-        // this row should show the same pattern, since every HIRES byte in
-        // memory is identical.
-        var rowStart = 100 * (int)system.Display.Width;
-
-        for (var dot = 0; dot < 7; dot++)
+        // Line 100 is comfortably inside the visible picture, away from
+        // any HBL/VBL edge effects.
+        for (var cell = 0; cell < AppleIIVideoFrame.Cells; cell++)
         {
-            var pixel = system.Display.Data[rowStart + dot];
-            var lit = pixel.R != 0;
-            await Assert.That(lit).IsEqualTo(expectedLit[dot]);
+            for (var dot = 0; dot < 7; dot++)
+            {
+                await Assert.That(frame.Dot(100, cell, dot)).IsEqualTo(expectedLit[dot]);
+            }
         }
     }
 
     [Test]
-    public async Task HiresColorPhaseFollowsColumnParityAndDl7()
+    public async Task MixModeShowsTextForBottomFourRows()
     {
         var system = new AppleIISystem();
 
         BootToIdle(system);
 
         system.WriteByteDebug(0xC050, 0); // GRAPHICS
-        system.WriteByteDebug(0xC057, 0); // HIRES
+        system.WriteByteDebug(0xC053, 0); // MIX
+        system.WriteByteDebug(0xC056, 0); // LORES
         system.WriteByteDebug(0xC054, 0); // PAGE1
 
-        // DL7 (bit 7) clear: even columns should be phase 0, odd phase 2.
-        for (var address = 0x2000; address <= 0x3FFF; address++)
+        // TEXT and LORES share the same memory, so this single fill feeds
+        // both interpretations: as solid white LORES in the top 160 lines,
+        // and as the glyph for $FF in the bottom four text rows - which
+        // can't be solid, since the character ROM leaves a blank spacer
+        // column on each side of every cell.
+        for (var address = 0x400; address <= 0x7FF; address++)
         {
-            system.WriteByteDebug((ushort)address, 0b0_1010101);
+            system.WriteByteDebug((ushort)address, 0xFF);
         }
 
-        TickOneFrame(system);
+        var frame = AppleIIVideoFrame.Capture(system);
 
-        var rowStart = 100 * (int)system.Display.Width;
-        var expectedPhasesDl7Clear = new byte[] { 0, 2, 0, 2, 0, 2, 0 };
+        // Sather p.5-14: scan lines 160-191 are the bottom four text rows.
+        await Assert.That(frame.AllLit(0, 159)).IsTrue();
 
-        for (var dot = 0; dot < 7; dot++)
+        for (var line = 160; line < 192; line++)
         {
-            await Assert.That(system.HiresColorPhase[rowStart + dot]).IsEqualTo(expectedPhasesDl7Clear[dot]);
-        }
-
-        // DL7 set: even columns should be phase 1, odd phase 3.
-        for (var address = 0x2000; address <= 0x3FFF; address++)
-        {
-            system.WriteByteDebug((ushort)address, 0b1_1010101);
-        }
-
-        TickOneFrame(system);
-
-        var expectedPhasesDl7Set = new byte[] { 1, 3, 1, 3, 1, 3, 1 };
-
-        for (var dot = 0; dot < 7; dot++)
-        {
-            await Assert.That(system.HiresColorPhase[rowStart + dot]).IsEqualTo(expectedPhasesDl7Set[dot]);
+            await Assert.That(frame.AllLit(line, line)).IsFalse();
         }
     }
 
@@ -274,9 +294,6 @@ public class AppleIISystemVideoModesTests
     [Test]
     public async Task VideoDataBitMatchesHiresShiftedPattern()
     {
-        // Cross-checks _videoDataBits against the same known byte pattern
-        // HiresBitZeroIsLeftmostDot uses for Display, since both are set
-        // from the same "lit" value in DrawHiresByte.
         var system = new AppleIISystem();
 
         BootToIdle(system);
@@ -381,57 +398,5 @@ public class AppleIISystemVideoModesTests
         }
 
         await Assert.That(sampled).IsTrue();
-    }
-
-    [Test]
-    public async Task MixModeShowsTextForBottomFourRows()
-    {
-        var system = new AppleIISystem();
-
-        BootToIdle(system);
-
-        system.WriteByteDebug(0xC050, 0); // GRAPHICS
-        system.WriteByteDebug(0xC053, 0); // MIX
-        system.WriteByteDebug(0xC056, 0); // LORES
-        system.WriteByteDebug(0xC054, 0); // PAGE1
-
-        // TEXT and LORES share the same memory, so this single fill feeds
-        // both interpretations: as LORES color in the top 160 lines, and as
-        // a (mostly monochrome) glyph in the bottom four text rows.
-        for (var address = 0x400; address <= 0x7FF; address++)
-        {
-            system.WriteByteDebug((ushort)address, 0x21);
-        }
-
-        TickOneFrame(system);
-
-        // Comfortably inside the graphics region: should be a solid LORES
-        // color, not gray.
-        var topPixel = system.Display.Data[50 * (int)system.Display.Width + 10];
-        var topIsColor = topPixel.R != topPixel.G || topPixel.G != topPixel.B;
-        await Assert.That(topIsColor).IsTrue();
-
-        // Scan lines 160-191 (Sather p.5-14: "V4.V2 actually identifies
-        // scan lines 160 through 191") are the bottom four text rows -
-        // TEXT's black/white/gray rendering, not a LORES color.
-        var sawGrayInBottomRegion = false;
-
-        for (var y = 160; y < 192 && !sawGrayInBottomRegion; y++)
-        {
-            var rowStart = y * (int)system.Display.Width;
-
-            for (var x = 0; x < system.Display.Width; x++)
-            {
-                var pixel = system.Display.Data[rowStart + x];
-
-                if (pixel.R == pixel.G && pixel.G == pixel.B)
-                {
-                    sawGrayInBottomRegion = true;
-                    break;
-                }
-            }
-        }
-
-        await Assert.That(sawGrayInBottomRegion).IsTrue();
     }
 }

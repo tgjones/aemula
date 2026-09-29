@@ -93,61 +93,9 @@ public sealed partial class AppleIISystem
     // leftmost of the 7 dots).
     private readonly Ttl74166Chip _hiresVideoShiftRegister;
 
-    // Digital approximation of the 16 LORES colors, computed from the
-    // published Y/I/Q values (see "Apple II graphics", "Lo-Res colors and
-    // YIQ values") through the standard NTSC YIQ->RGB matrix. This is the
-    // same shortcut real "RGB card" Apple II hardware took - reading the
-    // 4-bit color value straight into a digital-RGB monitor, bypassing
-    // composite decoding entirely. True NTSC artifact rendering into this
-    // same Display buffer (needed for HIRES, which has no direct per-bit
-    // color) isn't built yet - real composite decoding exists separately,
-    // through Television, but isn't wired into Display's own pixels.
-    private static readonly RgbaByte[] LoresPalette =
-    [
-        new RgbaByte(0x00, 0x00, 0x00, 0xFF), // 0 Black
-        new RgbaByte(0xFF, 0x00, 0x8C, 0xFF), // 1 Magenta (Red)
-        new RgbaByte(0x15, 0x10, 0xFF, 0xFF), // 2 Dark Blue
-        new RgbaByte(0xFF, 0x00, 0xFF, 0xFF), // 3 Purple
-        new RgbaByte(0x00, 0xB5, 0x00, 0xFF), // 4 Dark Green
-        new RgbaByte(0x80, 0x80, 0x80, 0xFF), // 5 Grey 1
-        new RgbaByte(0x00, 0xC5, 0xFF, 0xFF), // 6 Medium Blue
-        new RgbaByte(0x95, 0x8F, 0xFF, 0xFF), // 7 Light Blue
-        new RgbaByte(0x6A, 0x70, 0x00, 0xFF), // 8 Brown
-        new RgbaByte(0xFF, 0x3A, 0x00, 0xFF), // 9 Orange
-        new RgbaByte(0x80, 0x80, 0x80, 0xFF), // 10 Grey 2
-        new RgbaByte(0xFF, 0x4A, 0xFF, 0xFF), // 11 Pink
-        new RgbaByte(0x00, 0xFF, 0x00, 0xFF), // 12 Light Green
-        new RgbaByte(0xEA, 0xEF, 0x00, 0xFF), // 13 Yellow
-        new RgbaByte(0x00, 0xFF, 0x73, 0xFF), // 14 Aquamarine
-        new RgbaByte(0xFF, 0xFF, 0xFF, 0xFF), // 15 White
-    ];
-
-    // Software bookkeeping standing in for "which raster line of the 280x192
-    // visible picture are we on" - not itself part of the real hardware,
-    // since real hardware doesn't need a linear line count (the DRAM address
-    // formula above only needs the raw counter bits). -1 while in VBL.
-    private int _currentRasterLine = -1;
+    // Software bookkeeping for the once-per-frame TEXT flash counter.
     private bool _wasInVblAtLastScanline;
     private int _textFlashFrameCounter;
-
-    public readonly DisplayBuffer Display;
-
-    // The raw digital signal a future composite encoder needs alongside
-    // Display's (currently monochrome-only) HIRES pixels: which of the 4
-    // color-subcarrier phase quadrants each HIRES dot's edge falls in. Not
-    // consumed by anything yet - Display still renders HIRES black/white,
-    // since actually turning this into a color needs the NTSC decode
-    // Display doesn't have wired in yet. Sized and indexed exactly like
-    // Display.Data; only meaningful where/when HIRES was actually being
-    // scanned (garbage - not zeroed between frames - everywhere else).
-    // Resolved (AppleIISystemCompositeVideoTests.HiresColorPhaseMatchesAbsoluteSubcarrierPhaseAcrossScanlines):
-    // yes, a fixed column's phase is identical on every line, verified
-    // directly against the composite encoder's free-running master-tick
-    // counter, not just assumed from the once-per-line "long cycle"
-    // stretch's intended purpose - it keeps every line at exactly 912
-    // master ticks (a multiple of 4), which is what makes this exact
-    // rather than approximate.
-    public readonly byte[] HiresColorPhase;
 
     // The real digital PICTURE/VIDEO DATA line for the 14 master ticks of
     // whichever cell TickVideo() just scanned - one entry per master tick,
@@ -169,18 +117,9 @@ public sealed partial class AppleIISystem
         if (!HpeBar)
         {
             // HPE' asserted: a new scanline is starting.
-            if (Vbl)
+            if (Vbl && !_wasInVblAtLastScanline)
             {
-                if (!_wasInVblAtLastScanline)
-                {
-                    _textFlashFrameCounter++;
-                }
-
-                _currentRasterLine = -1;
-            }
-            else
-            {
-                _currentRasterLine++;
+                _textFlashFrameCounter++;
             }
 
             _wasInVblAtLastScanline = Vbl;
@@ -303,8 +242,6 @@ public sealed partial class AppleIISystem
         _textVideoShiftRegister.ShLd = false;
         PulseShiftRegister();
 
-        var baseX = BaseX;
-
         for (var dot = 0; dot < 7; dot++)
         {
             if (dot > 0)
@@ -319,7 +256,6 @@ public sealed partial class AppleIISystem
             _textVideoXor.B1 = _invertTextLatch.Q1;
 
             var lit = _textVideoXor.Y1;
-            WritePixel(baseX + dot, _currentRasterLine, lit);
             _videoDataBits[dot * 2] = lit;
             _videoDataBits[dot * 2 + 1] = lit;
         }
@@ -329,18 +265,10 @@ public sealed partial class AppleIISystem
     // half of an 8-scanline text row (VC low), the high nibble the lower
     // half (VC high) - the same nibble for all four scanlines of that half,
     // which is what makes it look like a solid color block instead of a
-    // dot pattern. See LoresPalette for how the nibble becomes a color.
+    // dot pattern.
     private void DrawLoresByte(byte screenByte)
     {
         var nibble = VC ? screenByte >> 4 : screenByte & 0xF;
-        var color = LoresPalette[nibble];
-
-        var baseX = BaseX;
-
-        for (var dot = 0; dot < 7; dot++)
-        {
-            WritePixel(baseX + dot, _currentRasterLine, color);
-        }
 
         // LORES's real VIDEO DATA line isn't "direct color" - like HIRES,
         // it's a genuine bit stream, just a periodic one: Sather p.8-23
@@ -367,9 +295,7 @@ public sealed partial class AppleIISystem
         // worked example (nibble 1001 on an even cycle: "10011001100110",
         // beginning at Q0; on an odd cycle: "01100110011001", beginning at
         // Q2) - both cases rotate Q0->Q1->Q2->Q3->Q0..., only the starting
-        // bit differs. H0 is the same even/odd-address signal DrawHiresByte's
-        // column-parity phase already keys off of, just read here before
-        // BaseX folds it into an absolute pixel position.
+        // bit differs. H0 is the even/odd-address signal.
         var startBit = H0 ? 2 : 0;
 
         for (var tick = 0; tick < 14; tick++)
@@ -381,7 +307,8 @@ public sealed partial class AppleIISystem
 
     // HIRES dot pattern (Sather p.8-8): the low seven bits control seven
     // dot positions, shifted out bit 0 first. Bit 7 (DL7) doesn't affect
-    // which dots are lit - see HiresColorPhase for what it does affect.
+    // which dots are lit (on real hardware it delays the whole dot stream
+    // by half a dot, which isn't modelled).
     private void DrawHiresByte(byte screenByte)
     {
         _hiresVideoShiftRegister.H = (screenByte & 0x01) != 0;
@@ -395,9 +322,6 @@ public sealed partial class AppleIISystem
         _hiresVideoShiftRegister.ShLd = false;
         PulseHiresShiftRegister();
 
-        var dl7 = (screenByte & 0x80) != 0;
-        var baseX = BaseX;
-
         for (var dot = 0; dot < 7; dot++)
         {
             if (dot > 0)
@@ -406,50 +330,9 @@ public sealed partial class AppleIISystem
                 PulseHiresShiftRegister();
             }
 
-            var x = baseX + dot;
             var lit = _hiresVideoShiftRegister.Qh;
-            WritePixel(x, _currentRasterLine, lit);
             _videoDataBits[dot * 2] = lit;
             _videoDataBits[dot * 2 + 1] = lit;
-
-            // Color-subcarrier phase quadrant for this dot, 0-3 meaning
-            // 0/90/180/270 degrees relative to the color burst reference.
-            // The dot clock is exactly 2x the subcarrier (Sather ch. 3: 14M
-            // = 4x subcarrier, 7M/dot clock = 14M/2), so a dot is always
-            // exactly half a subcarrier cycle (180 degrees) - phase flips
-            // every dot purely from column parity. Sather's Figure 8.3
-            // shows DL7 as a mux select ("NOT LORES.GRAPHICS.DL7") that
-            // moves the shift register's clock edge to the other of the
-            // dot's two master-clock ticks - a further 90 degrees. This
-            // matches "Apple II graphics"'s stated rule that only even
-            // columns can be purple/blue and only odd columns green/orange:
-            // column parity picks the pair, DL7 picks which member of it.
-            var columnParity = x & 1;
-            WriteHiresColorPhase(x, _currentRasterLine, (byte)((columnParity << 1) | (dl7 ? 1 : 0)));
-        }
-    }
-
-    private void WriteHiresColorPhase(int x, int y, byte phase)
-    {
-        if ((uint)x >= Display.Width || (uint)y >= Display.Height)
-        {
-            return;
-        }
-
-        HiresColorPhase[y * (int)Display.Width + x] = phase;
-    }
-
-    // The horizontal pixel position of the current character/block/byte
-    // cell - shared by TEXT, LORES, and HIRES, all of which advance one
-    // 7-dot cell per video cycle.
-    private int BaseX
-    {
-        get
-        {
-            var rawH =
-                (H0 ? 1 : 0) | (H1 ? 2 : 0) | (H2 ? 4 : 0) |
-                (H3 ? 8 : 0) | (H4 ? 16 : 0) | (H5 ? 32 : 0);
-            return (rawH - 24) * 7;
         }
     }
 
@@ -463,21 +346,5 @@ public sealed partial class AppleIISystem
     {
         _hiresVideoShiftRegister.Clk = false;
         _hiresVideoShiftRegister.Clk = true;
-    }
-
-    private void WritePixel(int x, int y, bool lit)
-    {
-        var value = lit ? (byte)0xFF : (byte)0x00;
-        WritePixel(x, y, new RgbaByte(value, value, value, 0xFF));
-    }
-
-    private void WritePixel(int x, int y, RgbaByte color)
-    {
-        if ((uint)x >= Display.Width || (uint)y >= Display.Height)
-        {
-            return;
-        }
-
-        Display.Data[y * (int)Display.Width + x] = color;
     }
 }

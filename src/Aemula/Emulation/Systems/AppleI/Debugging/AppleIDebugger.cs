@@ -6,10 +6,7 @@ namespace Aemula.Emulation.Systems.AppleI.Debugging;
 
 // The CPU/memory views, plus the composite video picture through
 // TelevisionWindow now that AppleISystem drives Television for real (see
-// AppleISystem.CompositeVideo.cs). No ScreenDisplayWindow - unlike Apple II,
-// there's no DisplayBuffer here (see AppleISystem.Video.cs's remarks on the
-// read-side simplification); the composite picture is the only view. No
-// LogicAnalyzerWindow yet either.
+// AppleISystem.CompositeVideo.cs). No LogicAnalyzerWindow yet.
 public sealed class AppleIDebugger : Debugger
 {
     private readonly AppleISystem _appleI;

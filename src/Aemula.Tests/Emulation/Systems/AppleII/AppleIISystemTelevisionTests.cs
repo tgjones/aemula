@@ -71,8 +71,7 @@ public class AppleIISystemTelevisionTests
     // colors 180 degrees out of phase in adjacent video cycles" - i.e.
     // swapping which pattern goes at even vs. odd addresses produces the
     // complementary color. Independently cross-checked against this
-    // codebase's own DrawHiresByte/HiresColorPhaseFollowsColumnParityAndDl7
-    // (AppleIISystemVideoModesTests): $2A's lit dots (bits 1,3,5) fall on
+    // codebase's own DrawHiresByte: $2A's lit dots (bits 1,3,5) fall on
     // odd screen columns when $2A sits at an even address (baseX even + odd
     // dot offset = odd column - the green/orange pair), but on *even*
     // columns when $2A sits at an odd address instead (baseX odd + odd dot

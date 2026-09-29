@@ -36,12 +36,12 @@ public class AppleIISystemTests
     }
 
     [Test]
-    public async Task BootBannerRendersLitPixels()
+    public async Task BootBannerPutsLitDotsOnTheVideoDataLine()
     {
         // The Autostart ROM prints an "APPLE ][" banner and BASIC prompt
         // without any input - after enough emulated time to both run that
         // code and scan a few frames of video, the text-mode pipeline
-        // should have written some lit pixels into Display.
+        // should be putting lit dots on the video data line.
         var system = new AppleIISystem();
 
         for (var i = 0; i < 2_000_000; i++)
@@ -49,17 +49,9 @@ public class AppleIISystemTests
             system.Tick();
         }
 
-        var sawLitPixel = false;
-        foreach (var pixel in system.Display.Data)
-        {
-            if (pixel.R != 0)
-            {
-                sawLitPixel = true;
-                break;
-            }
-        }
+        var frame = AppleIIVideoFrame.Capture(system);
 
-        await Assert.That(sawLitPixel).IsTrue();
+        await Assert.That(frame.AnyLit(0, 191)).IsTrue();
     }
 
     [Test]

@@ -70,16 +70,14 @@ public sealed class DebuggerHost : IDisposable
         }
     }
 
-    public void Toggle()
+    // Layout lives in the per-user preferences directory (Application Support
+    // on macOS, %APPDATA% on Windows, XDG data dir on Linux) rather than the
+    // working directory. Null org: only Windows uses it, and it would double
+    // up the folder name. Null disables persistence if SDL can't resolve it.
+    private static unsafe string? GetIniPath()
     {
-        if (_visible)
-        {
-            Hide();
-        }
-        else
-        {
-            Show();
-        }
+        var prefPath = SDL.GetPrefPathS((byte*)null, "Aemula");
+        return prefPath == null ? null : Path.Combine(prefPath, "imgui.ini");
     }
 
     private unsafe void EnsureInitialized()
@@ -108,7 +106,7 @@ public sealed class DebuggerHost : IDisposable
             throw new InvalidOperationException($"SDL_ClaimWindowForGPUDevice (debugger): {SDL.GetErrorS()}");
         }
 
-        _context = new ImGuiWindowContext(_gpuDevice, window, _mainScale, iniFilename: "imgui.ini");
+        _context = new ImGuiWindowContext(_gpuDevice, window, _mainScale, iniFilename: GetIniPath());
         _context.MakeCurrent();
 
         _windowsHandle = GCHandle.Alloc(_windows);
@@ -220,6 +218,7 @@ public sealed class DebuggerHost : IDisposable
                 Pane.Left => dockIdLeft,
                 Pane.Bottom => dockIdDown,
                 Pane.Right => dockIdRight,
+                Pane.Center => dockSpaceId,
                 _ => null,
             };
             if (dockId != null)

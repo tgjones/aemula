@@ -25,8 +25,6 @@ public sealed partial class SpaceInvadersSystem : EmulatedSystem
 
     public override ulong CyclesPerSecond => 19968000;
 
-    public readonly DisplayBuffer Display;
-
     public Intel8080Chip Cpu => _cpu;
 
     public SpaceInvadersSystem()
@@ -52,8 +50,6 @@ public sealed partial class SpaceInvadersSystem : EmulatedSystem
         _ramAddressMuxBit12 = new Ttl74157Chip();
 
         _videoShiftRegister = new Ttl74166Chip();
-
-        Display = new DisplayBuffer(256, 256);
 
         InitializeConsoleControls();
 

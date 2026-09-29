@@ -18,10 +18,16 @@ public abstract class Disassembler(DebuggerMemoryCallbacks memoryCallbacks)
 
     internal bool Changed;
 
+    // Longest instruction on any supported CPU (Z80 DD CB d op).
+    private const int MaxInstructionSizeInBytes = 4;
+
+    private readonly List<ushort> _invalidated = [];
+
     public void Reset()
     {
         Array.Clear(Cache);
         Array.Clear(ExecutionCounts);
+        _invalidated.Clear();
 
         var startAddresses = new List<ushort>();
         var labels = new Dictionary<ushort, string>();
@@ -101,13 +107,41 @@ public abstract class Disassembler(DebuggerMemoryCallbacks memoryCallbacks)
         DisassembleAddresses([address]);
     }
 
-#pragma warning disable CA1822 // Mark members as static
-#pragma warning disable IDE0060 // Remove unused parameter
+    /// <summary>
+    /// Called when the CPU writes a byte. Drops any cached instruction that
+    /// covers <paramref name="address"/>, since its bytes are no longer what
+    /// was disassembled (code copied into RAM after the disassembler first
+    /// followed a call to it, self-modifying code). The dropped instructions
+    /// are disassembled again by <see cref="ReseedInvalidated"/>, not here,
+    /// so the write has landed in memory by the time it's read back.
+    /// </summary>
     public void OnDataWritten(ushort address)
-#pragma warning restore IDE0060 // Remove unused parameter
-#pragma warning restore CA1822 // Mark members as static
     {
-        // TODO: Invalidate cache for this address.
+        for (var back = 0; back < MaxInstructionSizeInBytes && back <= address; back++)
+        {
+            var start = address - back;
+            if (Cache[start].Instruction is { } instruction && start + instruction.InstructionSizeInBytes > address)
+            {
+                Cache[start].Instruction = null;
+                _invalidated.Add((ushort)start);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Disassembles again, from what's in memory now, the instructions that
+    /// <see cref="OnDataWritten"/> dropped.
+    /// </summary>
+    public void ReseedInvalidated()
+    {
+        if (_invalidated.Count == 0)
+        {
+            return;
+        }
+
+        var addresses = _invalidated.ToArray();
+        _invalidated.Clear();
+        DisassembleAddresses([.. addresses]);
     }
 }
 

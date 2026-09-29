@@ -6,4 +6,5 @@ public enum Pane
     Left,
     Bottom,
     Right,
+    Center,
 }

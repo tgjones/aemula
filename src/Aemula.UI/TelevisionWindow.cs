@@ -20,13 +20,6 @@ namespace Aemula.UI;
 // systems that consume it) - this window only ever reads Television's own
 // public properties, once per UI frame, and has no idea what's feeding it.
 //
-// Same overall GPU-texture-upload *shape* as ScreenDisplayWindow (allocate
-// a transfer buffer + texture, map/upload/copy each frame, draw via
-// ImGui.Image, release on Dispose), but a deliberately independent
-// implementation - no shared base class or composition with it.
-// ScreenDisplayWindow is slated for removal once this class replaces it, so
-// tying the two together now would just create a removal headache later for
-// no benefit today.
 public sealed class TelevisionWindow : DebuggerWindow
 {
     // Saleae-style translucent region colors - deliberately distinct hues
@@ -128,10 +121,11 @@ public sealed class TelevisionWindow : DebuggerWindow
 
     public override string DisplayName => "Television";
 
-    // Takes the whole Television instance, not just its DisplayBuffer
-    // (unlike ScreenDisplayWindow) - the dot-position/region overlays need
-    // CurrentColumn/CurrentRow/IsActiveVideo from the live decoder, not
-    // just the pixels it already produced from them.
+    public override Pane PreferredPane => Pane.Center;
+
+    // Takes the whole Television instance, not just its pixels - the
+    // dot-position/region overlays need CurrentColumn/CurrentRow/
+    // IsActiveVideo from the live decoder.
     public TelevisionWindow(Television television)
     {
         _television = television;

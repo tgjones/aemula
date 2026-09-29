@@ -164,12 +164,19 @@ public abstract class Debugger
 
         if (_cpuDebugger.PollCycleAdvanced())
         {
+            // A cycle after the write was reported, so it has landed in memory.
+            Disassembler.ReseedInvalidated();
             OnCpuCycle();
         }
 
         if (_cpuDebugger.PollFetch(out var address))
         {
             OnAddressExecuting(address);
+        }
+
+        if (_cpuDebugger.PollWrite(out var writeAddress))
+        {
+            Disassembler.OnDataWritten(writeAddress);
         }
     }
 

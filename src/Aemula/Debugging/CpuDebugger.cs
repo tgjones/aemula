@@ -24,5 +24,16 @@ public abstract class CpuDebugger
     /// </summary>
     public abstract bool PollFetch(out ushort address);
 
+    /// <summary>
+    /// True on the tick where the CPU starts writing a byte to memory, with
+    /// the address being written to. Reports each write cycle once, even when
+    /// consecutive cycles write (e.g. pushes), and ignores I/O writes.
+    /// </summary>
+    public virtual bool PollWrite(out ushort address)
+    {
+        address = 0;
+        return false;
+    }
+
     public abstract void RegisterStepModes(Debugger debugger);
 }

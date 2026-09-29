@@ -5,14 +5,7 @@ namespace Aemula.Emulation.Output;
 
 // Television's own per-sample output buffer - one Sample (color plus
 // diagnostic context, see that struct) per raster position, resized in
-// place (see Resize) whenever Television's detected timing changes, the
-// same "resize on detected-timing-change" behavior the older, more generic
-// Aemula.DisplayBuffer already has elsewhere in this codebase. Deliberately
-// a separate type rather than reusing DisplayBuffer here, since this needs
-// to carry per-sample data (Region today, more later - see Sample's own
-// remarks) nothing else
-// in this codebase's DisplayBuffer consumers (ScreenDisplayWindow,
-// Atari2600's VideoOutput, etc.) needs or should have to know about.
+// place (see Resize) whenever Television's detected timing changes.
 public sealed class SampleBuffer
 {
     public uint Width { get; private set; }
@@ -49,9 +42,8 @@ public sealed class SampleBuffer
 
         Data = new Sample[width * height];
 
-        // Matches DisplayBuffer.Resize's own explicit opaque-black fill -
-        // not every position in a freshly (re)sized buffer is guaranteed to
-        // get written before something reads it back (e.g. right after a
+        // Explicit opaque-black fill - not every position in a freshly
+        // (re)sized buffer is guaranteed to get written before something reads it back (e.g. right after a
         // detected-timing change, or before the very first line has
         // decoded), so this needs a sane, deliberate default rather than
         // whatever default(Sample) happens to be (Color fully transparent,

@@ -136,7 +136,7 @@ public class AppleIISystemCompositeVideoTests
     }
 
     // Line/frame length tests against the already-implemented video
-    // scanner, plus the HiresColorPhase phase-lock question, using two
+    // scanner, plus the subcarrier phase-lock question, using two
     // things established above: this composite encoder's free-running
     // _masterTickCounter, and HSyncPulse as an already-verified
     // once-per-line marker.
@@ -214,31 +214,22 @@ public class AppleIISystemCompositeVideoTests
     }
 
     [Test]
-    public async Task HiresColorPhaseMatchesAbsoluteSubcarrierPhaseAcrossScanlines()
+    public async Task FixedColumnLandsOnSameSubcarrierQuadrantOnEveryLine()
     {
-        // Settles the open question flagged on HiresColorPhase
-        // (AppleIISystem.Video.cs): does HiresColorPhase's
-        // column-parity-derived quadrant (fixed for a given column, on
-        // every line, by construction) actually match the true absolute
-        // subcarrier phase -
-        // this phase's free-running _masterTickCounter - consistently line
-        // to line, or does it only hold within one line?
+        // A fixed screen column must land on the same absolute subcarrier
+        // quadrant (this phase's free-running _masterTickCounter) on every
+        // line, or HIRES artifact colors would drift line to line.
         //
-        // It matches, line to line, indefinitely. LineAndFrameLengthMatchDocumentedTickCounts
-        // (this file) establishes every line is exactly 912 master ticks,
-        // which is itself a multiple of 4 (unlike the original, now-
-        // corrected "910 normally" assumption - 910 %4 == 2, which would
-        // have made this drift by half a subcarrier cycle every line).
-        // Because the real per-line total is a multiple of 4, a
-        // fixed column always lands on the identical absolute subcarrier
-        // quadrant on every single line - which is exactly what the
-        // once-per-line "long cycle" stretch exists to guarantee (Sather,
-        // quoted in docs/apple-ii-plan.md: it keeps "the dot clock
-        // phase-locked to the color subcarrier across scanlines"). So
-        // HiresColorPhase's column-parity-only formula isn't an
-        // approximation of the true absolute phase - it *is* the true
-        // absolute phase, verified here directly against the free-running
-        // counter rather than assumed from the formula's own construction.
+        // LineAndFrameLengthMatchDocumentedTickCounts (this file)
+        // establishes every line is exactly 912 master ticks, which is
+        // itself a multiple of 4 (unlike the original, now-corrected "910
+        // normally" assumption - 910 %4 == 2, which would have made this
+        // drift by half a subcarrier cycle every line). Because the real
+        // per-line total is a multiple of 4, a fixed column always lands on
+        // the identical quadrant on every single line - which is exactly
+        // what the once-per-line "long cycle" stretch exists to guarantee
+        // (Sather, quoted in docs/apple-ii-plan.md: it keeps "the dot clock
+        // phase-locked to the color subcarrier across scanlines").
         var system = new AppleIISystem();
 
         var wasPhase0 = system.Phase0;

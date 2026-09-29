@@ -43,12 +43,10 @@ public class SpaceInvadersSystemVideoTests
     }
 
     [Test]
-    public async Task PerPixelScanMatchesTheOldBulkBlitFormulaForAFrozenVram()
+    public async Task ShiftRegisterOutputMatchesFrozenVramPerPixelClock()
     {
         // No CPU involved at all here (see TickPixelClock) - so this poked
-        // VRAM pattern stays frozen for the whole test, the same way the
-        // deleted UpdateDisplay() would have read it in one atomic
-        // end-of-frame pass.
+        // VRAM pattern stays frozen for the whole test.
         var system = new SpaceInvadersSystem();
 
         for (var address = 0x2400; address <= 0x3FFF; address++)
@@ -57,44 +55,30 @@ public class SpaceInvadersSystemVideoTests
         }
 
         // Past cold-start settling, then one full frame from a known-good
-        // alignment - guarantees every pixel has been (re)written from the
-        // frame's steady-state scan by the time this returns.
+        // alignment.
         TickToStartOfLine(system, 2);
+
+        var checkedPixels = 0;
+
         for (var i = 0; i < 320 * 262; i++)
         {
             TickPixelClock(system);
-        }
 
-        for (var v = 0x20; v <= 0xFF; v++)
-        {
-            for (var x = 0; x < 32; x++)
+            var (h, v) = system.GetVideoScannerStateForTests();
+
+            if (system.Hblank || system.Vblank || v < 0x20)
             {
-                var address = 0x2000 | (v << 5) | x;
-                var videoRamValue = (byte)(address * 37);
-
-                byte mask = 1;
-                for (var b = 0; b < 8; b++)
-                {
-                    var expected = (videoRamValue & mask) != 0 ? (byte)0xFF : (byte)0;
-                    var outputAddress = v * 256 + x * 8 + b;
-                    var actual = system.Display.Data[outputAddress];
-
-                    await Assert.That(actual.R).IsEqualTo(expected).Because($"v={v:X2} h={x * 8 + b:X2}");
-                    await Assert.That(actual.A).IsEqualTo((byte)0xFF);
-
-                    mask <<= 1;
-                }
+                continue;
             }
+
+            var address = 0x2000 | (v << 5) | (h >> 3);
+            var videoRamValue = (byte)(address * 37);
+            var expected = (videoRamValue & (1 << (h & 7))) != 0;
+
+            await Assert.That(system.GetShiftRegisterQhForTests()).IsEqualTo(expected).Because($"v={v:X2} h={h:X2}");
+            checkedPixels++;
         }
 
-        // Rows below V=0x20 are $2000-$23FF work RAM, not VRAM - never
-        // scanned, and so must stay untouched (DisplayBuffer's own opaque-black
-        // construction default - see DisplayBuffer.Resize) even after the
-        // cold-start's one-time transient pass through V<0x20.
-        for (var address = 0; address < 32 * 256; address++)
-        {
-            await Assert.That(system.Display.Data[address].R).IsEqualTo((byte)0);
-            await Assert.That(system.Display.Data[address].A).IsEqualTo((byte)0xFF);
-        }
+        await Assert.That(checkedPixels).IsGreaterThan(200 * 256);
     }
 }

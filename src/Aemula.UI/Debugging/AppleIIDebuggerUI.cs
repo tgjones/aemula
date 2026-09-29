@@ -18,7 +18,6 @@ internal sealed class AppleIIDebuggerUI(AppleIIDebugger debugger) : DebuggerUI(d
 
         result.Add(new BreakpointsWindow(debugger));
         result.Add(new MemoryEditor(1, address => _appleII.ReadByteDebug((ushort)address), (address, data) => _appleII.WriteByteDebug((ushort)address, data)));
-        result.Add(new ScreenDisplayWindow(_appleII.Display));
         result.Add(new LogicAnalyzerWindow(debugger, _appleII.CreateChannelNodes()));
         result.Add(new TelevisionWindow(_appleII.Television));
     }

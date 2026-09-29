@@ -105,9 +105,6 @@ public sealed partial class AppleIISystem : EmulatedSystem
         _modeSwitchLatch = new Ttl74259Chip();
         _hiresVideoShiftRegister = new Ttl74166Chip();
 
-        Display = new DisplayBuffer(280, 192);
-        HiresColorPhase = new byte[280 * 192];
-
         _keyboardEncoder = new Ay53600Chip();
         _keyboardStrobeLatch = new Ttl7474Chip();
 

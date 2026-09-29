@@ -162,6 +162,13 @@ public class Mos6502CodeGenerator : IIncrementalGenerator
                     next = jumpTarget = "null";
                     break;
 
+                case "BRK":
+                    // Not treated as falling through: BRK vectors through IRQ (already a
+                    // start address), and running on into the following bytes would turn
+                    // any zero-filled region (00 = BRK) into an endless chain of "code".
+                    next = jumpTarget = "null";
+                    break;
+
                 case "JMP":
                     next = "null";
                     jumpTarget = (instruction.AddressingMode == AddressingMode.Absolute)

@@ -12,6 +12,8 @@ public sealed class Mos6502Debugger : CpuDebugger
     private byte _startTR;
     private byte _lastPolledTR;
     private bool _lastPolledFetching;
+    private bool _lastPolledWriting;
+    private byte _lastPolledWriteTR;
 
     public Mos6502Debugger(Mos6502Chip cpu)
     {
@@ -32,6 +34,22 @@ public sealed class Mos6502Debugger : CpuDebugger
         var fetching = Cpu.Sync && Cpu.FinishedReset;
         var started = fetching && !_lastPolledFetching;
         _lastPolledFetching = fetching;
+
+        address = Cpu.Address;
+        return started;
+    }
+
+    /// <remarks>
+    /// R/W stays low across back-to-back write cycles (pushes), so the timing
+    /// register is part of the edge as well.
+    /// </remarks>
+    public override bool PollWrite(out ushort address)
+    {
+        var writing = !Cpu.RW;
+        var tr = Cpu.TR;
+        var started = writing && !(_lastPolledWriting && tr == _lastPolledWriteTR);
+        _lastPolledWriting = writing;
+        _lastPolledWriteTR = tr;
 
         address = Cpu.Address;
         return started;
