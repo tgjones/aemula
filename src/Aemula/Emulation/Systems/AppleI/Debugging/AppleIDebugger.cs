@@ -13,15 +13,13 @@ namespace Aemula.Emulation.Systems.AppleI.Debugging;
 public sealed class AppleIDebugger : Debugger
 {
     private readonly AppleISystem _appleI;
-    private readonly Mos6502Debugger _mos6502Debugger;
 
     public AppleIDebugger(AppleISystem appleI)
         : base(appleI, CreateMemoryCallbacks(appleI))
     {
         _appleI = appleI;
 
-        _mos6502Debugger = new Mos6502Debugger(appleI.Cpu);
-        _mos6502Debugger.RegisterStepModes(this);
+        AttachCpuDebugger(new Mos6502Debugger(appleI.Cpu));
     }
 
     private static DebuggerMemoryCallbacks CreateMemoryCallbacks(AppleISystem appleI)
@@ -35,15 +33,5 @@ public sealed class AppleIDebugger : Debugger
             MemoryCallbacks,
             new Dictionary<ushort, string>(),
             registerCallbacks: new Mos6502RegisterCallbacks(() => _appleI.Cpu.X, () => _appleI.Cpu.Y));
-    }
-
-    protected override void TickSystem()
-    {
-        base.TickSystem();
-
-        if (_appleI.Cpu.Sync && _appleI.Cpu.FinishedReset)
-        {
-            OnAddressExecuting(_appleI.Cpu.Address);
-        }
     }
 }

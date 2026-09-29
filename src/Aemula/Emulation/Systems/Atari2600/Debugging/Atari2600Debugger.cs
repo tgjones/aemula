@@ -57,15 +57,13 @@ internal sealed class Atari2600Debugger : Debugger
     };
 
     private readonly Atari2600System _system;
-    private readonly Mos6502Debugger _mos6502Debugger;
 
     public Atari2600Debugger(Atari2600System system)
         : base(system, CreateMemoryCallbacks(system))
     {
         _system = system;
 
-        _mos6502Debugger = new Mos6502Debugger(system.Cpu);
-        _mos6502Debugger.RegisterStepModes(this);
+        AttachCpuDebugger(new Mos6502Debugger(system.Cpu));
 
         StepModes.Add(new DebuggerStepMode("Step Color Cycle", () => true));
     }
@@ -83,15 +81,5 @@ internal sealed class Atari2600Debugger : Debugger
             hasNmi: false,
             hasIrq: false,
             new Mos6502RegisterCallbacks(() => _system.Cpu.X, () => _system.Cpu.Y));
-    }
-
-    protected override void TickSystem()
-    {
-        base.TickSystem();
-
-        if (_system.Cpu.Sync)
-        {
-            OnAddressExecuting(_system.Cpu.Address);
-        }
     }
 }

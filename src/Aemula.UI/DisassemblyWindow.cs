@@ -330,17 +330,21 @@ public sealed class DisassemblyWindow(Debugger debugger) : DebuggerWindow
                                     }
                                 }
 
-                                // Zero means "hasn't completed an execution yet" - sparse is
-                                // expected (most of a listing is unexecuted) and left blank
-                                // rather than shown as "0c", which would misleadingly read as
-                                // a measurement rather than an absence of one. Explicit
-                                // TableSetColumnIndex rather than another TableNextColumn
-                                // since the Operand column above is sometimes skipped.
+                                // Total is the measured length of the last completed
+                                // execution, so zero means "hasn't completed one yet" and is
+                                // left blank rather than shown as "0" (which would read as a
+                                // measurement). The currently-executing row additionally
+                                // shows progress through it ("1/5"), even when the total
+                                // isn't known yet. Explicit TableSetColumnIndex rather than
+                                // another TableNextColumn since the Operand column above is
+                                // sometimes skipped.
                                 var lastCycles = debugger.LastExecutionCycles[instruction.AddressNumeric];
-                                if (lastCycles > 0)
+                                var cyclesText = isCurrentPC && debugger.CurrentInstructionCycles > 0
+                                    ? (lastCycles > 0 ? $"{debugger.CurrentInstructionCycles}/{lastCycles}" : $"{debugger.CurrentInstructionCycles}/?")
+                                    : (lastCycles > 0 ? $"{lastCycles}" : null);
+                                if (cyclesText != null)
                                 {
                                     ImGui.TableSetColumnIndex((int)DisassemblyColumn.Annotation);
-                                    var cyclesText = $"{lastCycles}c";
                                     var cyclesTextWidth = ImGui.CalcTextSize(cyclesText).X;
                                     var availableWidth = ImGui.GetContentRegionAvail().X;
                                     ImGui.SetCursorPosX(ImGui.GetCursorPosX() + MathF.Max(0f, availableWidth - cyclesTextWidth));

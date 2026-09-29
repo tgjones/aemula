@@ -21,24 +21,35 @@ public abstract class Debugger
     public bool Stopped;
 
     /// <summary>
-    /// Ticks actually executed since this debugger was created (free-run or
-    /// single-step alike, since both funnel through <see cref="RunForDuration"/>).
-    /// Used to compute <see cref="LastExecutionCycles"/> - a running counter
-    /// rather than a per-instruction stopwatch, since it's cheap to bump once
-    /// per tick and lets any two fetches' cycle gap be measured by subtraction.
+    /// CPU cycles executed since this debugger was created (free-run or
+    /// single-step alike), as reported by the attached <see cref="CpuDebugger"/> - CPU cycles rather
+    /// than system ticks, since a system's master clock runs several ticks per
+    /// CPU cycle. Used to
+    /// compute <see cref="LastExecutionCycles"/> - a running counter rather
+    /// than a per-instruction stopwatch, since it's cheap to bump once per
+    /// cycle and lets any two fetches' gap be measured by subtraction.
     /// </summary>
-    public long TotalTicks { get; private set; }
+    public long CpuCycles { get; private set; }
 
     /// <summary>
-    /// How many ticks the instruction at each address actually took the last
-    /// time it executed - the gap between that fetch and the next one,
+    /// How many CPU cycles the instruction at each address actually took the
+    /// last time it executed - the gap between that fetch and the next one,
     /// measured rather than looked up in a static per-opcode table, so it's
     /// correct for branches, page-crossing penalties, and interrupts for
     /// free. Zero means "hasn't completed an execution yet".
     /// </summary>
     public readonly int[] LastExecutionCycles = new int[0x10000];
 
-    private long _previousExecutionTick;
+    /// <summary>
+    /// How many CPU cycles the currently-executing instruction has run so
+    /// far, counting its opcode fetch as the first - or zero before any
+    /// instruction has been fetched.
+    /// </summary>
+    public int CurrentInstructionCycles => _hasPreviousExecution ? (int)(CpuCycles - _previousExecutionCycle) + 1 : 0;
+
+    private CpuDebugger? _cpuDebugger;
+
+    private long _previousExecutionCycle;
     private ushort _previousExecutionAddress;
     private bool _hasPreviousExecution;
 
@@ -104,7 +115,7 @@ public abstract class Debugger
             var previousPC = LastPC;
 
             TickSystem();
-            TotalTicks++;
+            PollCpu();
 
             Ticked?.Invoke();
 
@@ -133,9 +144,47 @@ public abstract class Debugger
         }
     }
 
+    /// <summary>
+    /// Sets the CPU whose cycles and instruction fetches this debugger
+    /// tracks, and registers its step modes. Call once from the derived
+    /// constructor.
+    /// </summary>
+    protected void AttachCpuDebugger(CpuDebugger cpuDebugger)
+    {
+        _cpuDebugger = cpuDebugger;
+        cpuDebugger.RegisterStepModes(this);
+    }
+
+    private void PollCpu()
+    {
+        if (_cpuDebugger == null)
+        {
+            return;
+        }
+
+        if (_cpuDebugger.PollCycleAdvanced())
+        {
+            OnCpuCycle();
+        }
+
+        if (_cpuDebugger.PollFetch(out var address))
+        {
+            OnAddressExecuting(address);
+        }
+    }
+
     protected virtual void TickSystem()
     {
         System.Tick();
+    }
+
+    /// <summary>
+    /// Called once each time the CPU starts a new cycle, before
+    /// <see cref="OnAddressExecuting"/> for that same tick.
+    /// </summary>
+    protected void OnCpuCycle()
+    {
+        CpuCycles++;
     }
 
     protected void OnAddressExecuting(ushort address)
@@ -146,11 +195,11 @@ public abstract class Debugger
         // to charge it to.
         if (_hasPreviousExecution)
         {
-            LastExecutionCycles[_previousExecutionAddress] = (int)(TotalTicks - _previousExecutionTick);
+            LastExecutionCycles[_previousExecutionAddress] = (int)(CpuCycles - _previousExecutionCycle);
         }
 
         _previousExecutionAddress = address;
-        _previousExecutionTick = TotalTicks;
+        _previousExecutionCycle = CpuCycles;
         _hasPreviousExecution = true;
 
         LastPC = address;

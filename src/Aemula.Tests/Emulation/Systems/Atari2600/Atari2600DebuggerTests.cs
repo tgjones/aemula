@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Threading.Tasks;
 using Aemula.Emulation.Systems;
 using Aemula.Emulation.Systems.Atari2600;
 
@@ -53,6 +54,47 @@ public class Atari2600DebuggerTests
             system.CreateDebugger();
 
             system.InsertMedia("cartridge", MediaImage.FromFile(path));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Test]
+    public async Task ExecutionCyclesAreMeasuredInCpuCyclesNotColorClocks()
+    {
+        var rom = new byte[4096];
+
+        // $1000: LDA #$01 (2 cycles); STA $80 (3); NOP (2); JMP $1000 (3).
+        byte[] program = [0xA9, 0x01, 0x85, 0x80, 0xEA, 0x4C, 0x00, 0x10];
+        program.CopyTo(rom, 0);
+        rom[0xFFC] = 0x00;
+        rom[0xFFD] = 0x10;
+
+        var path = Path.Combine(Path.GetTempPath(), $"aemula-atari2600-test-{Guid.NewGuid():N}.bin");
+        File.WriteAllBytes(path, rom);
+
+        try
+        {
+            var system = new Atari2600System();
+            var debugger = system.CreateDebugger();
+            system.InsertMedia("cartridge", MediaImage.FromFile(path));
+
+            debugger.Stopped = false;
+            debugger.ActiveStepModeIndex = -1;
+            debugger.RunForDuration(TimeSpan.FromMilliseconds(1));
+
+            await Assert.That(debugger.LastExecutionCycles[0x1000]).IsEqualTo(2);
+            await Assert.That(debugger.LastExecutionCycles[0x1002]).IsEqualTo(3);
+            await Assert.That(debugger.LastExecutionCycles[0x1004]).IsEqualTo(2);
+            await Assert.That(debugger.LastExecutionCycles[0x1005]).IsEqualTo(3);
+
+            // Sync is held high across several color clocks per CPU cycle;
+            // each pass round the loop must still count as one execution.
+            var loopCount = debugger.Disassembler.ExecutionCounts[0x1000];
+            await Assert.That(loopCount).IsGreaterThan(1);
+            await Assert.That(debugger.Disassembler.ExecutionCounts[0x1002]).IsBetween(loopCount - 1, loopCount);
         }
         finally
         {

@@ -6,7 +6,7 @@ using Aemula.Emulation.Chips.Mos6502.Debugging;
 
 namespace Aemula.Tests.Debugging;
 
-// Exercises Debugger.TotalTicks / LastExecutionCycles bookkeeping (used by
+// Exercises Debugger.CpuCycles / LastExecutionCycles bookkeeping (used by
 // DisassemblyWindow's cycle-count annotation) through a minimal fake system
 // and debugger - none of this logic is chip-specific, so a real chip would
 // only add noise.
@@ -18,17 +18,17 @@ public class DebuggerTests
         var debugger = CreateDebugger();
 
         debugger.Fetch(0x1000);
-        debugger.RunForDuration(TimeSpan.FromSeconds(0.4)); // 4 ticks at 10 Hz
+        debugger.RunForDuration(TimeSpan.FromSeconds(0.4)); // 4 cycles at 10 Hz
         debugger.Fetch(0x1004);
 
         // The gap since the previous fetch is charged to *that* fetch's
-        // address, not the new one - 0x1000 took 4 ticks to reach 0x1004.
+        // address, not the new one - 0x1000 took 4 cycles to reach 0x1004.
         await Assert.That(debugger.LastExecutionCycles[0x1000]).IsEqualTo(4);
         // 0x1004 hasn't completed an execution yet, so it stays at the
         // "no measurement" zero DisassemblyWindow treats as blank.
         await Assert.That(debugger.LastExecutionCycles[0x1004]).IsEqualTo(0);
 
-        debugger.RunForDuration(TimeSpan.FromSeconds(0.7)); // 7 more ticks
+        debugger.RunForDuration(TimeSpan.FromSeconds(0.7)); // 7 more cycles
         debugger.Fetch(0x1000);
 
         // Revisiting 0x1000 overwrites its old measurement with this run's.
@@ -36,13 +36,27 @@ public class DebuggerTests
     }
 
     [Test]
-    public async Task TotalTicksIncrementsOncePerRunForDurationIteration()
+    public async Task CpuCyclesIncrementsOncePerReportedCycle()
     {
         var debugger = CreateDebugger();
 
         debugger.RunForDuration(TimeSpan.FromSeconds(1)); // 10 ticks at 10 Hz
 
-        await Assert.That(debugger.TotalTicks).IsEqualTo(10);
+        await Assert.That(debugger.CpuCycles).IsEqualTo(10);
+    }
+
+    [Test]
+    public async Task CurrentInstructionCyclesCountsTheFetchAsTheFirstCycle()
+    {
+        var debugger = CreateDebugger();
+
+        await Assert.That(debugger.CurrentInstructionCycles).IsEqualTo(0);
+
+        debugger.Fetch(0x1000);
+        await Assert.That(debugger.CurrentInstructionCycles).IsEqualTo(1);
+
+        debugger.RunForDuration(TimeSpan.FromSeconds(0.2));
+        await Assert.That(debugger.CurrentInstructionCycles).IsEqualTo(3);
     }
 
     [Test]
@@ -140,6 +154,8 @@ public class DebuggerTests
         protected override void TickSystem()
         {
             base.TickSystem();
+
+            OnCpuCycle();
 
             if (ScriptedFetches.Count > 0)
             {

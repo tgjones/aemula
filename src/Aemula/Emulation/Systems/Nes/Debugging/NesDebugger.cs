@@ -19,15 +19,13 @@ public sealed class NesDebugger : Debugger
     };
 
     private readonly NesSystem _nes;
-    private readonly Mos6502Debugger _mos6502Debugger;
 
     public NesDebugger(NesSystem nes)
         : base(nes, CreateMemoryCallbacks(nes))
     {
         _nes = nes;
 
-        _mos6502Debugger = new Mos6502Debugger(nes.Cpu.CpuCore);
-        _mos6502Debugger.RegisterStepModes(this);
+        AttachCpuDebugger(new Mos6502Debugger(nes.Cpu.CpuCore));
 
         StepModes.Add(new DebuggerStepMode("Step PPU Cycle", () => true));
     }
@@ -43,15 +41,5 @@ public sealed class NesDebugger : Debugger
             MemoryCallbacks,
             Equates,
             registerCallbacks: new Mos6502RegisterCallbacks(() => _nes.Cpu.CpuCore.X, () => _nes.Cpu.CpuCore.Y));
-    }
-
-    protected override void TickSystem()
-    {
-        base.TickSystem();
-
-        if (_nes.Cpu.CpuCoreSync && _nes.Cpu.FinishedReset)
-        {
-            OnAddressExecuting(_nes.Cpu.Address);
-        }
     }
 }
