@@ -39,8 +39,14 @@ public static unsafe class Program
     // while a native file dialog still holds a pointer to it.
     private static readonly SDLDialogFileCallback MediaDialogCallbackDelegate = MediaDialogCallback;
 
-    public static void Main(string[] args)
+    public static void Main(string[] rawArgs)
     {
+        // --debugger opens the debugger window alongside the emulation window,
+        // tiled side by side across the screen (30% / 70%); the remaining args stay
+        // positional (system, media file).
+        var openDebugger = rawArgs.Contains("--debugger");
+        var args = rawArgs.Where(arg => arg != "--debugger").ToArray();
+
         // Audio is here for the playback device the emulation window opens per
         // system - without SDLInitFlags.Audio the SDL audio subsystem is not
         // brought up and SDL_OpenAudioDeviceStream fails.
@@ -93,6 +99,39 @@ public static unsafe class Program
         var emulationContext = new ImGuiWindowContext(gpuDevice, emuWindow, mainScale, iniFilename: null);
 
         var debuggerHost = new DebuggerHost(gpuDevice, mainScale);
+
+        // Tiles the emulation window (left 30%) and the debugger window (right
+        // 70%) across the display's usable area (clear of menu bar / dock),
+        // then shows the debugger. Window sizes exclude the title bar, so it is
+        // shaved off the height to keep the windows on screen.
+        void ShowDebuggerTiled()
+        {
+            SDLRect usable = default;
+            var displayId = SDL.GetDisplayForWindow(emuWindow);
+            if (SDL.GetDisplayUsableBounds(displayId == 0 ? SDL.GetPrimaryDisplay() : displayId, ref usable))
+            {
+                int top = 0, left = 0, bottom = 0, right = 0;
+                SDL.GetWindowBordersSize(emuWindow, &top, &left, &bottom, &right);
+
+                var emuWidth = usable.W * 3 / 10;
+                var height = usable.H - top - bottom;
+                SDL.SetWindowSize(emuWindow, emuWidth - left - right, height);
+                SDL.SetWindowPosition(emuWindow, usable.X + left, usable.Y + top);
+                debuggerHost.Show(new SDLRect
+                {
+                    X = usable.X + emuWidth + left,
+                    Y = usable.Y + top,
+                    W = usable.W - emuWidth - left - right,
+                    H = height,
+                });
+            }
+            else
+            {
+                debuggerHost.Show();
+            }
+
+            SDL.RaiseWindow(emuWindow);
+        }
 
         // --- system lifecycle ---
         Rig? rig = null;
@@ -254,6 +293,11 @@ public static unsafe class Program
             }
         }
 
+        if (openDebugger)
+        {
+            ShowDebuggerTiled();
+        }
+
         var stopwatch = Stopwatch.StartNew();
         var lastTime = stopwatch.Elapsed;
 
@@ -356,7 +400,14 @@ public static unsafe class Program
             if (pendingDebuggerToggle)
             {
                 pendingDebuggerToggle = false;
-                debuggerHost.Toggle();
+                if (debuggerHost.Visible)
+                {
+                    debuggerHost.Hide();
+                }
+                else
+                {
+                    ShowDebuggerTiled();
+                }
             }
 
             if (pendingSoftReset)

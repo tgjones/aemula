@@ -47,9 +47,15 @@ public sealed class DebuggerHost : IDisposable
 
     public bool WantCaptureKeyboard => _context?.WantCaptureKeyboard ?? false;
 
-    public void Show()
+    public void Show(SDLRect? bounds = null)
     {
         EnsureInitialized();
+        if (bounds is { } rect)
+        {
+            SDL.SetWindowSize(_context!.Window, rect.W, rect.H);
+            SDL.SetWindowPosition(_context.Window, rect.X, rect.Y);
+        }
+
         _visible = true;
         SDL.ShowWindow(_context!.Window);
         SDL.RaiseWindow(_context.Window);
