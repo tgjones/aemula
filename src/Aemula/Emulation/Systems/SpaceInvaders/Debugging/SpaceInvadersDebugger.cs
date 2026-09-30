@@ -1,4 +1,6 @@
-﻿using Aemula.Debugging;
+﻿using System.Collections.Generic;
+using Aemula.Debugging;
+using Aemula.Debugging.LogicAnalyzer;
 using Aemula.Emulation.Chips.Intel8080.Debugging;
 
 namespace Aemula.Emulation.Systems.SpaceInvaders.Debugging;
@@ -15,6 +17,16 @@ public sealed class SpaceInvadersDebugger : Debugger
         AttachCpuDebugger(new Intel8080Debugger(_system.Cpu));
 
         ActiveStepModeIndex = 0;
+    }
+
+    protected override void AddChannelNodes(List<ChannelNode> nodes)
+    {
+        base.AddChannelNodes(nodes);
+
+        nodes.Add(new ChannelGroup("Composite Video",
+        [
+            Channel.Analog("Composite Video", () => _system.CurrentCompositeVideoSample, SpaceInvadersSystem.SyncLevel, SpaceInvadersSystem.WhiteLevel, ""),
+        ]));
     }
 
     protected override Disassembler CreateDisassembler()

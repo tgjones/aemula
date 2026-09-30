@@ -7,7 +7,7 @@ namespace Aemula.Debugging;
 /// stateful (they edge-detect against the previous call), so
 /// <see cref="Debugger"/> calls each exactly once per system tick.
 /// </summary>
-public abstract class CpuDebugger
+public abstract class CpuDebugger : ChipDebugger
 {
     /// <summary>
     /// True on each tick where the CPU has moved on to a new CPU cycle since

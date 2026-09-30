@@ -1,11 +1,9 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 using Aemula.Debugging;
 using Aemula.Emulation.Chips;
 using Aemula.Emulation.Chips.Mos6502;
 using Aemula.Emulation.Systems.AppleII.Debugging;
-using Aemula.Debugging.LogicAnalyzer;
 
 namespace Aemula.Emulation.Systems.AppleII;
 
@@ -363,39 +361,5 @@ public sealed partial class AppleIISystem : EmulatedSystem
     public override Debugger CreateDebugger()
     {
         return new AppleIIDebugger(this);
-    }
-
-    internal IReadOnlyList<ChannelNode> CreateChannelNodes()
-    {
-        return
-        [
-            Cpu.CreateChannelGroup(),
-            new ChannelGroup("Video Timing",
-            [
-                Channel.Digital("HBL", () => Hbl),
-                Channel.Digital("VBL", () => Vbl),
-                Channel.Digital("Color Burst Gate", () => ColorBurstGate),
-                Channel.Digital("Phase 0", () => Phase0),
-                Channel.Digital("HSync", () => HSyncPulse),
-                Channel.Digital("VSync", () => VSyncPulse),
-                Channel.Digital("Video Data", () => VideoDataBit),
-                Channel.Analog("Composite Video", () => CurrentCompositeVideoSample, 0, WhiteVoltage, "V"),
-            ]),
-            new ChannelGroup("Game I/O",
-            [
-                Channel.Digital("Speaker", () => SpeakerBit),
-                Channel.Digital("AN0", () => Annunciator0),
-                Channel.Digital("AN1", () => Annunciator1),
-                Channel.Digital("AN2", () => Annunciator2),
-                Channel.Digital("AN3", () => Annunciator3),
-                Channel.Digital("PB0", () => _pushButtons[0]),
-                Channel.Digital("PB1", () => _pushButtons[1]),
-                Channel.Digital("PB2", () => _pushButtons[2]),
-                Channel.Digital("PDL0 Timer", () => _paddleTimers[0].Out),
-                Channel.Digital("PDL1 Timer", () => _paddleTimers[1].Out),
-                Channel.Digital("PDL2 Timer", () => _paddleTimers[2].Out),
-                Channel.Digital("PDL3 Timer", () => _paddleTimers[3].Out),
-            ]),
-        ];
     }
 }

@@ -1,4 +1,5 @@
 using Aemula.Debugging;
+using Aemula.Debugging.LogicAnalyzer;
 
 namespace Aemula.Emulation.Chips.Z80.Debugging;
 
@@ -58,6 +59,31 @@ public sealed class Z80Debugger(Z80Chip cpu) : CpuDebugger
     /// instructions count as one step and a halted CPU steps one NOP per
     /// M1. A step requested while already on a boundary must first leave it.
     /// </remarks>
+    public override ChannelGroup CreateChannelGroup()
+    {
+        // Active-low pins are shown as their raw level, like the
+        // datasheet's overbar names.
+        return new ChannelGroup("Z80",
+        [
+            Channel.Bus("Address", 16, () => cpu.Address),
+            Channel.Bus("Data", 8, () => cpu.Data),
+            Channel.Digital("M1", () => cpu.M1),
+            Channel.Digital("MREQ", () => cpu.MReq),
+            Channel.Digital("IORQ", () => cpu.IoRq),
+            Channel.Digital("RD", () => cpu.Rd),
+            Channel.Digital("WR", () => cpu.Wr),
+            Channel.Digital("RFSH", () => cpu.Rfsh),
+            Channel.Digital("HALT", () => cpu.Halt),
+            Channel.Digital("WAIT", () => cpu.Wait),
+            Channel.Digital("INT", () => cpu.Int),
+            Channel.Digital("NMI", () => cpu.Nmi),
+            Channel.Digital("BUSRQ", () => cpu.BusRq),
+            Channel.Digital("BUSAK", () => cpu.BusAk),
+            Channel.Digital("RESET", () => cpu.Reset),
+            Channel.Digital("CLK", () => cpu.Clk),
+        ]);
+    }
+
     public override void RegisterStepModes(Debugger debugger)
     {
         debugger.StepModes.Add(

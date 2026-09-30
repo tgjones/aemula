@@ -1,4 +1,5 @@
 ﻿using Aemula.Debugging;
+using Aemula.Debugging.LogicAnalyzer;
 
 namespace Aemula.Emulation.Chips.Mos6502.Debugging;
 
@@ -53,6 +54,21 @@ public sealed class Mos6502Debugger : CpuDebugger
 
         address = Cpu.Address;
         return started;
+    }
+
+    public override ChannelGroup CreateChannelGroup()
+    {
+        return new ChannelGroup("MOS6502",
+        [
+            Channel.Bus("Address", 16, () => Cpu.Address),
+            Channel.Bus("Data", 8, () => Cpu.Data),
+            Channel.Digital("R/W", () => Cpu.RW),
+            Channel.Digital("SYNC", () => Cpu.Sync),
+            Channel.Digital("RDY", () => Cpu.Rdy),
+            Channel.Digital("IRQ", () => Cpu.Irq),
+            Channel.Digital("NMI", () => Cpu.Nmi),
+            Channel.Digital("PHI2", () => Cpu.Phi2),
+        ]);
     }
 
     public override void RegisterStepModes(Debugger debugger)

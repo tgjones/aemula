@@ -52,6 +52,10 @@ public sealed partial class AppleIISystem
     // on-time at position 0 (t = 1.1 * 100 * 0.022uF ~= 2.4us ~= 34 ticks).
     private const uint PaddleOneShotFloorTicks = 34;
 
+    internal bool PushButton(int index) => _pushButtons[index];
+
+    internal bool PaddleTimerOut(int index) => _paddleTimers[index].Out;
+
     // Q of the speaker flip-flop, flipped on every $C03X access. The audio
     // path takes this straight from ToggleSpeaker (Q -> Speaker.Level, which
     // band-limits each edge - see AppleIISystem.Audio.cs); this property is

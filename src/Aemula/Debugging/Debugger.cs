@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using Aemula.Debugging.LogicAnalyzer;
 
 namespace Aemula.Debugging;
 
@@ -93,6 +94,29 @@ public abstract class Debugger
     }
 
     protected abstract Disassembler CreateDisassembler();
+
+    /// <summary>
+    /// The logic analyzer's channel tree for this system.
+    /// </summary>
+    public IReadOnlyList<ChannelNode> CreateChannelNodes()
+    {
+        var nodes = new List<ChannelNode>();
+        AddChannelNodes(nodes);
+        return nodes;
+    }
+
+    /// <summary>
+    /// Adds the attached CPU's channels. Derived debuggers call the base
+    /// first, then add the groups for their system's other chips and
+    /// signals.
+    /// </summary>
+    protected virtual void AddChannelNodes(List<ChannelNode> nodes)
+    {
+        if (_cpuDebugger != null)
+        {
+            nodes.Add(_cpuDebugger.CreateChannelGroup());
+        }
+    }
 
     /// <summary>
     /// Runs until PC reaches <paramref name="address"/>, then stops - a

@@ -1,4 +1,5 @@
 ﻿using Aemula.Debugging;
+using Aemula.Debugging.LogicAnalyzer;
 
 namespace Aemula.Emulation.Chips.Intel8080.Debugging;
 
@@ -59,6 +60,27 @@ public sealed class Intel8080Debugger : CpuDebugger
 
         address = _cpu.Address;
         return started;
+    }
+
+    public override ChannelGroup CreateChannelGroup()
+    {
+        return new ChannelGroup("Intel 8080",
+        [
+            Channel.Bus("Address", 16, () => _cpu.Address),
+            Channel.Bus("Data", 8, () => _cpu.Data),
+            Channel.Digital("SYNC", () => _cpu.Sync),
+            Channel.Digital("DBIN", () => _cpu.DBIn),
+            Channel.Digital("WR", () => _cpu.Wr),
+            Channel.Digital("WAIT", () => _cpu.Wait),
+            Channel.Digital("INTE", () => _cpu.IntE),
+            Channel.Digital("HLDA", () => _cpu.HldA),
+            Channel.Digital("RESET", () => _cpu.Reset),
+            Channel.Digital("HOLD", () => _cpu.Hold),
+            Channel.Digital("INT", () => _cpu.Int),
+            Channel.Digital("READY", () => _cpu.Ready),
+            Channel.Digital("PHI1", () => _cpu.Phi1),
+            Channel.Digital("PHI2", () => _cpu.Phi2),
+        ]);
     }
 
     public override void RegisterStepModes(Debugger debugger)

@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using Aemula.Debugging.LogicAnalyzer;
 
 namespace Aemula.Emulation.Chips.Mos6502;
 
@@ -351,25 +350,6 @@ public partial class Mos6502Chip
         Irq = 1,
         Nmi = 2,
         Reset = 4,
-    }
-
-    /// <summary>
-    /// Owned here (rather than by each system that embeds a 6502) so every
-    /// system gets the same channel list for free.
-    /// </summary>
-    internal ChannelGroup CreateChannelGroup()
-    {
-        return new ChannelGroup("MOS6502",
-        [
-            Channel.Bus("Address", 16, () => Address),
-            Channel.Bus("Data", 8, () => Data),
-            Channel.Digital("R/W", () => RW),
-            Channel.Digital("SYNC", () => Sync),
-            Channel.Digital("RDY", () => Rdy),
-            Channel.Digital("IRQ", () => Irq),
-            Channel.Digital("NMI", () => Nmi),
-            Channel.Digital("PHI2", () => Phi2),
-        ]);
     }
 }
 

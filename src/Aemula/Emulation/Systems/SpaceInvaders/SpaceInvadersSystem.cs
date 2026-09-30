@@ -1,12 +1,10 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.IO;
 using Aemula.Emulation.Chips;
 using Aemula.Emulation.Chips.Intel8080;
 using Aemula.Debugging;
 using Aemula.Emulation.Chips.MB14241;
 using Aemula.Emulation.Systems.SpaceInvaders.Debugging;
-using Aemula.Debugging.LogicAnalyzer;
 
 namespace Aemula.Emulation.Systems.SpaceInvaders;
 
@@ -380,17 +378,5 @@ public sealed partial class SpaceInvadersSystem : EmulatedSystem
         return new SpaceInvadersDebugger(
             this,
             new DebuggerMemoryCallbacks(ReadByteDebug, WriteByteDebug));
-    }
-
-    internal IReadOnlyList<ChannelNode> CreateChannelNodes()
-    {
-        return
-        [
-            _cpu.CreateChannelGroup(),
-            new ChannelGroup("Composite Video",
-            [
-                Channel.Analog("Composite Video", () => CurrentCompositeVideoSample, SyncLevel, WhiteLevel, ""),
-            ]),
-        ];
     }
 }

@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using static Aemula.BitUtility;
 using static Aemula.Emulation.Chips.Tia.TiaUtility;
-using Aemula.Debugging.LogicAnalyzer;
 
 namespace Aemula.Emulation.Chips.Tia;
 
@@ -1343,35 +1342,4 @@ public sealed class TiaChip
     /// </summary>
     private static byte PackData67(bool d7, bool d6) =>
         (byte)((d7 ? 0b10 : 0) | (d6 ? 0b01 : 0));
-
-    /// <summary>
-    /// Owned here (rather than by the system that embeds a TIA) so every
-    /// system gets the same channel list for free.
-    /// </summary>
-    internal ChannelGroup CreateChannelGroup()
-    {
-        return new ChannelGroup("TIA",
-        [
-            Channel.Bus("Address", 6, () => Address),
-            Channel.Bus("Data0-5", 6, () => Data05),
-            Channel.Bus("Data6-7", 2, () => Data67),
-            Channel.Digital("R/W", () => RW),
-            Channel.Digital("RDY", () => Rdy),
-            Channel.Digital("SYNC", () => Sync),
-            Channel.Digital("BLK", () => Blk),
-            Channel.Bus("LUM", 3, () => Lum),
-            Channel.Bus("COL", 4, () => Col),
-            Channel.Digital("DEL", () => Del),
-            Channel.Digital("AUD0", () => Aud0),
-            Channel.Digital("AUD1", () => Aud1),
-            Channel.Bus("I", 6, () => I),
-            Channel.Digital("CS0", () => CS0),
-            Channel.Digital("CS1", () => CS1),
-            Channel.Digital("CS2", () => CS2),
-            Channel.Digital("CS3", () => CS3),
-            Channel.Digital("OSC", () => Osc),
-            Channel.Digital("PHI0", () => Phi0),
-            Channel.Digital("PHI2", () => Phi2),
-        ]);
-    }
 }

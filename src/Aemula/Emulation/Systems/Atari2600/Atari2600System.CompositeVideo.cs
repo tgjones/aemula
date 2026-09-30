@@ -35,9 +35,9 @@ public sealed partial class Atari2600System
     // reference white from any of them. White is 224 rather than full-scale
     // 255 so bright saturated hues can swing above 100 IRE once chroma
     // rides on luma without the comb filter clipping it flat.
-    private const byte SyncLevel = 0;
+    internal const byte SyncLevel = 0;
     private const byte BlankingLevel = 64;
-    private const byte WhiteLevel = 224;
+    internal const byte WhiteLevel = 224;
 
     // TIA's three LUM lines are a binary code that a passive resistor ladder
     // on the board turns back into one analog luma level (LUM0/1/2 pads ->

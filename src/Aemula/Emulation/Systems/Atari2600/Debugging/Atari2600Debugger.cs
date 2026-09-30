@@ -1,6 +1,9 @@
 ﻿using System.Collections.Generic;
 using Aemula.Debugging;
+using Aemula.Debugging.LogicAnalyzer;
+using Aemula.Emulation.Chips.Mos6532.Debugging;
 using Aemula.Emulation.Chips.Mos6502.Debugging;
+using Aemula.Emulation.Chips.Tia.Debugging;
 
 namespace Aemula.Emulation.Systems.Atari2600.Debugging;
 
@@ -57,6 +60,8 @@ internal sealed class Atari2600Debugger : Debugger
     };
 
     private readonly Atari2600System _system;
+    private readonly TiaDebugger _tiaDebugger;
+    private readonly Mos6532Debugger _riotDebugger;
 
     public Atari2600Debugger(Atari2600System system)
         : base(system, CreateMemoryCallbacks(system))
@@ -65,12 +70,27 @@ internal sealed class Atari2600Debugger : Debugger
 
         AttachCpuDebugger(new Mos6502Debugger(system.Cpu));
 
+        _tiaDebugger = new TiaDebugger(system.Tia);
+        _riotDebugger = new Mos6532Debugger(system.Riot);
+
         StepModes.Add(new DebuggerStepMode("Step Color Cycle", () => true));
     }
 
     private static DebuggerMemoryCallbacks CreateMemoryCallbacks(Atari2600System system)
     {
         return new DebuggerMemoryCallbacks(system.ReadByteDebug, system.WriteByteDebug);
+    }
+
+    protected override void AddChannelNodes(List<ChannelNode> nodes)
+    {
+        base.AddChannelNodes(nodes);
+
+        nodes.Add(_tiaDebugger.CreateChannelGroup());
+        nodes.Add(_riotDebugger.CreateChannelGroup());
+        nodes.Add(new ChannelGroup("Composite Video",
+        [
+            Channel.Analog("Composite Video", () => _system.CurrentCompositeVideoSample, Atari2600System.SyncLevel, Atari2600System.WhiteLevel, ""),
+        ]));
     }
 
     protected override Disassembler CreateDisassembler()

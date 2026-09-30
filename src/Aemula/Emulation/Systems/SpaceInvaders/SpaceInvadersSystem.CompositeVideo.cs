@@ -61,9 +61,9 @@ public sealed partial class SpaceInvadersSystem
     // 64), not the full-scale 255: the signal is 1-bit, so white still
     // decodes to pure white regardless, but keeping every producer on one
     // scale also keeps the Channel.Analog scope range honest.
-    private const byte SyncLevel = 0;
+    internal const byte SyncLevel = 0;
     private const byte BlankingLevel = 64;
-    private const byte WhiteLevel = 224;
+    internal const byte WhiteLevel = 224;
 
     // Narrow HSYNC window within HBLANK (H=192..255): real NTSC spends
     // ~1.5us/4.7us/4.7us of its 10.9us blanking interval on front porch/

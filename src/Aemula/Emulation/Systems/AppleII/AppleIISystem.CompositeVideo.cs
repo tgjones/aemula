@@ -24,7 +24,7 @@ public sealed partial class AppleIISystem
     private const double WSync = GSync / GSum;
 
     private const double BlackVoltage = 0.5;
-    private const double WhiteVoltage = 2.0;
+    internal const double WhiteVoltage = 2.0;
 
     // The volts->byte map is anchored on Gayler's two measured low
     // landmarks - sync 0V -> byte 0, blanking 0.5V -> byte 64 - i.e.

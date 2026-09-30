@@ -128,8 +128,10 @@ public sealed class LogicAnalyzerWindow : DebuggerWindow
 
     public override Pane PreferredPane => Pane.Bottom;
 
-    public LogicAnalyzerWindow(Debugger debugger, IReadOnlyList<ChannelNode> channels, SampleClock? sampleClock = null)
+    public LogicAnalyzerWindow(Debugger debugger, SampleClock? sampleClock = null)
     {
+        var channels = debugger.CreateChannelNodes();
+
         _debugger = debugger;
         _roots = channels;
         _recorder = new LogicAnalyzerRecorder(channels);

@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using Aemula.Debugging.LogicAnalyzer;
 
 namespace Aemula.Emulation.Chips.Intel8080;
 
@@ -109,6 +108,7 @@ public sealed partial class Intel8080Chip
     /// </summary>
     public bool Phi1
     {
+        internal get => _phi1;
         set
         {
             if (_phi1 == value)
@@ -205,6 +205,7 @@ public sealed partial class Intel8080Chip
     /// </summary>
     public bool Phi2
     {
+        internal get => _phi2;
         set
         {
             if (_phi2 == value)
@@ -2894,30 +2895,5 @@ public sealed partial class Intel8080Chip
     private static int CombineMachineCycleTypeAndState(MachineCycleType machineCycleType, State state)
     {
         return ((byte)machineCycleType << 8) | (byte)state;
-    }
-
-    /// <summary>
-    /// Owned here (rather than by each system that embeds an 8080) so every
-    /// system gets the same channel list for free.
-    /// </summary>
-    internal ChannelGroup CreateChannelGroup()
-    {
-        return new ChannelGroup("Intel 8080",
-        [
-            Channel.Bus("Address", 16, () => Address),
-            Channel.Bus("Data", 8, () => Data),
-            Channel.Digital("SYNC", () => Sync),
-            Channel.Digital("DBIN", () => DBIn),
-            Channel.Digital("WR", () => Wr),
-            Channel.Digital("WAIT", () => Wait),
-            Channel.Digital("INTE", () => IntE),
-            Channel.Digital("HLDA", () => HldA),
-            Channel.Digital("RESET", () => Reset),
-            Channel.Digital("HOLD", () => Hold),
-            Channel.Digital("INT", () => Int),
-            Channel.Digital("READY", () => Ready),
-            Channel.Digital("PHI1", () => _phi1),
-            Channel.Digital("PHI2", () => _phi2),
-        ]);
     }
 }
