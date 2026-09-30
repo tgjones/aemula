@@ -7,6 +7,8 @@ public sealed class Z80Debugger(Z80Chip cpu) : CpuDebugger
     private int _lastPolledCycleState = -1;
     private bool _lastPolledM1 = true;
     private bool _lastPolledWriting;
+    private bool _leftStartBoundary;
+    private int _startCycleKey;
 
     /// <remarks>
     /// One cycle is one T-state. The machine-cycle type is part of the key so
@@ -51,8 +53,31 @@ public sealed class Z80Debugger(Z80Chip cpu) : CpuDebugger
         return started;
     }
 
-    // No step modes for the Z80 yet.
+    /// <remarks>
+    /// An instruction step ends at the next instruction boundary, so prefixed
+    /// instructions count as one step and a halted CPU steps one NOP per
+    /// M1. A step requested while already on a boundary must first leave it.
+    /// </remarks>
     public override void RegisterStepModes(Debugger debugger)
     {
+        debugger.StepModes.Add(
+            new DebuggerStepMode(
+                "Step Instruction",
+                () =>
+                {
+                    if (!cpu.AtInstructionBoundary)
+                    {
+                        _leftStartBoundary = true;
+                        return false;
+                    }
+                    return _leftStartBoundary;
+                },
+                () => _leftStartBoundary = !cpu.AtInstructionBoundary));
+
+        debugger.StepModes.Add(
+            new DebuggerStepMode(
+                "Step CPU Cycle",
+                () => cpu.CombinedCycleKey != _startCycleKey,
+                () => _startCycleKey = cpu.CombinedCycleKey));
     }
 }

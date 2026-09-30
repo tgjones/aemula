@@ -240,6 +240,7 @@ public sealed partial class Z80Chip
     /// </summary>
     public bool Clk
     {
+        internal get => _clk;
         set
         {
             if (_clk == value)
