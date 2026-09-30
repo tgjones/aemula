@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace Aemula.UI.LogicAnalyzer;
+namespace Aemula.Debugging.LogicAnalyzer;
 
 /// <summary>
 /// A named, collapsible grouping of channels/sub-groups in the logic analyzer's

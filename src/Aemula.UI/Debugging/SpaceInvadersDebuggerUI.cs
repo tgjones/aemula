@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using Aemula.Emulation.Systems.SpaceInvaders;
 using Aemula.Emulation.Systems.SpaceInvaders.Debugging;
 using Aemula.UI.Chips.Intel8080;
+using Aemula.Debugging.LogicAnalyzer;
 using Aemula.UI.LogicAnalyzer;
 
 namespace Aemula.UI.Debugging;

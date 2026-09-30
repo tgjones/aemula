@@ -6,7 +6,7 @@ using Aemula.Emulation.Chips.Intel8080;
 using Aemula.Debugging;
 using Aemula.Emulation.Chips.MB14241;
 using Aemula.Emulation.Systems.SpaceInvaders.Debugging;
-using Aemula.UI.LogicAnalyzer;
+using Aemula.Debugging.LogicAnalyzer;
 
 namespace Aemula.Emulation.Systems.SpaceInvaders;
 

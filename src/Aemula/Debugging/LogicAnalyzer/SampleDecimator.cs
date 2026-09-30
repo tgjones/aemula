@@ -1,6 +1,6 @@
 using System;
 
-namespace Aemula.UI.LogicAnalyzer;
+namespace Aemula.Debugging.LogicAnalyzer;
 
 /// <summary>
 /// Reduces a range of a <see cref="LogicAnalyzerRecorder"/> ring buffer down to a

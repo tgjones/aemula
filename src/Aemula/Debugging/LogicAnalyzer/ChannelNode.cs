@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace Aemula.UI.LogicAnalyzer;
+namespace Aemula.Debugging.LogicAnalyzer;
 
 /// <summary>
 /// Base for the logic analyzer's channel tree - either a leaf <see cref="Channel"/>

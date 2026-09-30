@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using Aemula.Emulation.Systems.AppleII;
 using Aemula.Emulation.Systems.AppleII.Debugging;
 using Aemula.UI.Chips.Mos6502;
+using Aemula.Debugging.LogicAnalyzer;
 using Aemula.UI.LogicAnalyzer;
 
 namespace Aemula.UI.Debugging;

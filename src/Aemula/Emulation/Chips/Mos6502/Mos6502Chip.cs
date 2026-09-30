@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-using Aemula.UI.LogicAnalyzer;
+using Aemula.Debugging.LogicAnalyzer;
 
 namespace Aemula.Emulation.Chips.Mos6502;
 

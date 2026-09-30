@@ -4,7 +4,7 @@ using Aemula.Emulation.Chips.Mos6532;
 using Aemula.Emulation.Chips.Tia;
 using Aemula.Emulation.Output;
 using Aemula.Emulation.Systems.Atari2600.Debugging;
-using Aemula.UI.LogicAnalyzer;
+using Aemula.Debugging.LogicAnalyzer;
 using static Aemula.BitUtility;
 
 namespace Aemula.Emulation.Systems.Atari2600;

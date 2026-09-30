@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace Aemula.UI.LogicAnalyzer;
+namespace Aemula.Debugging.LogicAnalyzer;
 
 /// <summary>
 /// Records one fixed-depth ring buffer of samples per channel. <see cref="Sample"/>

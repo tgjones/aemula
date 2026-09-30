@@ -1,6 +1,6 @@
 using System;
 
-namespace Aemula.UI.LogicAnalyzer;
+namespace Aemula.Debugging.LogicAnalyzer;
 
 /// <summary>
 /// One recordable signal. Sampled once per tick as a <see cref="ulong"/> regardless

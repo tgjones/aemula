@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using static Aemula.BitUtility;
 using static Aemula.Emulation.Chips.Tia.TiaUtility;
-using Aemula.UI.LogicAnalyzer;
+using Aemula.Debugging.LogicAnalyzer;
 
 namespace Aemula.Emulation.Chips.Tia;
 

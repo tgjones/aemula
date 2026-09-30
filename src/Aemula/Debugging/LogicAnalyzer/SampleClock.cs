@@ -1,6 +1,6 @@
 using System;
 
-namespace Aemula.UI.LogicAnalyzer;
+namespace Aemula.Debugging.LogicAnalyzer;
 
 /// <summary>
 /// What drives a <see cref="LogicAnalyzerWindow"/>'s <see cref="LogicAnalyzerRecorder.Sample"/>

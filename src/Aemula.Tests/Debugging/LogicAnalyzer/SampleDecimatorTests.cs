@@ -1,8 +1,8 @@
 using System;
 using System.Threading.Tasks;
-using Aemula.UI.LogicAnalyzer;
+using Aemula.Debugging.LogicAnalyzer;
 
-namespace Aemula.Tests.UI.LogicAnalyzer;
+namespace Aemula.Tests.Debugging.LogicAnalyzer;
 
 public class SampleDecimatorTests
 {

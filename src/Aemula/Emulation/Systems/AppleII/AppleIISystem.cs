@@ -5,7 +5,7 @@ using Aemula.Debugging;
 using Aemula.Emulation.Chips;
 using Aemula.Emulation.Chips.Mos6502;
 using Aemula.Emulation.Systems.AppleII.Debugging;
-using Aemula.UI.LogicAnalyzer;
+using Aemula.Debugging.LogicAnalyzer;
 
 namespace Aemula.Emulation.Systems.AppleII;
 

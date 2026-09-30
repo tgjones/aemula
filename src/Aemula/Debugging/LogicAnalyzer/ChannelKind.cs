@@ -1,4 +1,4 @@
-namespace Aemula.UI.LogicAnalyzer;
+namespace Aemula.Debugging.LogicAnalyzer;
 
 public enum ChannelKind
 {

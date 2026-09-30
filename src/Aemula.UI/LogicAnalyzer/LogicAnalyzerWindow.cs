@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Numerics;
 using Aemula.Debugging;
+using Aemula.Debugging.LogicAnalyzer;
 using Hexa.NET.ImGui;
 using Hexa.NET.ImPlot;
 

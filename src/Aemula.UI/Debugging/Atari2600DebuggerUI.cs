@@ -3,6 +3,7 @@ using Aemula.Emulation.Systems.Atari2600;
 using Aemula.Emulation.Systems.Atari2600.Debugging;
 using Aemula.UI.Chips.Mos6502;
 using Aemula.UI.Chips.Tia;
+using Aemula.Debugging.LogicAnalyzer;
 using Aemula.UI.LogicAnalyzer;
 
 namespace Aemula.UI.Debugging;
