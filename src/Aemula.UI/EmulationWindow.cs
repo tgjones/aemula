@@ -75,8 +75,9 @@ public sealed class EmulationWindow : IDisposable
     private float _volume = 1f;
 
     // Perf readout - Program pushes the latest numbers in before each render.
-    private double _perfFps;
     private double _perfMsPerFrame;
+    private double _perfEmulatorMs;
+    private double _perfTicksPerFrame;
     private double _perfActualMHz;
     private double _perfNominalMHz;
 
@@ -199,10 +200,15 @@ public sealed class EmulationWindow : IDisposable
         _ => Key.None,
     };
 
-    public void SetPerf(double fps, double msPerFrame, double actualMHz, double nominalMHz)
+    // True while the debugger has the system stopped; a stalled clock is
+    // expected then, so the readout doesn't flag it.
+    public bool PerfPaused { get; set; }
+
+    public void SetPerf(double msPerFrame, double emulatorMs, double ticksPerFrame, double actualMHz, double nominalMHz)
     {
-        _perfFps = fps;
         _perfMsPerFrame = msPerFrame;
+        _perfEmulatorMs = emulatorMs;
+        _perfTicksPerFrame = ticksPerFrame;
         _perfActualMHz = actualMHz;
         _perfNominalMHz = nominalMHz;
     }
@@ -376,12 +382,12 @@ public sealed class EmulationWindow : IDisposable
         ImGui.EndMainMenuBar();
     }
 
-    // Right-aligned in the menu bar: frames-per-second, per-frame update cost,
-    // and the emulated clock actual-vs-nominal. Program pushes the numbers in
+    // Right-aligned in the menu bar: frame time, time spent in the emulator per
+    // frame, ticks executed per frame, and the emulated clock actual-vs-nominal. Program pushes the numbers in
     // via SetPerf before each render.
     private void DrawPerfReadout()
     {
-        var perfText = $"{_perfFps:F0} FPS  {_perfMsPerFrame:F2} ms  {_perfActualMHz:F2} / {_perfNominalMHz:F2} MHz";
+        var perfText = $"Frame {_perfMsPerFrame:F2} ms  Emu {_perfEmulatorMs:F2} ms  {_perfTicksPerFrame:N0} ticks  {_perfActualMHz:F2} / {_perfNominalMHz:F2} MHz";
         var perfTextSize = ImGui.CalcTextSize(perfText);
         var perfTextX = ImGui.GetWindowWidth() - perfTextSize.X - ImGui.GetStyle().ItemSpacing.X;
         if (perfTextX > ImGui.GetCursorPosX())
@@ -389,9 +395,14 @@ public sealed class EmulationWindow : IDisposable
             ImGui.SetCursorPosX(perfTextX);
         }
 
+        // Stalled by the debugger: the numbers are stale, so dim them.
+        if (PerfPaused)
+        {
+            ImGui.TextDisabled(perfText);
+        }
         // Falling more than 5% behind the nominal clock is a sign we're no
         // longer keeping up with real-time.
-        if (_perfActualMHz < _perfNominalMHz * 0.95)
+        else if (_perfActualMHz < _perfNominalMHz * 0.95)
         {
             ImGui.TextColored(new Vector4(1.0f, 0.4f, 0.4f, 1.0f), perfText);
         }

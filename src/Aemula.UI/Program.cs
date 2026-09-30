@@ -303,10 +303,12 @@ public static unsafe class Program
 
         var perfWindowTime = TimeSpan.Zero;
         var perfWindowUpdateTime = TimeSpan.Zero;
+        var perfWindowEmulatorTime = TimeSpan.Zero;
         var perfWindowFrames = 0;
         var perfWindowCycles = 0UL;
-        var perfFps = 0.0;
         var perfMsPerFrame = 0.0;
+        var perfEmulatorMs = 0.0;
+        var perfTicksPerFrame = 0.0;
         var perfActualMHz = 0.0;
 
         var emulationClearColor = new Vector4(0f, 0f, 0f, 1f);
@@ -479,6 +481,7 @@ public static unsafe class Program
 
             // Single tick driver - the system advances in exactly one place.
             // Neither window advances it itself.
+            var emulatorStart = stopwatch.Elapsed;
             if (debuggerHost.Visible && debugger != null)
             {
                 debugger.RunForDuration(deltaTimeSpan); // honours breakpoints / single-step / Stopped
@@ -487,10 +490,12 @@ public static unsafe class Program
             {
                 rig!.RunForDuration(deltaTimeSpan); // free-run
             }
+            var emulatorDuration = stopwatch.Elapsed - emulatorStart;
 
             var emulatorTime = new EmulatorTime(elapsed, deltaTimeSpan);
 
-            emulationWindow.SetPerf(perfFps, perfMsPerFrame, perfActualMHz, perfNominalMHz);
+            emulationWindow.SetPerf(perfMsPerFrame, perfEmulatorMs, perfTicksPerFrame, perfActualMHz, perfNominalMHz);
+            emulationWindow.PerfPaused = debuggerHost.Visible && debugger is { Stopped: true };
 
             var emuCommandBuffer = SDL.AcquireGPUCommandBuffer(gpuDevice);
             emulationWindow.RenderFrame(emulatorTime, emuCommandBuffer, emulationClearColor);
@@ -511,16 +516,19 @@ public static unsafe class Program
 
             perfWindowTime += realDeltaTimeSpan;
             perfWindowUpdateTime += updateDuration;
+            perfWindowEmulatorTime += emulatorDuration;
             perfWindowFrames++;
             perfWindowCycles += executedCycles;
             if (perfWindowTime >= TimeSpan.FromSeconds(1))
             {
-                perfFps = perfWindowFrames / perfWindowTime.TotalSeconds;
                 perfMsPerFrame = perfWindowUpdateTime.TotalMilliseconds / perfWindowFrames;
+                perfEmulatorMs = perfWindowEmulatorTime.TotalMilliseconds / perfWindowFrames;
+                perfTicksPerFrame = (double)perfWindowCycles / perfWindowFrames;
                 perfActualMHz = perfWindowCycles / perfWindowTime.TotalSeconds / 1_000_000.0;
 
                 perfWindowTime = TimeSpan.Zero;
                 perfWindowUpdateTime = TimeSpan.Zero;
+                perfWindowEmulatorTime = TimeSpan.Zero;
                 perfWindowFrames = 0;
                 perfWindowCycles = 0;
             }
