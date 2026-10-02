@@ -13,7 +13,8 @@ test class.
 
 ## Goal
 
-1. A PAL ZX80: the stock UK board (no D11 strap), 312 lines / 50 Hz.
+1. A PAL ZX80: the stock UK board (no D11 strap), 310 lines / 50 Hz (the original ROM's
+   VSYNC is shorter than the spec's 312-line frame).
 2. A `TelevisionStandard.Pal` decode path in `Television`, sharing everything
    with NTSC that is genuinely the same, so that adding it does not create a
    parallel `Pal*` class family.
@@ -136,20 +137,6 @@ PAL-S (no delay line) is sufficient: a clean digital signal has no static
 phase error for the Hanover-bar averaging to cancel. A line-delay (PAL-D)
 averager is a possible later refinement, not part of this plan.
 
-### 6. Luma filter bypass when the colour killer is engaged
-
-`ChromaDecoder` derives luma with a horizontal 1:2:1 filter over samples n,
-n-2, n-4 — at 4 samples per subcarrier cycle this is a notch at fsc, the
-digital equivalent of a receiver's chroma trap, which keeps the colour
-subcarrier out of the luma path. When no burst is detected the colour killer
-already zeroes chroma, but luma still goes through the notch, softening
-monochrome sources. Bypass it (luma = the raw sample) while the killer is
-engaged. The bypass should be switched by the same `colorBurstDetected` flag
-that drives the killer, so it follows the line-by-line behaviour a set would
-have. Applies to both standards identically since the filter itself is
-standard-independent. Changes NTSC ZX80, Apple I and Apple II text-mode
-output, so check those screenshots/tests (including any golden values).
-
 ### 5. ZX80 side
 
 * `ZX80System` takes its `TelevisionStandard`. `EmulatedSystem` currently
@@ -211,9 +198,6 @@ test: PAL board converges to 310.00 lines/frame (the original ROM's VSYNC
 pulse is ~6 lines against the spec's 8; the 8K ROM is what makes it 312); NTSC board still 262.00; D6
 reads high/low as appropriate. Then look at it in the UI.
 
-**Phase 3b — Chroma trap bypass when colour is killed.** See §6. Independent
-of PAL, but it lands here because it visibly changes both ZX80 variants.
-
 **Phase 4 — PAL chroma.** §4. Needs the test signal generator below. Tests:
 PAL colour bars decode to the right hues and luma order (the same checks as
 `DecodesSmpteColorBarsInExpectedHueAndLumaOrder`); the burst-swing ident
@@ -256,6 +240,5 @@ real work, and demodulator artefacts would need separating from decoder bugs.
 
 * `zx80` is the UK PAL board; `zx80-ntsc` is the US variant.
 * Standard fixed at construction; auto-detection deferred.
-* Luma notch bypassed when no burst (§6). Still to confirm during
-  implementation how real receivers did this, so the behaviour is modelled on
-  evidence rather than assumed.
+* Luma notch left as is when no burst: nothing found showing real sets
+  bypassed their chroma trap when the colour killer engaged.
