@@ -156,6 +156,14 @@ public sealed class NtscYiqDecoder
     public float Luma { get; private set; }
 
     /// <summary>
+    /// The most recently separated chroma (the signal minus its comb-filtered
+    /// luma), on the same black-to-white scale as <see cref="Luma"/> and
+    /// signed around zero. Zero while the color killer is engaged. This is
+    /// the waveform the I/Q demodulator is fed.
+    /// </summary>
+    public float Chroma { get; private set; }
+
+    /// <summary>
     /// The most recently decoded in-phase chroma component, on the same
     /// black-to-white scale as <see cref="Luma"/> (0 = no color).
     /// </summary>
@@ -249,6 +257,8 @@ public sealed class NtscYiqDecoder
         {
             chroma = 0f;
         }
+
+        Chroma = chroma;
 
         // Step 3: I/Q quadrature demodulation. Multiplying chroma by the
         // burst-locked local oscillator's in-phase/quadrature references and

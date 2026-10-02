@@ -27,7 +27,7 @@ public struct Sample
     // raster position, the
     // color-burst PLL's resolved local-oscillator phase at the moment it
     // decoded that byte (see NtscColorBurstPll.CurrentPhaseRadians), and the
-    // Luma/I/Q components NtscYiqDecoder derived from it. None of these feed
+    // Luma/Chroma/I/Q components NtscYiqDecoder derived from it. None of these feed
     // Color/Region themselves (that decode already happened by the time
     // these are stored) - they exist purely so a historical sample's hover
     // tooltip can show *how* Color was arrived at, reading back neighboring
@@ -37,6 +37,7 @@ public struct Sample
     public byte RawSample;
     public float CarrierPhaseRadians;
     public float Luma;
+    public float Chroma;
     public float I;
     public float Q;
 }

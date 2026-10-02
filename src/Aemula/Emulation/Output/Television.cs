@@ -317,7 +317,7 @@ public sealed class Television
             : GrayscaleFromLuma(_yiqDecoder.Luma);
 
         // Region drives the raster-region overlays and the active-video row
-        // detection; RawSample/CarrierPhaseRadians/Luma/I/Q feed only
+        // detection; RawSample/CarrierPhaseRadians/Luma/Chroma/I/Q feed only
         // TelevisionWindow's per-sample hover tooltip (read back out of
         // neighbouring cells as a rolling log of the raw signal). Nothing in
         // the decode pipeline or the plain rendered picture needs any of
@@ -329,6 +329,7 @@ public sealed class Television
             slot.RawSample = sample;
             slot.CarrierPhaseRadians = _colorBurstPll.CurrentPhaseRadians;
             slot.Luma = _yiqDecoder.Luma;
+            slot.Chroma = _yiqDecoder.Chroma;
             slot.I = _yiqDecoder.I;
             slot.Q = _yiqDecoder.Q;
         }
