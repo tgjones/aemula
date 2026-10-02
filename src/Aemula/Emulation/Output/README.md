@@ -9,6 +9,8 @@
   * [Part 3 - Nuances and numbers](https://sagargv.blogspot.com/2011/04/ntsc-demystified-nuances-and-numbers.html)
   * [Part 7 - Color palette demo with simplified progressive and interlace scanning](https://sagargv.blogspot.com/2014/07/ntsc-demystified-color-demo-with.html)
 * [Useful notes on NTSC](https://www.ntsc-tv.com/index.html)
+* PAL: the burst swings +/-45 degrees about -U on alternate lines (that swing is how a receiver finds the V switch), V reverses on alternate lines, and picture-to-sync is 700:300 mV. See `TelevisionStandard` for the constants and `ColorBurstPll` for the ident.
+* [Tynemouth Software: ZX80 USA](http://blog.tynemouthsoftware.co.uk/2022/10/zx80-usa.html) and the [2025/08 archive](http://blog.tynemouthsoftware.co.uk/2025/08/) - why the original ZX80 ROM's PAL frame is 310 lines, not 312
 
 ## Other implementations
 

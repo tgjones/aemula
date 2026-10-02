@@ -607,11 +607,13 @@ was considered as a way to hide the bar and is written up separately in
 `television-overscan-plan.md`. It is no longer needed for that and was not
 done.
 
-**Phase 7 (stretch, explicit follow-up per your steer) — PAL variant**
-Add the 50Hz strapping (no D11, the default BOM) as a build/config option
-on `ZX80System`, and a genuine `TelevisionStandard.Pal` decode path under
-`Emulation/Output/` — real new decoder work, not just a flag flip, since
-`Television` only implements NTSC today.
+**Phase 7 — PAL variant (landed)**
+`zx80` is now the stock UK PAL board (no D11, 310 lines at 50Hz: the original
+ROM's VSYNC pulse is about 6 lines against the spec's 8) and `zx80-ntsc` is the
+US board. `Television` takes a `TelevisionStandard` (timing, levels and chroma
+model) and decodes PAL colour as well as timing; the ZX80 itself is monochrome.
+The ZX80 now ticks at its 6.5MHz oscillator rate, with composite video, the
+cassette deck and the logic analyzer still running per oscillator edge.
 
 **Phase 8 (stretch) — 16K RAM pack**
 Edge-connector RAM expansion (R19 disables the on-board 2114s when an

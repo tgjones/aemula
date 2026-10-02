@@ -844,6 +844,7 @@ public sealed class TelevisionWindow : DebuggerWindow
         ImGui.Separator();
         ImGui.Spacing();
 
+        ImGui.TextWrapped($"Standard: {_television.Standard.Name}");
         ImGui.TextWrapped($"Samples/line: {_television.DetectedSamplesPerLine:0.#}");
         ImGui.TextWrapped($"Lines/frame: {_television.DetectedLinesPerFrame:0.#}");
         ImGui.TextWrapped($"Color burst: {(_television.ColorBurstLocked ? "locked" : "not detected")}");
