@@ -19,81 +19,20 @@ namespace Aemula.Emulation.Output.Composite;
 // three steps below.
 public sealed class ChromaDecoder
 {
-    // The fixed rotation between the color-burst PLL's own phase-zero
-    // reference (which ColorBurstPll locks to wherever the burst
-    // signal's positive peak happens to land) and the NTSC-standard I axis
-    // the YIQ->RGB matrix below assumes - derived from the standard NTSC
-    // Y'UV/Y'IQ axis geometry, not fitted to smpte.ntsc's bar colors:
-    //
-    //   - I is *defined* as the (B'-Y')/(R'-Y') plane's "V" axis
-    //     (=(R'-Y')'s own direction), rotated by exactly 33 degrees - this
-    //     is the actual historical definition (the 0.956/0.621/etc. YIQ->RGB
-    //     coefficients below are *derived from* this 33-degree rotation
-    //     together with the 0.492/0.877 U/V scale factors, not the other
-    //     way around) - see e.g. Poynton, "Digital Video and HDTV", the
-    //     classic Y'UV/Y'IQ vector diagram. ChromaDecoderTests'
-    //     MatchesUvToIqDefinition test reconstructs the standard 0.596/
-    //     -0.274/-0.322/0.211/-0.523/0.312 matrix coefficients from this
-    //     same 33-degree figure, as a check that this really is the
-    //     defining relationship and not just a coincidentally-close number.
-    //   - V sits 90 degrees from U by definition of the (U, V) plane, so I
-    //     sits at 90+33 = 123 degrees from the U axis.
-    //   - the color burst is transmitted in antiphase to U (burst = -U) -
-    //     the standard "burst references the (B'-Y') axis, 180 degrees
-    //     out of phase" fact (also why a vectorscope's burst target sits
-    //     opposite the U axis) - so the angle from burst's own phase to the
-    //     I axis is 123 - 180 = -57 degrees.
-    //
-    // That -57-degree figure is itself a commonly-cited standalone NTSC
-    // fact ("burst leads I by 57 degrees" / "I is 57 degrees behind
-    // burst"), corroborating the geometric derivation above independently.
-    //
-    // The spec figure above is the whole answer - there is deliberately no
-    // empirical "which way round does this implementation need it" fudge on
-    // top of it, and adding one would be a bug, not a calibration.
-    //
-    // An earlier version of this constant added a further 180 degrees,
-    // justified as resolving a supposed lock-branch ambiguity in
-    // ColorBurstPll's phase detector ("a squaring/Costas-style detector
-    // can't tell a lock from a lock 180 degrees away"). That reasoning was
-    // wrong on both counts. ColorBurstPll is not a Costas loop: it
-    // correlates the incoming sample *directly* against its own cos/sin
-    // references and uses the quadrature accumulation alone as its error
-    // term (see that class's Process/FinishBurstWindow) - it never squares
-    // the signal, and never multiplies its in-phase and quadrature arms
-    // together, which is the step that actually creates a Costas loop's
-    // sign ambiguity. With burst A*sin(90n + b) and reference 90n + P, that
-    // loop's error is cos(b - P) and its update is P -= gain*cos(b - P), so
-    // its fixed points are P = b +/- 90 degrees and only P = b - 90 is
-    // *stable* (the other one diverges under the same perturbation). One
-    // stable lock, reached from any starting phase, identical for every
-    // signal - so there is nothing here for a per-source constant to
-    // resolve, and no source-dependent branch for a "tint knob" to chase.
-    //
-    // What the +180 was really compensating for was a defect in the one
-    // reference signal this project had at the time: smpte.ntsc transmits
-    // its burst 180 degrees away from where RS-170A puts it (measured
-    // directly from the asset's raw bytes - see SmpteAsset's own remarks,
-    // which now corrects it at load instead). Two 180-degree errors
-    // cancelling made the SMPTE bars decode correctly while leaving every
-    // spec-conformant source - Atari 2600's TIA in particular, whose burst
-    // and hue 1 are the same delay-line tap - decoding a full half-turn
-    // around the hue circle from its real colors.
-    private const double IAxisFromVAxisDegrees = 33.0;
-    private const double VAxisFromUAxisDegrees = 90.0;
-    private const double BurstFromUAxisDegrees = 180.0;
-    private const double SpecBurstToIAxisDegrees =
-        (VAxisFromUAxisDegrees + IAxisFromVAxisDegrees) - BurstFromUAxisDegrees; // -57
-
-    internal const double BurstToIAxisRotationRadians =
-        SpecBurstToIAxisDegrees * Math.PI / 180.0; // -57 degrees
+    // The NTSC derivation of this rotation lives with the standard's data (see
+    // TelevisionStandard); this alias is what the tests derive their phases from.
+    internal static readonly double BurstToIAxisRotationRadians =
+        TelevisionStandard.Ntsc.BurstToFirstAxisRadians;
 
     // Step 4's R/G/B coefficients (see Process), laid out as one lane per
     // output channel (the unused 4th lane keeps these Vector128<float>-width
     // for the FusedMultiplyAdd below - see Process for why 4 lanes are always
-    // available regardless of host SIMD width).
-    private static readonly Vector128<float> RgbCoeffI = Vector128.Create(0.956f, -0.272f, -1.106f, 0.0f);
-    private static readonly Vector128<float> RgbCoeffQ = Vector128.Create(0.621f, -0.647f, 1.703f, 0.0f);
+    // available regardless of host SIMD width). Rows A and B are the standard's
+    // first and second demodulated component (I/Q for NTSC, U/V for PAL).
+    private readonly Vector128<float> _rgbCoeffA;
+    private readonly Vector128<float> _rgbCoeffB;
+    private readonly float _baseAngleOffset;
+    private readonly float _secondAxisPolarity;
 
     // The decode gain must not depend on how bright the current scene
     // happens to be, so reference white is reconstructed from the sync tip and
@@ -106,6 +45,13 @@ public sealed class ChromaDecoder
     public ChromaDecoder(TelevisionStandard? standard = null)
     {
         _standard = standard ?? TelevisionStandard.Ntsc;
+
+        var a = _standard.RgbFromFirstAxis;
+        var b = _standard.RgbFromSecondAxis;
+        _rgbCoeffA = Vector128.Create(a.R, a.G, a.B, 0f);
+        _rgbCoeffB = Vector128.Create(b.R, b.G, b.B, 0f);
+        _baseAngleOffset = (float)_standard.BurstToFirstAxisRadians;
+        _secondAxisPolarity = _standard.SecondAxisPolarity;
     }
 
     // The comb filter (see Process below) and the I/Q box-average both work
@@ -152,6 +98,8 @@ public sealed class ChromaDecoder
     /// </summary>
     public float Chroma { get; private set; }
 
+    // I and Q are NTSC's names for the two demodulated components; for PAL they
+    // are U and V (see TelevisionStandard).
     /// <summary>
     /// The most recently decoded in-phase chroma component, on the same
     /// black-to-white scale as <see cref="Luma"/> (0 = no color).
@@ -188,8 +136,10 @@ public sealed class ChromaDecoder
     /// burst-less source (a monochrome signal, or an Apple II with its
     /// color-killer circuit suppressing burst in text mode) decodes as
     /// grayscale instead of pulling spurious hue out of sharp edges.
+    /// <paramref name="secondAxisSign"/> should be
+    /// <see cref="ColorBurstPll.SecondAxisSign"/> (always +1 for NTSC).
     /// </summary>
-    public void Process(byte sample, float phaseOffsetRadians, float blackLevel, float syncLevel, bool colorBurstDetected)
+    public void Process(byte sample, float phaseOffsetRadians, float blackLevel, float syncLevel, bool colorBurstDetected, float secondAxisSign = 1f)
     {
         // Step 1: luma via a comb filter. Every sample is exactly 90
         // degrees of subcarrier phase from its neighbors (the 4x-fsc
@@ -271,7 +221,7 @@ public sealed class ChromaDecoder
         // since Process runs once per composite-video sample, i.e. millions
         // of times per second of emulated time.
         var slot = (int)(_sampleCounter % 4);
-        var baseAngle = phaseOffsetRadians + (float)BurstToIAxisRotationRadians;
+        var baseAngle = phaseOffsetRadians + _baseAngleOffset;
         _sampleCounter++;
 
         if (baseAngle != _lastBaseAngle)
@@ -302,8 +252,10 @@ public sealed class ChromaDecoder
         var iSum = Vector128.Sum(Vector128.Create(_iProductHistory));
         var qSum = Vector128.Sum(Vector128.Create(_qProductHistory));
 
+        // PAL reverses the second component on alternate lines, so the line's
+        // sign (ColorBurstPll.SecondAxisSign) undoes it; NTSC's is always 1.
         I = 2f * iSum / 4f;
-        Q = 2f * qSum / 4f;
+        Q = _secondAxisPolarity * secondAxisSign * 2f * qSum / 4f;
 
         // Step 4: YIQ -> RGB. Real hardware does this with three resistor-
         // ratio-weighted analog summing amplifiers (the same "weighted sum"
@@ -322,8 +274,8 @@ public sealed class ChromaDecoder
         // Vector128.FusedMultiplyAdd calls (one lane per channel, 4th lane
         // unused) instead of 6 scalar multiplies/adds, with the 0-255 clamp
         // similarly done once across all three lanes.
-        var rgb = Vector128.FusedMultiplyAdd(RgbCoeffQ, Vector128.Create(Q),
-            Vector128.FusedMultiplyAdd(RgbCoeffI, Vector128.Create(I), Vector128.Create(Luma)));
+        var rgb = Vector128.FusedMultiplyAdd(_rgbCoeffB, Vector128.Create(Q),
+            Vector128.FusedMultiplyAdd(_rgbCoeffA, Vector128.Create(I), Vector128.Create(Luma)));
         var clamped = Vector128.Clamp(rgb, Vector128<float>.Zero, Vector128.Create(255f));
 
         Rgb = new RgbaByte((byte)clamped[0], (byte)clamped[1], (byte)clamped[2], 255);

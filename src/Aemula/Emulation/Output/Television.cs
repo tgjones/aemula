@@ -293,7 +293,7 @@ public sealed class Television
         // WhiteLevel status readout, but nothing in decode consumes it now.
         var whiteRef = Standard.WhiteReference(_syncSeparator.BlackLevel, _syncSeparator.SyncLevel);
         _colorBurstPll.Process(sample, _rasterOscillators.CurrentColumn, _syncSeparator.BlackLevel, whiteRef);
-        _yiqDecoder.Process(sample, _colorBurstPll.PhaseOffsetRadians, _syncSeparator.BlackLevel, _syncSeparator.SyncLevel, _colorBurstPll.BurstDetected);
+        _yiqDecoder.Process(sample, _colorBurstPll.PhaseOffsetRadians, _syncSeparator.BlackLevel, _syncSeparator.SyncLevel, _colorBurstPll.BurstDetected, _colorBurstPll.SecondAxisSign);
         UpdateVerticalBlanking();
 
         ResizeSampleBufferIfDetectedTimingChanged();

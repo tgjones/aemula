@@ -77,11 +77,24 @@ public sealed class ColorBurstPll
     private readonly float _burstWindowStart;
     private readonly float _burstWindowEnd;
 
+    // PAL's burst swings +/-45 degrees about the phase the oscillator locks to,
+    // alternating line by line. _swingSin/_swingCos rotate the measured burst
+    // back onto where it should sit for the line's parity; both are (0, 1) for
+    // NTSC, which makes the correction exactly the plain quadrature term.
+    private readonly double _burstSwingRadians;
+
+    // The burst's absolute phase (oscillator offset plus measured error) on the
+    // previous line that had one - the reference the line-to-line step is
+    // measured against to tell which line parity this is.
+    private double _previousBurstPhase;
+    private bool _hasPreviousBurstPhase;
+
     public ColorBurstPll(TelevisionTiming? timing = null)
     {
         timing ??= TelevisionTiming.Ntsc;
         _burstWindowStart = timing.BurstWindowStartSamples;
         _burstWindowEnd = timing.BurstWindowStartSamples + timing.BurstWindowLengthSamples;
+        _burstSwingRadians = timing.Standard.BurstSwingRadians;
     }
 
     /// <summary>
@@ -97,6 +110,14 @@ public sealed class ColorBurstPll
     /// completed line.
     /// </summary>
     public bool BurstDetected { get; private set; }
+
+    /// <summary>
+    /// The sign to apply to the second demodulated component on the current
+    /// line: always +1 for NTSC, and for PAL +1 or -1 following the V switch,
+    /// recovered from the burst itself (see <see cref="FinishBurstWindow"/>).
+    /// Settles as the burst window closes, before the line's active video.
+    /// </summary>
+    public float SecondAxisSign { get; private set; } = 1f;
 
     /// <summary>
     /// Whether the sample most recently passed to <see cref="Process"/> fell
@@ -201,13 +222,65 @@ public sealed class ColorBurstPll
         if (BurstDetected)
         {
             // Normalizing by the measured amplitude turns the raw
-            // quadrature accumulation into sin(phase error) for small
-            // errors, regardless of how strong this particular line's
-            // burst happened to be - LoopGain is then a tuning constant
+            // accumulations into the burst's cos and -sin of its phase error
+            // relative to the oscillator - LoopGain is then a tuning constant
             // for how fast the loop settles, not one that also has to
             // account for arbitrary signal amplitude.
-            var normalizedError = _quadratureAccumulator / (_windowSampleCount * amplitude / 2f);
-            _phaseOffsetRadians -= normalizedError * LoopGain;
+            var norm = _windowSampleCount * amplitude / 2f;
+            var inPhase = _inPhaseAccumulator / norm;
+            var quadrature = _quadratureAccumulator / norm;
+
+            double swing = 0;
+            if (_burstSwingRadians != 0)
+            {
+                // PAL: the burst's absolute phase moves by +/-90 degrees from
+                // one line to the next (+45 to -45 and back), and the *step*
+                // is unambiguous however far the oscillator is from lock -
+                // unlike the absolute error, whose sign cannot say which side
+                // of lock we are on during acquisition. A step of +90 means
+                // this line's burst is the leading one, V reversed. Without a
+                // previous line to step from, assume the parity alternated.
+                var error = Math.Atan2(-quadrature, inPhase);
+                var burstPhase = _phaseOffsetRadians + error;
+
+                if (_hasPreviousBurstPhase)
+                {
+                    var step = burstPhase - _previousBurstPhase;
+                    step -= 2 * Math.PI * Math.Round(step / (2 * Math.PI));
+                    SecondAxisSign = step > 0 ? -1f : 1f;
+                }
+                else
+                {
+                    SecondAxisSign = -SecondAxisSign;
+                }
+
+                _previousBurstPhase = burstPhase;
+                _hasPreviousBurstPhase = true;
+
+                // Where the burst should sit relative to the mean: -45 degrees
+                // on a normal line, +45 on a reversed one.
+                swing = -_burstSwingRadians * SecondAxisSign;
+            }
+            else
+            {
+                SecondAxisSign = 1f;
+            }
+
+            // sin(error - swing), written as a rotation of the two accumulator
+            // terms so that with no swing it is exactly the plain quadrature
+            // term (cos 0 = 1, sin 0 = 0).
+            var correction = -quadrature * (float)Math.Cos(swing) - inPhase * (float)Math.Sin(swing);
+            _phaseOffsetRadians += correction * LoopGain;
+        }
+        else
+        {
+            // No burst this line: the parity still advances, so the next line
+            // that has one starts from the right guess.
+            _hasPreviousBurstPhase = false;
+            if (_burstSwingRadians != 0)
+            {
+                SecondAxisSign = -SecondAxisSign;
+            }
         }
 
         // Whether or not burst was found, reset for the next line - but

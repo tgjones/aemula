@@ -619,7 +619,7 @@ public sealed class TelevisionWindow : DebuggerWindow
     // around the circle, at a fixed luma and saturation), so you can see
     // which hue the demodulated chroma landed on. No marker for a sample with
     // no meaningful hue (see MinHueSaturation).
-    private static void DrawHueBar(double hue, double saturation)
+    private void DrawHueBar(double hue, double saturation)
     {
         const float height = 16f;
         const int segments = 72;
@@ -640,10 +640,12 @@ public sealed class TelevisionWindow : DebuggerWindow
             var i = chroma * Math.Cos(angle);
             var q = chroma * Math.Sin(angle);
 
-            // The same YIQ -> RGB matrix ChromaDecoder uses.
-            var r = Math.Clamp(luma + 0.956 * i + 0.621 * q, 0, 255) / 255;
-            var g = Math.Clamp(luma - 0.272 * i - 0.647 * q, 0, 255) / 255;
-            var b = Math.Clamp(luma - 1.106 * i + 1.703 * q, 0, 255) / 255;
+            // The same component -> RGB matrix ChromaDecoder uses.
+            var first = _television.Standard.RgbFromFirstAxis;
+            var second = _television.Standard.RgbFromSecondAxis;
+            var r = Math.Clamp(luma + first.R * i + second.R * q, 0, 255) / 255;
+            var g = Math.Clamp(luma + first.G * i + second.G * q, 0, 255) / 255;
+            var b = Math.Clamp(luma + first.B * i + second.B * q, 0, 255) / 255;
 
             drawList.AddRectFilled(
                 new Vector2(min.X + width * segment / segments, min.Y),
