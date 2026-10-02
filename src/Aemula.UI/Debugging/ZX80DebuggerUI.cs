@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Aemula.Emulation.Systems.ZX80;
 using Aemula.Emulation.Systems.ZX80.Debugging;
+using Aemula.Debugging.LogicAnalyzer;
 using Aemula.UI.Chips.Z80;
 
 namespace Aemula.UI.Debugging;
@@ -19,4 +20,11 @@ internal sealed class ZX80DebuggerUI(ZX80Debugger debugger) : DebuggerUI(debugge
         result.Add(new MemoryEditor(1, address => _system.ReadByteDebug((ushort)address), (address, data) => _system.WriteByteDebug((ushort)address, data)));
         result.Add(new TelevisionWindow(_system.Television));
     }
+
+    // Recorded at the oscillator's edge rate, not the once-per-tick rate
+    // Ticked implies - see ZX80System.OscillatorEdgeProcessed.
+    protected override SampleClock? CreateSampleClock() => new SampleClock(
+        ZX80System.OscillatorEdgesPerSecond,
+        h => _system.OscillatorEdgeProcessed += h,
+        h => _system.OscillatorEdgeProcessed -= h);
 }

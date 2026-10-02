@@ -9,14 +9,25 @@ namespace Aemula.Emulation.Systems.ZX80;
 
 public sealed partial class ZX80System : EmulatedSystem
 {
-    // X1: a 6.5MHz ceramic resonator, the board's only clock source. Ticked
-    // at 2x its own rate (13MHz) rather than 1x, because this class models
-    // it edge-by-edge (see Tick()) - the Z80's own clock, the video shift
-    // register and the horizontal counter chain are all synchronous
-    // divisions of this same oscillator, and modelling at full-cycle
-    // granularity would leave nowhere to hang the divide-by-2 flip-flop
-    // that actually produces the CPU's 3.25MHz clock from it.
-    public override ulong CyclesPerSecond => 13_000_000;
+    // X1: a 6.5MHz ceramic resonator, the board's only clock source. One
+    // tick is one full oscillator cycle, like every other system's tick is one
+    // master-clock cycle; Tick() still runs both of its edges, in order, so
+    // the Z80's own clock, the video shift register and the horizontal
+    // counter chain - all synchronous divisions of this same oscillator -
+    // see exactly the edges they would on the board.
+    public override ulong CyclesPerSecond => 6_500_000;
+
+    // The rate at which the oscillator's individual edges occur. Anything
+    // that is pulled once per edge rather than once per tick (the cassette
+    // interface, the composite video fed to Television, the logic analyzer)
+    // runs at this rate.
+    internal const ulong OscillatorEdgesPerSecond = 13_000_000;
+
+    // Raised after each of the oscillator's two edges within a tick, so the
+    // logic analyzer can record at edge resolution rather than being limited
+    // to once per tick like Debugger.Ticked - see ZX80DebuggerUI's
+    // CreateSampleClock.
+    internal event Action? OscillatorEdgeProcessed;
 
     public readonly Z80Chip Cpu;
 
@@ -109,13 +120,19 @@ public sealed partial class ZX80System : EmulatedSystem
 
     public override void Tick()
     {
-        // One master-oscillator edge (see CyclesPerSecond). X1 itself, and
+        TickOscillatorEdge(high: true);
+        TickOscillatorEdge(high: false);
+    }
+
+    private void TickOscillatorEdge(bool high)
+    {
+        // One master-oscillator edge. X1 itself, and
         // the Pierce-oscillator feedback pair IC20 builds around it, are the
         // analog part of the crystal circuit - out of scope the same way the
-        // RF modulator is (see the plan's fidelity notes); this toggle is
+        // RF modulator is (see the plan's fidelity notes); this level is
         // the abstracted result, feeding the real IC20 gate that buffers it
         // into PHI2X.
-        _masterOscillatorHigh = !_masterOscillatorHigh;
+        _masterOscillatorHigh = high;
 
         _ic20.A1 = false;
         _ic20.B1 = _masterOscillatorHigh;
@@ -137,7 +154,13 @@ public sealed partial class ZX80System : EmulatedSystem
         TickCassette();
         DoCpuMemoryAccess();
         TickVideo(phi2X);
+
+        // Sampled after every edge, not once per tick: the composite signal
+        // is not quantised to the oscillator, and Television is fed at the
+        // edge rate (OscillatorEdgesPerSecond) so it sees all of it.
         TickCompositeVideo();
+
+        OscillatorEdgeProcessed?.Invoke();
     }
 
     private void DoCpuMemoryAccess()

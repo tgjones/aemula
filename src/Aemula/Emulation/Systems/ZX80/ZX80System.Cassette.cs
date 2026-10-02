@@ -47,7 +47,7 @@ public sealed partial class ZX80System
     private IReadOnlyList<PeripheralRequest> BuildCassettePeripheralRequests() =>
     [
         PeripheralRequest.For<CassetteDeck>(
-            context => new CassetteDeck(context.System.CyclesPerSecond),
+            context => new CassetteDeck(OscillatorEdgesPerSecond),
             deck =>
             {
                 CassetteInput = deck.ReadPlayback;
