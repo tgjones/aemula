@@ -1,4 +1,5 @@
 using System.Threading.Tasks;
+using Aemula.Emulation.Output;
 using Aemula.Emulation.Systems.ZX80;
 
 namespace Aemula.Tests.Emulation.Systems;
@@ -11,12 +12,33 @@ public class ZX80SystemKeyboardTests
     // which reads as 0 the same way a real idle/silent EAR line does (R1
     // biases it low, not high). D5 still reads 1 (no keyboard connection);
     // D6 reads 0 - the NTSC strap diode (D11) this build always has fitted
-    // pulls it low regardless of row/key state.
+    // pulls it low regardless of row/key state. That is the US/NTSC board,
+    // which is what these tests build; the UK board, which omits D11, is
+    // checked separately below.
+
+    [Test]
+    public async Task OnlyTheNtscBoardPullsD6Low()
+    {
+        var ntsc = new ZX80System(TelevisionStandard.Ntsc);
+        var pal = new ZX80System(TelevisionStandard.Pal);
+
+        await Assert.That(ntsc.ReadKeyboardMatrixForTest(0xFEFE)).IsEqualTo((byte)0x3F);
+        await Assert.That(pal.ReadKeyboardMatrixForTest(0xFEFE)).IsEqualTo((byte)0x7F);
+    }
+
+    [Test]
+    public async Task TheDefaultBoardIsThePalOne()
+    {
+        var system = new ZX80System();
+
+        await Assert.That(system.Television.Standard).IsEqualTo(TelevisionStandard.Pal);
+        await Assert.That(system.ReadKeyboardMatrixForTest(0xFEFE)).IsEqualTo((byte)0x7F);
+    }
 
     [Test]
     public async Task ReadsBackPressedKeysOnlyWhenTheirRowIsSelected()
     {
-        var system = new ZX80System();
+        var system = new ZX80System(TelevisionStandard.Ntsc);
 
         // Nothing pressed: every row reads all-1s in the low 5 bits.
         await Assert.That(system.ReadKeyboardMatrixForTest(0xFEFE)).IsEqualTo((byte)0x3F);
@@ -36,7 +58,7 @@ public class ZX80SystemKeyboardTests
     [Test]
     public async Task HostShiftAloneDoesNotPressZX80Shift()
     {
-        var system = new ZX80System();
+        var system = new ZX80System(TelevisionStandard.Ntsc);
 
         system.OnKeyEvent(new KeyEvent { IsDown = true, Key = Key.LeftShift });
         await Assert.That(system.ReadKeyboardMatrixForTest(0xFEFF)).IsEqualTo((byte)0x3F);
@@ -47,7 +69,7 @@ public class ZX80SystemKeyboardTests
     [Arguments(Key.RightShift)]
     public async Task HostShiftedLetterPressesZX80ShiftForItsGraphic(Key shiftKey)
     {
-        var system = new ZX80System();
+        var system = new ZX80System(TelevisionStandard.Ntsc);
 
         system.OnKeyEvent(new KeyEvent { IsDown = true, Key = shiftKey });
         system.OnKeyEvent(new KeyEvent { IsDown = true, Key = Key.A, Character = 'A' });
@@ -67,7 +89,7 @@ public class ZX80SystemKeyboardTests
     [Test]
     public async Task MultipleSelectedRowsCombineIntoOneRead()
     {
-        var system = new ZX80System();
+        var system = new ZX80System(TelevisionStandard.Ntsc);
 
         system.OnKeyEvent(new KeyEvent { IsDown = true, Key = Key.Z, Character = 'z' }); // Row A8, column 1.
         system.OnKeyEvent(new KeyEvent { IsDown = true, Key = Key.S, Character = 's' }); // Row A9, column 1.
@@ -93,7 +115,7 @@ public class ZX80SystemKeyboardTests
     [Arguments('B', Key.B, false, 7, 4, false)] // --input sends letters with no Shift event.
     public async Task HostCharacterSelectsZX80Key(char character, Key key, bool hostShift, int row, int column, bool zx80Shift)
     {
-        var system = new ZX80System();
+        var system = new ZX80System(TelevisionStandard.Ntsc);
 
         if (hostShift)
         {
@@ -117,7 +139,7 @@ public class ZX80SystemKeyboardTests
     [Arguments(Key.Delete, 4, 0)]
     public async Task EditingKeysPressTheirShiftedDigit(Key key, int row, int column)
     {
-        var system = new ZX80System();
+        var system = new ZX80System(TelevisionStandard.Ntsc);
 
         system.OnKeyEvent(new KeyEvent { IsDown = true, Key = key });
 
@@ -127,7 +149,7 @@ public class ZX80SystemKeyboardTests
     [Test]
     public async Task ShiftStaysDownWhileAnyHeldKeyNeedsIt()
     {
-        var system = new ZX80System();
+        var system = new ZX80System(TelevisionStandard.Ntsc);
 
         system.OnKeyEvent(new KeyEvent { IsDown = true, Key = (Key)'=', Character = '=' });
         system.OnKeyEvent(new KeyEvent { IsDown = true, Key = (Key)'/', Character = '/' });

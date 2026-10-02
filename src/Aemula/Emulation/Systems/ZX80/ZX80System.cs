@@ -3,6 +3,7 @@ using System.IO;
 using Aemula.Debugging;
 using Aemula.Emulation.Chips;
 using Aemula.Emulation.Chips.Z80;
+using Aemula.Emulation.Output;
 using Aemula.Emulation.Systems.ZX80.Debugging;
 
 namespace Aemula.Emulation.Systems.ZX80;
@@ -81,8 +82,17 @@ public sealed partial class ZX80System : EmulatedSystem
     // CPU-side half.
     private byte _farDataBus;
 
-    public ZX80System()
+    // D11, the strap diode that makes this the US/NTSC board: fitted, it pulls
+    // data line D6 low on every keyboard-style read, which is what the ROM
+    // branches on to run 262 lines at 60Hz instead of 312 lines at 50Hz (see
+    // ReadKeyboardMatrix). The UK board, the default, omits it.
+    private readonly bool _d11Fitted;
+
+    public ZX80System(TelevisionStandard? standard = null)
+        : base(new Television(standard ?? TelevisionStandard.Pal, OscillatorEdgesPerSecond))
     {
+        _d11Fitted = Television.Standard == TelevisionStandard.Ntsc;
+
         Cpu = new Z80Chip();
         _addressDecodeInverters = new Ttl7404Chip();
         _romRamSelect = new Ttl7400Chip();

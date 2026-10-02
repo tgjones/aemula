@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Aemula.Emulation.Output;
@@ -50,6 +51,41 @@ public class ZX80SystemTelevisionTests
 
         await Assert.That(television.DetectedSamplesPerLine).IsGreaterThan(0f);
         await Assert.That(television.DetectedLinesPerFrame).IsGreaterThan(0f);
+    }
+
+    // Runs long enough past reset for the ROM's display routine to settle into
+    // its steady frame and for Television's estimates to converge on it.
+    private static Television BootedTelevision(TelevisionStandard standard)
+    {
+        var system = new ZX80System(standard);
+
+        for (var i = 0; i < 20_000_000; i++)
+        {
+            system.Tick();
+        }
+
+        return system.Television;
+    }
+
+    [Test]
+    public async Task NtscBoardRunsA262LineFrame()
+    {
+        var television = BootedTelevision(TelevisionStandard.Ntsc);
+
+        await Assert.That(Math.Abs(television.DetectedLinesPerFrame - 262f) < 0.5f).IsTrue();
+        await Assert.That(Math.Abs(television.DetectedSamplesPerLine - 828f) < 1f).IsTrue();
+    }
+
+    // 310 lines, not the PAL standard's 312: the original ZX80 ROM's VSYNC
+    // pulse is about 6 lines long where the composite spec asks for 8. (The
+    // later 8K ROM lengthened it, which is what brought the frame up to 312.)
+    [Test]
+    public async Task PalBoardRunsALongerFrameAtTheSameLineLength()
+    {
+        var television = BootedTelevision(TelevisionStandard.Pal);
+
+        await Assert.That(Math.Abs(television.DetectedLinesPerFrame - 310f) < 0.5f).IsTrue();
+        await Assert.That(Math.Abs(television.DetectedSamplesPerLine - 828f) < 1f).IsTrue();
     }
 
     [Test]

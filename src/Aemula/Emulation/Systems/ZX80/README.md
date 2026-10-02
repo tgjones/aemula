@@ -5,7 +5,7 @@
 * [ZX80 on Wikipedia](https://en.wikipedia.org/wiki/Sinclair_ZX80)
 * [ZX80 character set](https://en.wikipedia.org/wiki/ZX80_character_set)
 * [Tynemouth Software: How the ZX80 works](http://blog.tynemouthsoftware.co.uk/2019/10/how-the-zx80-works.html) - the split data bus, the NOP generator, and how the Z80's own refresh cycle doubles as video addressing
-* [Tynemouth Software: ZX80 USA](http://blog.tynemouthsoftware.co.uk/2022/10/zx80-usa.html) - the US/NTSC board variant this emulator targets first: the D11 strap diode and the 50Hz/60Hz ROM branch it selects
+* [Tynemouth Software: ZX80 USA](http://blog.tynemouthsoftware.co.uk/2022/10/zx80-usa.html) - the US/NTSC board variant: the D11 strap diode and the 50Hz/60Hz ROM branch it selects
 * [Tynemouth Software: How the ZX81 Generates Video](http://blog.tynemouthsoftware.co.uk/2023/10/how-the-zx81-generates-video.html) - a second independent writeup of the same class of trick, useful as a cross-check
 
 ## Schematic

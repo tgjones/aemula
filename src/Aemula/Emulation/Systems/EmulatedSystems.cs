@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Aemula.Emulation.Output;
 using Aemula.Emulation.Systems.AppleI;
 using Aemula.Emulation.Systems.AppleII;
 using Aemula.Emulation.Systems.Atari2600;
@@ -49,7 +50,8 @@ public static class EmulatedSystems
         new("atari2600", "Atari 2600", [], static _ => new Atari2600System()),
         new("nes", "NES", [], static _ => new NesSystem()),
         new("spaceinvaders", "Space Invaders", [], static _ => new SpaceInvadersSystem()),
-        new("zx80", "Sinclair ZX80", [], static _ => new ZX80System()),
+        new("zx80", "Sinclair ZX80", [], static _ => new ZX80System(TelevisionStandard.Pal)),
+        new("zx80-ntsc", "Sinclair ZX80 (US/NTSC)", [], static _ => new ZX80System(TelevisionStandard.Ntsc)),
     ];
 
     public static SystemDescriptor? FindById(string? id)

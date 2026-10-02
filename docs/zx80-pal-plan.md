@@ -207,7 +207,8 @@ lines/field; the same signal at 13 MHz decodes to ~832/line; vertical
 blanking detection and `ComputeActiveVideoRowRange` behave on both.
 
 **Phase 3 — ZX80 PAL.** §5. Tests mirroring the existing NTSC ZX80 frame
-test: PAL board converges to 312.00 lines/frame; NTSC board still 262.00; D6
+test: PAL board converges to 310.00 lines/frame (the original ROM's VSYNC
+pulse is ~6 lines against the spec's 8; the 8K ROM is what makes it 312); NTSC board still 262.00; D6
 reads high/low as appropriate. Then look at it in the UI.
 
 **Phase 3b — Chroma trap bypass when colour is killed.** See §6. Independent

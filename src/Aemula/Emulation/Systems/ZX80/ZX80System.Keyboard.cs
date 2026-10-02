@@ -232,12 +232,12 @@ public sealed partial class ZX80System
     // live off IC10's sixth buffer (see ZX80System.Cassette.cs) - guaranteed
     // driven rather than floating, since that buffer is only ever enabled
     // for exactly the read this method runs on. D6 is D11, the NTSC strap
-    // diode fitted per the Target configuration - unlike a key row, it isn't
-    // gated by which row address is selected, since the diode sits directly
-    // on the data line rather than behind a row/column crosspoint: every
+    // diode, fitted only on the US board - unlike a key row, it isn't gated
+    // by which row address is selected, since the diode sits directly on the
+    // data line rather than behind a row/column crosspoint: every
     // keyboard-style read pulls it low, which is the signal the ROM's own
-    // code branches on to run the 262-line/60Hz timing this build targets
-    // instead of the 312-line/50Hz PAL default.
+    // code branches on to run 262-line/60Hz timing instead of the
+    // 312-line/50Hz default. Without the diode D6 is pulled high.
     private byte ReadKeyboardMatrix(ushort address)
     {
         var columns = 0x1F;
@@ -251,7 +251,8 @@ public sealed partial class ZX80System
         }
 
         var ear = _cassetteBuffer.Y1 == true ? 0x80 : 0x00;
-        return (byte)(0x20 | ear | columns);
+        var d6 = _d11Fitted ? 0x00 : 0x40;
+        return (byte)(0x20 | d6 | ear | columns);
     }
 
     internal byte ReadKeyboardMatrixForTest(ushort address) => ReadKeyboardMatrix(address);

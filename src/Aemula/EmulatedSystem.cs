@@ -23,7 +23,20 @@ public abstract class EmulatedSystem : IDisposable
     // window pulling a backlog from a ring buffer once per frame. Tooling
     // (the headless runner, benchmarks) reads frame progress off this
     // generically, without switching on concrete system type.
-    public Television Television { get; } = new();
+    public Television Television { get; }
+
+    // A system whose composite output isn't NTSC at 4x the subcarrier (a PAL
+    // board, a monochrome source at its own native rate) supplies its own
+    // Television here. Passed in rather than a virtual property so that, as
+    // with Audio, nothing here calls into a derived class before it is built.
+    protected EmulatedSystem() : this(new Television())
+    {
+    }
+
+    protected EmulatedSystem(Television television)
+    {
+        Television = television;
+    }
 
     // The same uniform-consumption story as Television, on the audio side: a
     // system with real sound overrides this to return its own AudioOutput /
