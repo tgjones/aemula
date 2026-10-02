@@ -144,7 +144,7 @@ public sealed partial class NesSystem
     private static byte AnchorGreyByte(float greyY) => (byte)Math.Clamp(
         (int)Math.Round(
             SeparatorClampedBlackLevel
-            + greyY * ChromaDecoder.WhiteReferenceGainFromSyncSwing
+            + greyY * TelevisionStandard.Ntsc.ReferenceWhiteGainFromSyncSwing
                 * SeparatorClampedBlackLevel / 255f),
         0, 255);
 

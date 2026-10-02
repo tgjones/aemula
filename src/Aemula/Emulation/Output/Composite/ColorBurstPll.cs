@@ -132,7 +132,7 @@ public sealed class ColorBurstPll
     /// be re-centered before correlating against the local oscillator.
     /// <paramref name="whiteReference"/> is only used to scale the detection
     /// threshold to this signal's own black-to-white swing. It is a fixed
-    /// sync-derived reference white (<see cref="ChromaDecoder.WhiteReference"/>),
+    /// sync-derived reference white (<see cref="TelevisionStandard.WhiteReference"/>),
     /// not a running picture-peak maximum - a stable threshold makes burst
     /// detection steadier on dim signals, where a running peak would sag.
     /// </summary>

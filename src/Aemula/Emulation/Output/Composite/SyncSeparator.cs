@@ -82,21 +82,21 @@ public sealed class SyncSeparator
     private const float BlackLevelSmoothingRate = 0.05f;
 
     // Seeded so decoding is sane from sample 1, without waiting for the
-    // running estimates to converge: sync tip = byte 0, black = byte 64
-    // (40 IRE at 1.6 bytes/IRE - the shared byte scale every producer now
-    // emits; also exactly where Gayler's measured Apple II blanking, 0.5V
-    // on its 0-2.0V scale, lands under a clean byte = volts * 128 map),
-    // white = byte 224 (140 IRE reference white). These are just a starting
-    // guess, not a hard assumption - real incoming samples immediately
+    // running estimates to converge: sync tip = byte 0, white = byte 224
+    // (140 IRE reference white), and black wherever the standard's own
+    // sync-to-picture ratio puts it on that scale - byte 64 for NTSC (40 IRE
+    // at 1.6 bytes/IRE - the shared byte scale every producer now emits; also
+    // exactly where Gayler's measured Apple II blanking, 0.5V on its 0-2.0V
+    // scale, lands under a clean byte = volts * 128 map), ~67 for PAL. These
+    // are just a starting guess, not a hard assumption - real incoming samples immediately
     // start pulling all three estimates wherever they actually belong, and
     // _whiteLevel in particular now only feeds the UI status readout, not
     // decode (see Television.Decode).
     private const float InitialSyncLevel = 0;
-    private const float InitialBlackLevel = 64;
     private const float InitialWhiteLevel = 224;
 
     private float _syncLevel = InitialSyncLevel;
-    private float _blackLevel = InitialBlackLevel;
+    private float _blackLevel;
     private float _whiteLevel = InitialWhiteLevel;
     private float _hsyncWidthEstimate;
 
@@ -106,7 +106,9 @@ public sealed class SyncSeparator
 
     public SyncSeparator(TelevisionTiming? timing = null)
     {
-        _hsyncWidthEstimate = (timing ?? TelevisionTiming.Ntsc).HSyncWidthSamples;
+        timing ??= TelevisionTiming.Ntsc;
+        _hsyncWidthEstimate = timing.HSyncWidthSamples;
+        _blackLevel = InitialWhiteLevel / (1 + timing.Standard.ReferenceWhiteGainFromSyncSwing);
     }
 
     /// <summary>

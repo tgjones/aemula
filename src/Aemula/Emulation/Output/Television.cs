@@ -28,12 +28,12 @@ public sealed class Television
     // VSyncWidthMultiplier).
     private const float VerticalBlankingFastPulseRateFraction = 0.75f;
 
-    private readonly TelevisionTiming _timing = TelevisionTiming.Ntsc;
+    private readonly TelevisionTiming _timing;
 
     private readonly SyncSeparator _syncSeparator;
     private readonly RasterOscillators _rasterOscillators;
     private readonly ColorBurstPll _colorBurstPll;
-    private readonly ChromaDecoder _yiqDecoder = new();
+    private readonly ChromaDecoder _yiqDecoder;
 
     // Seeded at the nominal NTSC frame shape so there's a sensible buffer
     // from sample 1, and resized in Decode below once the raster
@@ -41,8 +41,17 @@ public sealed class Television
     // signal) is known.
     public readonly SampleBuffer SampleBuffer;
 
-    public Television()
+    /// <summary>
+    /// Creates a decoder for <paramref name="standard"/> (default NTSC). Every
+    /// sample passed to <see cref="Decode"/> is assumed to arrive at
+    /// <paramref name="samplesPerSecond"/>, which defaults to 4x the standard's
+    /// color subcarrier - the rate the color burst PLL and chroma demodulator
+    /// require. A monochrome source can pass its own native rate instead.
+    /// </summary>
+    public Television(TelevisionStandard? standard = null, float? samplesPerSecond = null)
     {
+        _timing = new TelevisionTiming(standard ?? TelevisionStandard.Ntsc, samplesPerSecond);
+        _yiqDecoder = new ChromaDecoder(_timing.Standard);
         _syncSeparator = new SyncSeparator(_timing);
         _rasterOscillators = new RasterOscillators(_timing);
         _colorBurstPll = new ColorBurstPll(_timing);
@@ -77,11 +86,10 @@ public sealed class Television
     private float _samplesSincePulseStart = float.MaxValue;
     private bool _isVerticallyBlanked;
 
-    // Hardcoded for now. A real multi-standard TV works this out from the
+    // Fixed at construction. A real multi-standard TV works this out from the
     // incoming signal itself (line/frame rate, and PAL's line-to-line
-    // burst-phase alternation), but this class doesn't have a PAL decode
-    // path to switch to yet, so there's nothing to detect.
-    public TelevisionStandard Standard => TelevisionStandard.Ntsc;
+    // burst-phase alternation); this one is told, like a set's region switch.
+    public TelevisionStandard Standard => _timing.Standard;
 
     /// <summary>
     /// Where active video starts within a line, in samples, measured from
@@ -169,8 +177,8 @@ public sealed class Television
         && CurrentColumn < ActiveVideoStartSamples + ActiveVideoLengthSamples;
 
     /// <summary>
-    /// Feeds one composite-video sample into the decoder. Every caller is
-    /// assumed to sample at exactly 4x the NTSC color subcarrier.
+    /// Feeds one composite-video sample into the decoder, at the sample rate
+    /// this <see cref="Television"/> was constructed for.
     /// </summary>
     // The vertical counterpart to ActiveVideoStartSamples/ActiveVideoLengthSamples -
     // unlike those, this doesn't need its own self-calibrated formula, because
@@ -283,7 +291,7 @@ public sealed class Television
         // AGC, which keys off the sync interval, never off picture white.
         // SyncSeparator still tracks its running _whiteLevel for the
         // WhiteLevel status readout, but nothing in decode consumes it now.
-        var whiteRef = ChromaDecoder.WhiteReference(_syncSeparator.BlackLevel, _syncSeparator.SyncLevel);
+        var whiteRef = Standard.WhiteReference(_syncSeparator.BlackLevel, _syncSeparator.SyncLevel);
         _colorBurstPll.Process(sample, _rasterOscillators.CurrentColumn, _syncSeparator.BlackLevel, whiteRef);
         _yiqDecoder.Process(sample, _colorBurstPll.PhaseOffsetRadians, _syncSeparator.BlackLevel, _syncSeparator.SyncLevel, _colorBurstPll.BurstDetected);
         UpdateVerticalBlanking();
