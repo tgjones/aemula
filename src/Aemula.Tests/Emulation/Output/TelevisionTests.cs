@@ -6,6 +6,14 @@ namespace Aemula.Tests.Emulation.Output;
 
 public class TelevisionTests
 {
+    // RS-170A active-video position within a line, measured from the HSYNC
+    // trailing edge: the same 4.7us as HSYNC itself, then 52.6us of picture.
+    // Used to place samples on SMPTE bars at their exact spec positions, a
+    // legitimate use of nominal timing (constructing a fixture, not a live
+    // decode assumption).
+    private static readonly float ActiveVideoStartSamples = 4.7e-6f * TelevisionTiming.Ntsc.SamplesPerSecond;
+    private static readonly float ActiveVideoLengthSamples = 52.6e-6f * TelevisionTiming.Ntsc.SamplesPerSecond;
+
     [Test]
     public async Task SmpteAssetNormalizesToFullByteRange()
     {
@@ -72,11 +80,11 @@ public class TelevisionTests
         // (sync/blanking), not the start of the picture. Sampling at
         // the middle of each bar keeps well clear of the transition columns
         // between bars.
-        var barWidth = TelevisionTiming.ActiveVideoLengthSamples / 7.0;
+        var barWidth = ActiveVideoLengthSamples / 7.0;
 
         RgbaByte SampleBar(int barIndex)
         {
-            var column = (int)(TelevisionTiming.ActiveVideoStartSamples + (barIndex + 0.5) * barWidth);
+            var column = (int)(ActiveVideoStartSamples + (barIndex + 0.5) * barWidth);
             return buffer.Data[row * buffer.Width + column].Color;
         }
 

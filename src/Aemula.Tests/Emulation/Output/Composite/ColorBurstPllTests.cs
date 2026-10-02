@@ -84,14 +84,14 @@ public class ColorBurstPllTests
         const float blackLevel = 64;
         const float whiteLevel = 200;
 
-        var lineLength = (int)TelevisionTiming.NominalSamplesPerLine;
+        var lineLength = (int)TelevisionTiming.Ntsc.SamplesPerLine;
 
         for (var column = 0; column < lineLength; column++)
         {
             pll.Process((byte)blackLevel, column, blackLevel, whiteLevel);
 
-            var expectedInWindow = column >= TelevisionTiming.BurstWindowStartSamples
-                && column < TelevisionTiming.BurstWindowStartSamples + TelevisionTiming.BurstWindowLengthSamples;
+            var expectedInWindow = column >= TelevisionTiming.Ntsc.BurstWindowStartSamples
+                && column < TelevisionTiming.Ntsc.BurstWindowStartSamples + TelevisionTiming.Ntsc.BurstWindowLengthSamples;
 
             await Assert.That(pll.IsInBurstWindow).IsEqualTo(expectedInWindow);
         }
@@ -122,8 +122,8 @@ public class ColorBurstPllTests
             {
                 byte value;
 
-                if (column >= TelevisionTiming.BurstWindowStartSamples
-                    && column < TelevisionTiming.BurstWindowStartSamples + TelevisionTiming.BurstWindowLengthSamples)
+                if (column >= TelevisionTiming.Ntsc.BurstWindowStartSamples
+                    && column < TelevisionTiming.Ntsc.BurstWindowStartSamples + TelevisionTiming.Ntsc.BurstWindowLengthSamples)
                 {
                     // Generated against the exact same "sample index mod 4"
                     // reference ColorBurstPll itself uses internally

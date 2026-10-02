@@ -74,6 +74,16 @@ public sealed class ColorBurstPll
     private float _quadratureAccumulator;
     private int _windowSampleCount;
 
+    private readonly float _burstWindowStart;
+    private readonly float _burstWindowEnd;
+
+    public ColorBurstPll(TelevisionTiming? timing = null)
+    {
+        timing ??= TelevisionTiming.Ntsc;
+        _burstWindowStart = timing.BurstWindowStartSamples;
+        _burstWindowEnd = timing.BurstWindowStartSamples + timing.BurstWindowLengthSamples;
+    }
+
     /// <summary>
     /// The local oscillator's current phase-offset correction, in radians -
     /// mostly useful for tests/diagnostics, since <see cref="Process"/> is
@@ -132,8 +142,7 @@ public sealed class ColorBurstPll
         _sampleCounter++;
         CurrentPhaseRadians = phase;
 
-        IsInBurstWindow = currentColumn >= TelevisionTiming.BurstWindowStartSamples
-            && currentColumn < TelevisionTiming.BurstWindowStartSamples + TelevisionTiming.BurstWindowLengthSamples;
+        IsInBurstWindow = currentColumn >= _burstWindowStart && currentColumn < _burstWindowEnd;
 
         if (IsInBurstWindow)
         {

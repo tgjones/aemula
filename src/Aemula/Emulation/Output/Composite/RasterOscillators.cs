@@ -109,17 +109,8 @@ public sealed class RasterOscillators
     // negligible next to the ~262-line gap between genuine fields.
     private const float VerticalDebounceLineMultiplier = 4.0f;
 
-    private readonly PullInOscillator _horizontal = new(
-        TelevisionTiming.NominalSamplesPerLine,
-        HorizontalCaptureRangeFraction,
-        HorizontalSmoothingRate,
-        HorizontalPhaseCorrectionRate);
-
-    private readonly PullInOscillator _vertical = new(
-        TelevisionTiming.NominalSamplesPerField,
-        VerticalCaptureRangeFraction,
-        VerticalSmoothingRate,
-        VerticalPhaseCorrectionRate);
+    private readonly PullInOscillator _horizontal;
+    private readonly PullInOscillator _vertical;
 
     // How long it's been since the last VSYNC-classified pulse was even
     // considered (accepted or not) - the debounce gate described above.
@@ -144,7 +135,26 @@ public sealed class RasterOscillators
     // samples (its sync pulse included) were written back over a row
     // already drawn, as a dark bar inside the visible picture. A real
     // vertical ramp cannot revisit a height it has already swept past.
-    private float _rowScaleSamplesPerLine = TelevisionTiming.NominalSamplesPerLine;
+    private float _rowScaleSamplesPerLine;
+
+    public RasterOscillators(TelevisionTiming? timing = null)
+    {
+        timing ??= TelevisionTiming.Ntsc;
+
+        _horizontal = new(
+            timing.SamplesPerLine,
+            HorizontalCaptureRangeFraction,
+            HorizontalSmoothingRate,
+            HorizontalPhaseCorrectionRate);
+
+        _vertical = new(
+            timing.SamplesPerField,
+            VerticalCaptureRangeFraction,
+            VerticalSmoothingRate,
+            VerticalPhaseCorrectionRate);
+
+        _rowScaleSamplesPerLine = timing.SamplesPerLine;
+    }
 
     /// <summary>
     /// The raster column (sample position within the current line) of the

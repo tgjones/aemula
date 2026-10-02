@@ -28,18 +28,29 @@ public sealed class Television
     // VSyncWidthMultiplier).
     private const float VerticalBlankingFastPulseRateFraction = 0.75f;
 
-    private readonly SyncSeparator _syncSeparator = new();
-    private readonly RasterOscillators _rasterOscillators = new();
-    private readonly ColorBurstPll _colorBurstPll = new();
+    private readonly TelevisionTiming _timing = TelevisionTiming.Ntsc;
+
+    private readonly SyncSeparator _syncSeparator;
+    private readonly RasterOscillators _rasterOscillators;
+    private readonly ColorBurstPll _colorBurstPll;
     private readonly ChromaDecoder _yiqDecoder = new();
 
     // Seeded at the nominal NTSC frame shape so there's a sensible buffer
     // from sample 1, and resized in Decode below once the raster
     // oscillators' own measured timing (which can differ slightly per
     // signal) is known.
-    public readonly SampleBuffer SampleBuffer = new(
-        (uint)MathF.Round(TelevisionTiming.NominalSamplesPerLine),
-        (uint)MathF.Round(TelevisionTiming.NominalLinesPerField));
+    public readonly SampleBuffer SampleBuffer;
+
+    public Television()
+    {
+        _syncSeparator = new SyncSeparator(_timing);
+        _rasterOscillators = new RasterOscillators(_timing);
+        _colorBurstPll = new ColorBurstPll(_timing);
+
+        SampleBuffer = new SampleBuffer(
+            (uint)MathF.Round(_timing.SamplesPerLine),
+            (uint)MathF.Round(_timing.LinesPerField));
+    }
 
     /// <summary>
     /// Whether <see cref="Decode"/> populates every field of each
@@ -78,14 +89,12 @@ public sealed class Television
     /// <see cref="IsActiveVideo"/>. Self-calibrated from
     /// <see cref="SyncSeparator.HSyncWidthEstimate"/> rather than a
     /// fixed nominal sample count: RS-170A defines this gap as the same
-    /// duration as HSYNC's own pulse (TelevisionTiming's ActiveVideoStartSamples
-    /// and NominalHSyncWidthSamples constants are literally the same
-    /// formula), and SyncSeparator already tracks a real, self-
+    /// duration as HSYNC's own pulse, and SyncSeparator already tracks a real, self-
     /// calibrated HSYNC width for this exact signal - reusing it here means
     /// this tracks the real signal's own timing (e.g. Apple II's actual
     /// back-porch width, whatever it really is) instead of assuming nominal
     /// spec, the same way DetectedSamplesPerLine already does for line
-    /// length instead of assuming TelevisionTiming.NominalSamplesPerLine.
+    /// length instead of assuming TelevisionTiming.SamplesPerLine.
     /// </summary>
     public float ActiveVideoStartSamples => _syncSeparator.HSyncWidthEstimate;
 
@@ -95,7 +104,7 @@ public sealed class Television
     /// remaining unknown) has no detectable signal feature of its own -
     /// same reason ColorBurstPll's burst window position isn't self-
     /// calibrated either - so it's kept as a fixed *proportion* of a
-    /// nominal line (<see cref="TelevisionTiming.NominalFrontPorchFraction"/>),
+    /// nominal line (<see cref="TelevisionTiming.FrontPorchFraction"/>),
     /// but applied to <see cref="DetectedSamplesPerLine"/> rather than
     /// baked in as an absolute sample count, so this still scales
     /// correctly if a real signal's line length differs from nominal (as
@@ -104,7 +113,7 @@ public sealed class Television
     public float ActiveVideoLengthSamples =>
         DetectedSamplesPerLine
         - 2 * _syncSeparator.HSyncWidthEstimate
-        - TelevisionTiming.NominalFrontPorchFraction * DetectedSamplesPerLine;
+        - _timing.FrontPorchFraction * DetectedSamplesPerLine;
 
     /// <summary>
     /// The current running estimate of samples-per-line - see

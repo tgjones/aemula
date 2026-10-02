@@ -98,11 +98,16 @@ public sealed class SyncSeparator
     private float _syncLevel = InitialSyncLevel;
     private float _blackLevel = InitialBlackLevel;
     private float _whiteLevel = InitialWhiteLevel;
-    private float _hsyncWidthEstimate = TelevisionTiming.NominalHSyncWidthSamples;
+    private float _hsyncWidthEstimate;
 
     // How many consecutive samples we've been below sync level for, in the
     // pulse currently in progress (0 when not currently in a low pulse).
     private int _lowRunLength;
+
+    public SyncSeparator(TelevisionTiming? timing = null)
+    {
+        _hsyncWidthEstimate = (timing ?? TelevisionTiming.Ntsc).HSyncWidthSamples;
+    }
 
     /// <summary>
     /// The running estimate of the sync tip voltage, on the same 0-255 byte
