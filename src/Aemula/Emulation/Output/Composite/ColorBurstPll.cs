@@ -1,6 +1,6 @@
 using System;
 
-namespace Aemula.Emulation.Output.Ntsc;
+namespace Aemula.Emulation.Output.Composite;
 
 // Every line's back porch carries a short burst of the color subcarrier -
 // not picture information, just a reference: "here is what 0 degrees of
@@ -26,7 +26,7 @@ namespace Aemula.Emulation.Output.Ntsc;
 // sequence - so there's no unknown *frequency* to track here, only an
 // unknown, slowly-drifting *phase offset* against that fixed 4-step
 // sequence.
-public sealed class NtscColorBurstPll
+public sealed class ColorBurstPll
 {
     // How much of the measured phase error to actually apply each line -
     // deliberately small (a proportional-only loop, not a full PI
@@ -42,7 +42,7 @@ public sealed class NtscColorBurstPll
     // swing - otherwise it's active-video content or noise that happened
     // to fall in the window, not a real reference burst. Chosen
     // empirically against smpte.ntsc's real burst amplitude (see
-    // NtscColorBurstPllTests) - a free parameter, not derived from spec.
+    // ColorBurstPllTests) - a free parameter, not derived from spec.
     private const float DetectionThresholdFraction = 0.05f;
 
     // Free-running count of samples this PLL has ever processed - (mod 4)
@@ -65,7 +65,7 @@ public sealed class NtscColorBurstPll
     // sample-by-sample while inside the window and finalized (feeding the
     // loop filter) the moment the window closes - see Process.
     //
-    // float, not double: same reasoning as NtscYiqDecoder's own float
+    // float, not double: same reasoning as ChromaDecoder's own float
     // switch - this loop is closed (every line's burst measurement corrects
     // _phaseOffsetRadians afresh against the real signal, per the flywheel
     // remarks below), so float's lower precision doesn't compound over
@@ -104,7 +104,7 @@ public sealed class NtscColorBurstPll
     /// The local oscillator's resolved phase for the sample most recently
     /// passed to <see cref="Process"/> - the literal "where is 0/90/180/270
     /// degrees of the recovered color subcarrier, right now" reference this
-    /// PLL locks to burst, <em>before</em> <see cref="NtscYiqDecoder"/>'s own
+    /// PLL locks to burst, <em>before</em> <see cref="ChromaDecoder"/>'s own
     /// further rotation onto the I axis (see that class's
     /// BurstToIAxisRotationRadians remarks - that rotation is specific to
     /// demodulating I/Q, not part of what "the color carrier" itself means).
@@ -115,14 +115,14 @@ public sealed class NtscColorBurstPll
 
     /// <summary>
     /// Feeds one composite-video sample into the PLL. <paramref name="currentColumn"/>
-    /// should be <see cref="NtscRasterOscillators.CurrentColumn"/> for this
+    /// should be <see cref="RasterOscillators.CurrentColumn"/> for this
     /// same sample, and <paramref name="blackLevel"/> should be
-    /// <see cref="NtscSyncSeparator.BlackLevel"/> - burst oscillates around
+    /// <see cref="SyncSeparator.BlackLevel"/> - burst oscillates around
     /// the black/blanking level, not around byte value zero, so it has to
     /// be re-centered before correlating against the local oscillator.
     /// <paramref name="whiteReference"/> is only used to scale the detection
     /// threshold to this signal's own black-to-white swing. It is a fixed
-    /// sync-derived reference white (<see cref="NtscYiqDecoder.WhiteReference"/>),
+    /// sync-derived reference white (<see cref="ChromaDecoder.WhiteReference"/>),
     /// not a running picture-peak maximum - a stable threshold makes burst
     /// detection steadier on dim signals, where a running peak would sag.
     /// </summary>
@@ -132,8 +132,8 @@ public sealed class NtscColorBurstPll
         _sampleCounter++;
         CurrentPhaseRadians = phase;
 
-        IsInBurstWindow = currentColumn >= NtscTiming.BurstWindowStartSamples
-            && currentColumn < NtscTiming.BurstWindowStartSamples + NtscTiming.BurstWindowLengthSamples;
+        IsInBurstWindow = currentColumn >= TelevisionTiming.BurstWindowStartSamples
+            && currentColumn < TelevisionTiming.BurstWindowStartSamples + TelevisionTiming.BurstWindowLengthSamples;
 
         if (IsInBurstWindow)
         {
@@ -149,7 +149,7 @@ public sealed class NtscColorBurstPll
             // error this loop corrects.
             //
             // Worth being explicit, since it's easy to assume otherwise and
-            // NtscYiqDecoder's own rotation constant once *was* built on
+            // ChromaDecoder's own rotation constant once *was* built on
             // that wrong assumption: this loop has no 180-degree lock
             // ambiguity. The incoming sample is correlated directly, and
             // the error term below is the quadrature arm on its own - the
@@ -181,7 +181,7 @@ public sealed class NtscColorBurstPll
         // samples, the true amplitude is 2x the correlation vector's
         // magnitude divided by N (the factor of 2 falls out of the same
         // trig identity that makes I/Q demodulation work at all - see
-        // NtscYiqDecoder in a later phase for the same math applied to
+        // ChromaDecoder in a later phase for the same math applied to
         // chroma).
         var amplitude = 2f * MathF.Sqrt(
             _inPhaseAccumulator * _inPhaseAccumulator + _quadratureAccumulator * _quadratureAccumulator)

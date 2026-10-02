@@ -1,6 +1,6 @@
 using System;
 using Aemula.Emulation.Output;
-using Aemula.Emulation.Output.Ntsc;
+using Aemula.Emulation.Output.Composite;
 using BenchmarkDotNet.Attributes;
 
 namespace Aemula.Benchmarks;
@@ -26,10 +26,10 @@ public class TelevisionDecodeBenchmark
     private int _i;
 
     private Television _television = null!;
-    private NtscSyncSeparator _syncSeparator = null!;
-    private NtscRasterOscillators _rasterOscillators = null!;
-    private NtscColorBurstPll _colorBurstPll = null!;
-    private NtscYiqDecoder _yiqDecoder = null!;
+    private SyncSeparator _syncSeparator = null!;
+    private RasterOscillators _rasterOscillators = null!;
+    private ColorBurstPll _colorBurstPll = null!;
+    private ChromaDecoder _yiqDecoder = null!;
 
     [GlobalSetup]
     public void Setup()
@@ -38,10 +38,10 @@ public class TelevisionDecodeBenchmark
         random.NextBytes(_samples);
 
         _television = new Television();
-        _syncSeparator = new NtscSyncSeparator();
-        _rasterOscillators = new NtscRasterOscillators();
-        _colorBurstPll = new NtscColorBurstPll();
-        _yiqDecoder = new NtscYiqDecoder();
+        _syncSeparator = new SyncSeparator();
+        _rasterOscillators = new RasterOscillators();
+        _colorBurstPll = new ColorBurstPll();
+        _yiqDecoder = new ChromaDecoder();
     }
 
     private byte NextSample() => _samples[_i++ & (SampleCount - 1)];

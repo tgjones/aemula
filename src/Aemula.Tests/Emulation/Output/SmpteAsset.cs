@@ -49,7 +49,7 @@ internal static class SmpteAsset
     // property of NTSC.
     //
     // Correcting it here, at the asset boundary, rather than anywhere in
-    // the decoder, is the point: NtscYiqDecoder's burst-to-I-axis rotation
+    // the decoder, is the point: ChromaDecoder's burst-to-I-axis rotation
     // is now the plain spec figure with no per-signal calibration on top
     // (see that constant's remarks for how a compensating 180 degrees there
     // used to hide this), so a signal that doesn't conform to the spec has
@@ -66,7 +66,7 @@ internal static class SmpteAsset
     {
         // Between this asset's sync tip (raw 4 -> 4 here) and its blanking
         // level (raw 60 -> 67 here) - the same "is this sample sync or not"
-        // question NtscSyncSeparator answers, asked much more crudely,
+        // question SyncSeparator answers, asked much more crudely,
         // since all this needs is to find the trailing edges, not to
         // classify or measure the pulses.
         const byte SyncThreshold = 40;
@@ -82,7 +82,7 @@ internal static class SmpteAsset
         const int MinimumSyncRunLength = 20;
 
         // Measured from the sync trailing edge found below, and deliberately
-        // wider than the burst itself (NtscTiming's own window is 8.6
+        // wider than the burst itself (TelevisionTiming's own window is 8.6
         // samples in, 36 long): the extra margin either side is blanking,
         // where reflecting about the window mean - which *is* the blanking
         // level, since burst averages to it - is exactly a no-op, so
@@ -140,7 +140,7 @@ internal static class SmpteAsset
             // window has run into the *next* pulse rather than sitting in
             // one line's back porch. Those lines carry no burst to rotate
             // (and the PLL flywheels through them - see
-            // NtscColorBurstPll.FinishBurstWindow), so leave them alone.
+            // ColorBurstPll.FinishBurstWindow), so leave them alone.
             if (min < SyncThreshold || max - min < MinimumBurstSwing)
             {
                 continue;

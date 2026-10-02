@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
 using Aemula.Emulation.Chips.Ricoh2C02;
 using Aemula.Emulation.Output;
-using Aemula.Emulation.Output.Ntsc;
+using Aemula.Emulation.Output.Composite;
 
 namespace Aemula.Emulation.Systems.Nes;
 
@@ -23,7 +23,7 @@ public sealed partial class NesSystem
 {
     // Landmark levels on the shared composite-video byte scale Television.Decode
     // expects: sync tip 0, blanking 64 (nominal reference white would be 224).
-    // NtscYiqDecoder reconstructs its whole gain from the sync<->blanking span -
+    // ChromaDecoder reconstructs its whole gain from the sync<->blanking span -
     // whiteRef == BlankingLevel + WhiteReferenceGainFromSyncSwing * (blanking -
     // sync) - so the DAC map below pins the sync tip and blanking exactly and
     // then maps the 2C02 palette's grey column onto that reconstructed span (see
@@ -36,7 +36,7 @@ public sealed partial class NesSystem
     // columns, indexed by the 2-bit luma code:
     //   GreyLumaHighY - the $x0 "grey" entries    ($00 $10 $20 $30)
     //   GreyLumaLowY  - the $xD "dark grey" entries ($0D $1D $2D $3D)
-    // The 0.299/0.587/0.114 coefficients are exactly what NtscYiqDecoder's comb
+    // The 0.299/0.587/0.114 coefficients are exactly what ChromaDecoder's comb
     // filter + AGC recover luma with, so the round trip is tight. $20 and $30
     // are the same clipped near-white in the palette (both luma DAC taps clip at
     // 1962 too), so the two bright _h anchors coincide; $0D and $1D are both
@@ -62,11 +62,11 @@ public sealed partial class NesSystem
     // straddle blanking, the decoder self-references its amplitude.
     //
     // The six $xD / $x0 grey-tap codes are then overwritten with palette-
-    // anchored levels (see AnchorGreyByte): NtscYiqDecoder's own luma recovery
+    // anchored levels (see AnchorGreyByte): ChromaDecoder's own luma recovery
     // run backwards, so a settled grey screen decodes straight back to its
     // palette Y with no free scalar - the same trick
     // Atari2600System.CompositeVideo.cs's LumaLevels uses. It is anchored
-    // against the black level the decoder's NtscSyncSeparator actually settles
+    // against the black level the decoder's SyncSeparator actually settles
     // on (~53.9, see SeparatorClampedBlackLevel), not the emitted 64: the FIR's
     // sync-edge response, sampled by the level-triggered separator, clamps
     // black low, and compensating the grey taps is the only lever left (the
@@ -117,7 +117,7 @@ public sealed partial class NesSystem
         return table;
     }
 
-    // NtscSyncSeparator is level-triggered: once per line it re-clamps its
+    // SyncSeparator is level-triggered: once per line it re-clamps its
     // black-level estimate from the single decimated sample that lands
     // immediately after the HSYNC trailing edge. The band-limiting FIR below,
     // together with the fixed 3:1 decimation, spreads that sync -> breezeway
@@ -130,9 +130,9 @@ public sealed partial class NesSystem
     // 8th settled frame on), not a transient - roughly ten units under the
     // emitted blanking level. The NES breezeway (dots 305-308, locked against
     // Flawless2C02) is too short to give the FIR a clean plateau to settle on
-    // before colour burst, and NtscSyncSeparator / the decimation ratio are
+    // before colour burst, and SyncSeparator / the decimation ratio are
     // both off-limits, so the grey/luma DAC taps compensate instead: emit
-    // each grey byte as NtscYiqDecoder's own luma recovery
+    // each grey byte as ChromaDecoder's own luma recovery
     //   Y = (sample - black) * 255 / (WhiteReferenceGainFromSyncSwing * (black - sync))
     // run backwards against that *measured* black (sync self-calibrates to
     // ~0), so a settled grey screen still decodes straight back to its
@@ -144,7 +144,7 @@ public sealed partial class NesSystem
     private static byte AnchorGreyByte(float greyY) => (byte)Math.Clamp(
         (int)Math.Round(
             SeparatorClampedBlackLevel
-            + greyY * NtscYiqDecoder.WhiteReferenceGainFromSyncSwing
+            + greyY * ChromaDecoder.WhiteReferenceGainFromSyncSwing
                 * SeparatorClampedBlackLevel / 255f),
         0, 255);
 
@@ -152,7 +152,7 @@ public sealed partial class NesSystem
     // replacing the box-of-3 the plan started with. The 2C02's colour burst is
     // a real f_SC *square* wave; a 3-cell box average leaves it as roughly
     // [115, 115, 24, 24] per cycle at 4x-f_SC - two consecutive samples below
-    // NtscSyncSeparator's sync/blanking midpoint (byte ~32), so every burst
+    // SyncSeparator's sync/blanking midpoint (byte ~32), so every burst
     // half-cycle was misclassified as HSync and the active picture never
     // decoded. This FIR band-limits the square wave to near its fundamental
     // before decimation, leaving at most a single isolated sub-threshold sample
@@ -168,14 +168,14 @@ public sealed partial class NesSystem
     // sync<->blanking gain anchor intact.
     //
     // This is a narrow operating point, not a free choice. A gentler cutoff
-    // lets the decimated burst trough (byte ~34 here, against NtscSyncSeparator's
+    // lets the decimated burst trough (byte ~34 here, against SyncSeparator's
     // ~27 sync/blanking midpoint) drop back under the slice and the picture
     // stops locking; a sharper one widens the sync-edge response, pulling the
     // separator's clamped black estimate (see SeparatorClampedBlackLevel) below
     // ~53.5, at which point the blanking-level near-black codes ($0F/$1D) no
     // longer decode dark enough. 1.75 x f_SC threads both - and the ~14% f_SC
     // loss it does cost is common-mode between colour burst and active chroma
-    // (both at f_SC through this same filter), so NtscColorBurstPll's
+    // (both at f_SC through this same filter), so ColorBurstPll's
     // burst-referenced phase lock and the decoder's burst-anchored chroma
     // handling absorb it, leaving saturated hues a touch over-saturated rather
     // than dim (see NesSystemTelevisionTests' hue tolerance).
@@ -196,7 +196,7 @@ public sealed partial class NesSystem
     // lane multiplies the one delay-line slot just past the live window - always
     // in bounds, never read otherwise - by a zero tap, so it contributes
     // nothing. Vector128<float> is a fixed 4 lanes on every target (unlike
-    // System.Numerics.Vector<float>); same choice NtscYiqDecoder makes.
+    // System.Numerics.Vector<float>); same choice ChromaDecoder makes.
     private static readonly float[] LowPassTapsPadded = BuildPaddedTaps();
 
     private static float[] BuildPaddedTaps()

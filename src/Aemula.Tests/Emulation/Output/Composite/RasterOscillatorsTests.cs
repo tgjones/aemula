@@ -1,16 +1,16 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using Aemula.Emulation.Output.Ntsc;
+using Aemula.Emulation.Output.Composite;
 using Aemula.Emulation.Systems.AppleII;
 
-namespace Aemula.Tests.Emulation.Output.Ntsc;
+namespace Aemula.Tests.Emulation.Output.Composite;
 
-public class NtscRasterOscillatorsTests
+public class RasterOscillatorsTests
 {
-    private static (NtscSyncSeparator Separator, NtscRasterOscillators Oscillators) RunPipeline(IReadOnlyList<byte> samples)
+    private static (SyncSeparator Separator, RasterOscillators Oscillators) RunPipeline(IReadOnlyList<byte> samples)
     {
-        var separator = new NtscSyncSeparator();
-        var oscillators = new NtscRasterOscillators();
+        var separator = new SyncSeparator();
+        var oscillators = new RasterOscillators();
 
         for (var i = 0; i < samples.Count; i++)
         {
@@ -107,8 +107,8 @@ public class NtscRasterOscillatorsTests
             }
         }
 
-        var separator = new NtscSyncSeparator();
-        var oscillators = new NtscRasterOscillators();
+        var separator = new SyncSeparator();
+        var oscillators = new RasterOscillators();
 
         var previousRow = -1;
         var backwardsSteps = 0;
@@ -141,11 +141,11 @@ public class NtscRasterOscillatorsTests
         // A bogus "sync" pulse train at a period nowhere near any real
         // NTSC-family line length (~909 samples): far too short to be
         // mistaken for a normal line, and comfortably outside
-        // NtscRasterOscillators' bounded 20% max-drift range around
+        // RasterOscillators' bounded 20% max-drift range around
         // nominal, so no number of accepted pulses can ever drag the
         // estimate anywhere near it. The pulse width itself (60 samples) is
-        // kept within NtscSyncSeparator's normal HSYNC-width tolerance
-        // band, so these pulses really do reach NtscRasterOscillators as
+        // kept within SyncSeparator's normal HSYNC-width tolerance
+        // band, so these pulses really do reach RasterOscillators as
         // HSyncDetected candidates - it's specifically the oscillators'
         // own capture-range/drift-clamp logic under test here, not
         // whether the separator notices the pulses at all.

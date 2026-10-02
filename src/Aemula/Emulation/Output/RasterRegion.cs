@@ -9,18 +9,13 @@ namespace Aemula.Emulation.Output;
 // than TelevisionWindow (or anything else) re-deriving it after the fact
 // from nominal timing - a from-nominal-timing version of this existed
 // briefly and was deliberately replaced; see
-// Ntsc.NtscSyncSeparator.CurrentSyncRegion's remarks for why "live, from the
+// SyncSeparator.CurrentSyncRegion's remarks for why "live, from the
 // same state the rest of the pipeline already uses" matters.
 //
-// Lives here, one level up from the Ntsc/ classes that currently populate it
-// (rather than under Ntsc/ itself, unlike almost everything else this
-// decoder needed), because - unlike the sample-rate assumptions, the YIQ
-// matrix, or the burst PLL's phase stepping - a sync pulse, a color-burst
-// reference, blanking, and
-// active picture aren't NTSC-specific concepts: PAL has all four too, with
-// its own timing but the same names. Nothing about that claim is NTSC-vs-PAL
-// speculative the way a shared base class between their decode pipelines
-// would be - it's just what these regions are called.
+// These are the same four things on every standard - NTSC and PAL both have a
+// sync pulse, a color-burst reference, blanking and active picture, with
+// their own timing but the same names - so the enum is not specific to any
+// one standard's decoder.
 public enum RasterRegion
 {
     /// <summary>

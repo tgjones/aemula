@@ -28,7 +28,7 @@ public sealed partial class Atari2600System
     // Landmark levels on the shared composite-video byte scale that
     // Television.Decode expects: sync tip 0, blanking 64, reference white
     // 224 - 1.6 bytes/IRE with a 2.5x sync-to-white gain, the same scale
-    // every producer in the repo emits (and NtscSyncSeparator seeds its
+    // every producer in the repo emits (and SyncSeparator seeds its
     // estimates to). Not measured voltages - there's nothing real to
     // measure (see the type-level remarks) - but keeping to the one scale
     // is what lets the decoder's sync-anchored gain reconstruct the same
@@ -62,7 +62,7 @@ public sealed partial class Atari2600System
     private static readonly float[] GreyDacLevels =
         { 0f, 64f, 108f, 144f, 176f, 200f, 220f, 236f };
 
-    // GreyDacLevels are luma-Y values on NtscYiqDecoder's own 0..255 output
+    // GreyDacLevels are luma-Y values on ChromaDecoder's own 0..255 output
     // scale, and the decoder recovers Y as (byte - BlankingLevel) * 255 /
     // (WhiteLevel - BlankingLevel). Emitting a level is just that map run
     // backwards - byte = BlankingLevel + Y * (WhiteLevel - BlankingLevel) /
@@ -119,7 +119,7 @@ public sealed partial class Atari2600System
     // resistor value - but then clamped by sync safety, so it lands below the
     // palette rather than on it.
     //
-    // Target: NtscYiqDecoder recovers a chroma vector whose magnitude is this
+    // Target: ChromaDecoder recovers a chroma vector whose magnitude is this
     // amplitude times its decode scale, 255 / (whiteRef - black) = 255 / 160
     // = 1.594 (the sync-anchored gain is exactly nominal - black and sync
     // self-calibrate to the emitted 64 / 0). So amplitude 26 decodes to a
@@ -127,7 +127,7 @@ public sealed partial class Atari2600System
     // of ~45 (taken as |0.492*(b-y), 0.877*(r-y)|) - a few percent shy of
     // the mean, and a touch over the palette's less-saturated hues.
     //
-    // Sync safety is what stops it going higher. NtscSyncSeparator classifies
+    // Sync safety is what stops it going higher. SyncSeparator classifies
     // a sample as sync purely by level (closer to SyncLevel than
     // BlankingLevel, i.e. below their midpoint 32). Chroma rides its lowest
     // pedestal during color burst, where that pedestal is BlankingLevel (64)
@@ -159,7 +159,7 @@ public sealed partial class Atari2600System
     // hue rotation, and no absolute rotation belongs anywhere in this
     // pipeline. Absolute phase is pinned by color burst, at both ends -
     // TIA transmits burst off the same delay-line tap as hue 1, and
-    // NtscYiqDecoder rotates off recovered burst by the plain spec figure
+    // ChromaDecoder rotates off recovered burst by the plain spec figure
     // with no calibration on top (see BurstToIAxisRotationRadians). That is
     // exactly why a period TV needed no re-tinting when swapping an Atari
     // 2600 for an Apple II: burst is what makes absolute phase a fixed

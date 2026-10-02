@@ -5,8 +5,8 @@ namespace Aemula.Emulation.Output;
 // decode pipeline actually used to produce it. Region (see RasterRegion)
 // is the first field that needs this - TelevisionWindow's region overlays
 // are driven by what the pipeline really decided for each sample
-// (NtscSyncSeparator's own live pulse-width
-// classification, NtscColorBurstPll's own live burst-window flag), not a
+// (SyncSeparator's own live pulse-width
+// classification, ColorBurstPll's own live burst-window flag), not a
 // separate reconstruction from nominal timing that could quietly disagree
 // with the real decode. A plain struct (not a class) since SampleBuffer
 // below holds one of these per raster position - the same reasoning
@@ -26,8 +26,8 @@ public struct Sample
     // the raw composite byte Television.Decode was given for this exact
     // raster position, the
     // color-burst PLL's resolved local-oscillator phase at the moment it
-    // decoded that byte (see NtscColorBurstPll.CurrentPhaseRadians), and the
-    // Luma/Chroma/I/Q components NtscYiqDecoder derived from it. None of these feed
+    // decoded that byte (see ColorBurstPll.CurrentPhaseRadians), and the
+    // Luma/Chroma/I/Q components ChromaDecoder derived from it. None of these feed
     // Color/Region themselves (that decode already happened by the time
     // these are stored) - they exist purely so a historical sample's hover
     // tooltip can show *how* Color was arrived at, reading back neighboring

@@ -1,6 +1,6 @@
 using System;
 
-namespace Aemula.Emulation.Output.Ntsc;
+namespace Aemula.Emulation.Output.Composite;
 
 // A CRT draws a picture by sweeping an electron beam left-to-right along
 // each line, then jumping back and starting the next line slightly lower -
@@ -46,7 +46,7 @@ namespace Aemula.Emulation.Output.Ntsc;
 // Both behaviors come out of one PullInOscillator, parameterized by how
 // much of a phase error one accepted pulse is allowed to remove - see
 // HorizontalPhaseCorrectionRate/VerticalPhaseCorrectionRate below.
-public sealed class NtscRasterOscillators
+public sealed class RasterOscillators
 {
     // Horizontal capture range and smoothing: pulses within 15% of the
     // current line-length estimate are trusted; the estimate itself moves
@@ -57,7 +57,7 @@ public sealed class NtscRasterOscillators
     // below) doesn't get stuck rejecting every genuine pulse that follows
     // while the estimate is still converging toward the truth, but still
     // comfortably rejects anything from a different NTSC-family signal
-    // entirely (see the out-of-range test in NtscRasterOscillatorsTests).
+    // entirely (see the out-of-range test in RasterOscillatorsTests).
     private const float HorizontalCaptureRangeFraction = 0.15f;
     private const float HorizontalSmoothingRate = 0.1f;
 
@@ -100,7 +100,7 @@ public sealed class NtscRasterOscillators
 
     // A real vertical sync region is several HSYNC-width-or-broader pulses
     // in a row (equalizing + broad serration pulses), not one - see the
-    // class remarks on NtscSyncSeparator. Any VSYNC-classified pulse
+    // class remarks on SyncSeparator. Any VSYNC-classified pulse
     // arriving within this many *current horizontal line lengths* of the
     // last one considered is treated as part of the same vertical-blanking
     // region, not a fresh field boundary - empirically, real vertical sync
@@ -110,13 +110,13 @@ public sealed class NtscRasterOscillators
     private const float VerticalDebounceLineMultiplier = 4.0f;
 
     private readonly PullInOscillator _horizontal = new(
-        NtscTiming.NominalSamplesPerLine,
+        TelevisionTiming.NominalSamplesPerLine,
         HorizontalCaptureRangeFraction,
         HorizontalSmoothingRate,
         HorizontalPhaseCorrectionRate);
 
     private readonly PullInOscillator _vertical = new(
-        NtscTiming.NominalSamplesPerField,
+        TelevisionTiming.NominalSamplesPerField,
         VerticalCaptureRangeFraction,
         VerticalSmoothingRate,
         VerticalPhaseCorrectionRate);
@@ -144,7 +144,7 @@ public sealed class NtscRasterOscillators
     // samples (its sync pulse included) were written back over a row
     // already drawn, as a dark bar inside the visible picture. A real
     // vertical ramp cannot revisit a height it has already swept past.
-    private float _rowScaleSamplesPerLine = NtscTiming.NominalSamplesPerLine;
+    private float _rowScaleSamplesPerLine = TelevisionTiming.NominalSamplesPerLine;
 
     /// <summary>
     /// The raster column (sample position within the current line) of the
@@ -179,8 +179,8 @@ public sealed class NtscRasterOscillators
     /// <summary>
     /// Advances both oscillators by one sample. <paramref name="hSyncDetected"/>
     /// and <paramref name="vSyncDetected"/> should come from the same
-    /// sample's <see cref="NtscSyncSeparator.HSyncDetected"/> and
-    /// <see cref="NtscSyncSeparator.VSyncDetected"/>.
+    /// sample's <see cref="SyncSeparator.HSyncDetected"/> and
+    /// <see cref="SyncSeparator.VSyncDetected"/>.
     /// </summary>
     public void Process(bool hSyncDetected, bool vSyncDetected)
     {
@@ -253,7 +253,7 @@ public sealed class NtscRasterOscillators
         // real period instead of spiraling toward the drift clamp - see the
         // "premature free-run wrap" bug this fixed, found while chasing
         // down why real signals weren't converging in
-        // NtscRasterOscillatorsTests. Starts at 0, in step with Position -
+        // RasterOscillatorsTests. Starts at 0, in step with Position -
         // it's also used as *this* accept's measured period (see Tick
         // below), so it has to genuinely reflect "samples since Tick
         // started counting" even for the very first accept, not just be a

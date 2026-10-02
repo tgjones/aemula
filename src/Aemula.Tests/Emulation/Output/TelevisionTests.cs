@@ -1,6 +1,6 @@
 using System.Threading.Tasks;
 using Aemula.Emulation.Output;
-using Aemula.Emulation.Output.Ntsc;
+using Aemula.Emulation.Output.Composite;
 
 namespace Aemula.Tests.Emulation.Output;
 
@@ -72,11 +72,11 @@ public class TelevisionTests
         // (sync/blanking), not the start of the picture. Sampling at
         // the middle of each bar keeps well clear of the transition columns
         // between bars.
-        var barWidth = NtscTiming.ActiveVideoLengthSamples / 7.0;
+        var barWidth = TelevisionTiming.ActiveVideoLengthSamples / 7.0;
 
         RgbaByte SampleBar(int barIndex)
         {
-            var column = (int)(NtscTiming.ActiveVideoStartSamples + (barIndex + 0.5) * barWidth);
+            var column = (int)(TelevisionTiming.ActiveVideoStartSamples + (barIndex + 0.5) * barWidth);
             return buffer.Data[row * buffer.Width + column].Color;
         }
 

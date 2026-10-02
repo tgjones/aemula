@@ -1,7 +1,7 @@
 using System;
 using System.Numerics;
 using Aemula.Emulation.Output;
-using Aemula.Emulation.Output.Ntsc;
+using Aemula.Emulation.Output.Composite;
 using Hexa.NET.ImGui;
 using Hexa.NET.ImPlot;
 using Hexa.NET.SDL3;
@@ -49,7 +49,7 @@ public sealed class TelevisionWindow : DebuggerWindow
 
     // The window of the hovered scanline shown in the per-stage waveform
     // rows (DrawHoveredSampleWaveform), in samples before/after the hovered
-    // one. Lopsided on purpose: NtscYiqDecoder is causal, so a sample's color
+    // one. Lopsided on purpose: ChromaDecoder is causal, so a sample's color
     // is derived from the raw samples at and *before* it (the 5-tap comb
     // filter plus the 4-sample I/Q average reach back ~8 samples) and nothing
     // after it. 15 samples is ~4 subcarrier cycles at this decoder's 4x-fsc
@@ -74,7 +74,7 @@ public sealed class TelevisionWindow : DebuggerWindow
     // input; chroma/I/Q are signed and symmetric on the decoder's 0-255
     // black-to-white scale. A chroma excursion past the latter just clips at
     // the row's edge - the decoder doesn't clamp chroma to the legal gamut
-    // (see NtscYiqDecoder), so this is possible but atypical.
+    // (see ChromaDecoder), so this is possible but atypical.
     private const double RawRange = 255.0;
     private const double ChromaRange = 128.0;
 
@@ -117,7 +117,7 @@ public sealed class TelevisionWindow : DebuggerWindow
     // Independent of _showRegionOverlay below - a checked region can still
     // be interesting to see even while cropped (e.g. a VSYNC-classified
     // sample can land inside what would otherwise read as the active-video
-    // column range - see NtscSyncSeparator.CurrentSyncRegion's remarks on
+    // column range - see SyncSeparator.CurrentSyncRegion's remarks on
     // why a long sync pulse suppresses normal per-line column wraparound -
     // so cropping doesn't make the overlay meaningless the way it might seem
     // to at first).
@@ -640,7 +640,7 @@ public sealed class TelevisionWindow : DebuggerWindow
             var i = chroma * Math.Cos(angle);
             var q = chroma * Math.Sin(angle);
 
-            // The same YIQ -> RGB matrix NtscYiqDecoder uses.
+            // The same YIQ -> RGB matrix ChromaDecoder uses.
             var r = Math.Clamp(luma + 0.956 * i + 0.621 * q, 0, 255) / 255;
             var g = Math.Clamp(luma - 0.272 * i - 0.647 * q, 0, 255) / 255;
             var b = Math.Clamp(luma - 1.106 * i + 1.703 * q, 0, 255) / 255;
@@ -743,7 +743,7 @@ public sealed class TelevisionWindow : DebuggerWindow
 
     // The color-burst-locked reference sine drawn behind the chroma trace:
     // the PLL's own recovered subcarrier phase (see
-    // NtscColorBurstPll.CurrentPhaseRadians), i.e. "what the burst itself
+    // ColorBurstPll.CurrentPhaseRadians), i.e. "what the burst itself
     // looks like right now", continuing through this part of the line. Sized
     // to the hovered sample's chroma amplitude so the two are directly
     // comparable (a chroma wiggle in step with it is the burst's hue; one
@@ -826,8 +826,8 @@ public sealed class TelevisionWindow : DebuggerWindow
 
     // Sidebar contents, stacked vertically: the two toggles, a status
     // readout (the raster oscillators' current period estimates - see
-    // NtscRasterOscillators - and whether the color-burst PLL found a real
-    // burst on the most recently completed line, see NtscColorBurstPll - a
+    // RasterOscillators - and whether the color-burst PLL found a real
+    // burst on the most recently completed line, see ColorBurstPll - a
     // quick "is this decoding a sane, in-lock signal" glance, the same
     // spirit as LogicAnalyzerWindow's own zoom readout), and the region
     // overlay's color legend, shown only while that overlay actually has
@@ -915,7 +915,7 @@ public sealed class TelevisionWindow : DebuggerWindow
     // line, but a VSYNC pulse suppresses the horizontal oscillator's normal
     // per-line column wraparound entirely (no HSYNC edges occur for it to
     // lock onto while the pulse is happening - see
-    // NtscSyncSeparator.CurrentSyncRegion's remarks), so the columns a VSYNC
+    // SyncSeparator.CurrentSyncRegion's remarks), so the columns a VSYNC
     // pulse actually gets written at are wherever the oscillator's own
     // free-run happened to be, not any fixed, predictable range. An earlier
     // version of this special-cased VSYNC by checking only column 0 of each

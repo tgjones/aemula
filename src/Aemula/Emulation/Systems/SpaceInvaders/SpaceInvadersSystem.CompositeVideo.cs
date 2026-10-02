@@ -39,7 +39,7 @@ public sealed partial class SpaceInvadersSystem
     // junction can't produce a third, lower-than-black sync-tip level from
     // Ohm's law alone. Real hardware likely resolves this either through
     // pulse-width/timing-based sync separation downstream (not the
-    // amplitude-threshold scheme Television's NtscSyncSeparator uses) or
+    // amplitude-threshold scheme Television's SyncSeparator uses) or
     // through circuitry past the 10uF cap this session didn't trace - either
     // way, not something reproducible as a literal resistor-divider formula
     // from what was confirmed this session.
@@ -83,7 +83,7 @@ public sealed partial class SpaceInvadersSystem
     // VSYNC causes Television's horizontal raster oscillator to lose lock
     // for a few lines once per field, which is cosmetic and self-recovers
     // via the same reacquisition path a real Atari 2600 capture needed
-    // (see NtscRasterOscillators.cs). 3 lines is a reasonable estimate for
+    // (see RasterOscillators.cs). 3 lines is a reasonable estimate for
     // that window.
     private const int VsyncLines = 3;
 

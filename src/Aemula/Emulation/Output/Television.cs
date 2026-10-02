@@ -1,5 +1,5 @@
 using System;
-using Aemula.Emulation.Output.Ntsc;
+using Aemula.Emulation.Output.Composite;
 
 namespace Aemula.Emulation.Output;
 
@@ -24,22 +24,22 @@ public sealed class Television
     // booted AppleIISystem's real vertical-blanking pulse timing - not a
     // value picked from spec alone, the same "expect to tune against real
     // signals" spirit as this decoder's other engineering-margin constants
-    // (see e.g. NtscSyncSeparator's HSyncToleranceLowerFraction/
+    // (see e.g. SyncSeparator's HSyncToleranceLowerFraction/
     // VSyncWidthMultiplier).
     private const float VerticalBlankingFastPulseRateFraction = 0.75f;
 
-    private readonly NtscSyncSeparator _syncSeparator = new();
-    private readonly NtscRasterOscillators _rasterOscillators = new();
-    private readonly NtscColorBurstPll _colorBurstPll = new();
-    private readonly NtscYiqDecoder _yiqDecoder = new();
+    private readonly SyncSeparator _syncSeparator = new();
+    private readonly RasterOscillators _rasterOscillators = new();
+    private readonly ColorBurstPll _colorBurstPll = new();
+    private readonly ChromaDecoder _yiqDecoder = new();
 
     // Seeded at the nominal NTSC frame shape so there's a sensible buffer
     // from sample 1, and resized in Decode below once the raster
     // oscillators' own measured timing (which can differ slightly per
     // signal) is known.
     public readonly SampleBuffer SampleBuffer = new(
-        (uint)MathF.Round(NtscTiming.NominalSamplesPerLine),
-        (uint)MathF.Round(NtscTiming.NominalLinesPerField));
+        (uint)MathF.Round(TelevisionTiming.NominalSamplesPerLine),
+        (uint)MathF.Round(TelevisionTiming.NominalLinesPerField));
 
     /// <summary>
     /// Whether <see cref="Decode"/> populates every field of each
@@ -76,16 +76,16 @@ public sealed class Television
     /// Where active video starts within a line, in samples, measured from
     /// HSYNC's trailing edge (i.e. <see cref="CurrentColumn"/> == 0) - see
     /// <see cref="IsActiveVideo"/>. Self-calibrated from
-    /// <see cref="NtscSyncSeparator.HSyncWidthEstimate"/> rather than a
+    /// <see cref="SyncSeparator.HSyncWidthEstimate"/> rather than a
     /// fixed nominal sample count: RS-170A defines this gap as the same
-    /// duration as HSYNC's own pulse (NtscTiming's ActiveVideoStartSamples
+    /// duration as HSYNC's own pulse (TelevisionTiming's ActiveVideoStartSamples
     /// and NominalHSyncWidthSamples constants are literally the same
-    /// formula), and NtscSyncSeparator already tracks a real, self-
+    /// formula), and SyncSeparator already tracks a real, self-
     /// calibrated HSYNC width for this exact signal - reusing it here means
     /// this tracks the real signal's own timing (e.g. Apple II's actual
     /// back-porch width, whatever it really is) instead of assuming nominal
     /// spec, the same way DetectedSamplesPerLine already does for line
-    /// length instead of assuming NtscTiming.NominalSamplesPerLine.
+    /// length instead of assuming TelevisionTiming.NominalSamplesPerLine.
     /// </summary>
     public float ActiveVideoStartSamples => _syncSeparator.HSyncWidthEstimate;
 
@@ -93,9 +93,9 @@ public sealed class Television
     /// The active-video portion of one scanline, in samples - see
     /// <see cref="IsActiveVideo"/>. Self-calibrated: front porch (the one
     /// remaining unknown) has no detectable signal feature of its own -
-    /// same reason NtscColorBurstPll's burst window position isn't self-
+    /// same reason ColorBurstPll's burst window position isn't self-
     /// calibrated either - so it's kept as a fixed *proportion* of a
-    /// nominal line (<see cref="NtscTiming.NominalFrontPorchFraction"/>),
+    /// nominal line (<see cref="TelevisionTiming.NominalFrontPorchFraction"/>),
     /// but applied to <see cref="DetectedSamplesPerLine"/> rather than
     /// baked in as an absolute sample count, so this still scales
     /// correctly if a real signal's line length differs from nominal (as
@@ -104,11 +104,11 @@ public sealed class Television
     public float ActiveVideoLengthSamples =>
         DetectedSamplesPerLine
         - 2 * _syncSeparator.HSyncWidthEstimate
-        - NtscTiming.NominalFrontPorchFraction * DetectedSamplesPerLine;
+        - TelevisionTiming.NominalFrontPorchFraction * DetectedSamplesPerLine;
 
     /// <summary>
     /// The current running estimate of samples-per-line - see
-    /// <see cref="NtscRasterOscillators"/>. Mainly useful for a status
+    /// <see cref="RasterOscillators"/>. Mainly useful for a status
     /// readout (e.g. TelevisionWindow's toolbar); the decode pipeline itself
     /// only ever needs <see cref="CurrentColumn"/>/<see cref="CurrentRow"/>.
     /// </summary>
@@ -116,7 +116,7 @@ public sealed class Television
 
     /// <summary>
     /// The current running estimate of lines-per-frame - see
-    /// <see cref="NtscRasterOscillators"/>. Same use as
+    /// <see cref="RasterOscillators"/>. Same use as
     /// <see cref="DetectedSamplesPerLine"/>.
     /// </summary>
     public float DetectedLinesPerFrame => _rasterOscillators.DetectedLinesPerFrame;
@@ -124,10 +124,10 @@ public sealed class Television
     /// <summary>
     /// Whether a real color burst (as opposed to noise, or active-video
     /// content that happened to fall in the expected window) was found on
-    /// the most recently completed line - see <see cref="NtscColorBurstPll"/>.
+    /// the most recently completed line - see <see cref="ColorBurstPll"/>.
     /// The decode pipeline branches on this too: a line with no detected
     /// burst is decoded as grayscale, the same as a real receiver's color
-    /// killer (see <see cref="NtscYiqDecoder.Process"/>).
+    /// killer (see <see cref="ChromaDecoder.Process"/>).
     /// </summary>
     public bool ColorBurstLocked => _colorBurstPll.BurstDetected;
 
@@ -267,14 +267,14 @@ public sealed class Television
 
         // Decode gain is anchored to a reference white reconstructed from
         // the sync tip and blanking levels the signal always carries, not
-        // to NtscSyncSeparator's running picture-peak _whiteLevel: a dim
+        // to SyncSeparator's running picture-peak _whiteLevel: a dim
         // scene (Pitfall's forest, a night sky) may never contain reference
         // white at all, and a running-max AGC then inflates the gain and
         // blows out every colour. This mirrors a real receiver's gated-sync
         // AGC, which keys off the sync interval, never off picture white.
-        // NtscSyncSeparator still tracks its running _whiteLevel for the
+        // SyncSeparator still tracks its running _whiteLevel for the
         // WhiteLevel status readout, but nothing in decode consumes it now.
-        var whiteRef = NtscYiqDecoder.WhiteReference(_syncSeparator.BlackLevel, _syncSeparator.SyncLevel);
+        var whiteRef = ChromaDecoder.WhiteReference(_syncSeparator.BlackLevel, _syncSeparator.SyncLevel);
         _colorBurstPll.Process(sample, _rasterOscillators.CurrentColumn, _syncSeparator.BlackLevel, whiteRef);
         _yiqDecoder.Process(sample, _colorBurstPll.PhaseOffsetRadians, _syncSeparator.BlackLevel, _syncSeparator.SyncLevel, _colorBurstPll.BurstDetected);
         UpdateVerticalBlanking();
@@ -286,7 +286,7 @@ public sealed class Television
 
         // CurrentColumn/CurrentRow come from the raster oscillators' own
         // live, continuously-adjusting period estimates (see
-        // NtscRasterOscillators), while SampleBuffer's dimensions are only
+        // RasterOscillators), while SampleBuffer's dimensions are only
         // ever the last *rounded snapshot* of those same estimates - so
         // right after a real signal's timing shifts (or while sync is still
         // flywheeling, unlocked - see the raster oscillators'
@@ -304,7 +304,7 @@ public sealed class Television
         // not just active video - so a consumer always has a full-raster
         // picture to show. Only active video gets its full decoded *color*
         // though: sync/blanking/color-burst samples decode to real but
-        // meaningless chroma (NtscYiqDecoder's own remarks), and writing that
+        // meaningless chroma (ChromaDecoder's own remarks), and writing that
         // as-is would paint color burst's own reference-phase flicker as a
         // spurious, wrongly-hued stripe. Luma alone (I = Q = 0, i.e. plain
         // grayscale) is still a faithful *brightness* reading for those
@@ -339,11 +339,11 @@ public sealed class Television
     // straight from the same live state each earlier pipeline stage already
     // computed for its own reasons, not a separate reconstruction from
     // nominal timing (an earlier version of this worked that way, computed
-    // after the fact from NtscTiming's fixed windows and NtscRasterOscillators'
+    // after the fact from TelevisionTiming's fixed windows and RasterOscillators'
     // detected line length, and was deliberately replaced - see
-    // RasterRegion's remarks). In priority order: NtscSyncSeparator's own
+    // RasterRegion's remarks). In priority order: SyncSeparator's own
     // live, self-calibrated pulse-width classification (HSYNC vs. VSYNC) if
-    // this sample is part of a sync pulse at all; otherwise NtscColorBurstPll's
+    // this sample is part of a sync pulse at all; otherwise ColorBurstPll's
     // own live burst-window flag (burst can legitimately still occur on a
     // vertical-blanking line, and keeps priority the same way it already
     // does within a normal line); otherwise _isVerticallyBlanked (see
@@ -403,7 +403,7 @@ public sealed class Television
     // rows are unaffected, and only the single row on each edge of a
     // vertical-blanking region shows a partial, self-correcting result -
     // the same kind of "briefly wrong right at a pulse's own edge, then
-    // corrects" behavior NtscSyncSeparator.CurrentSyncRegion's own remarks
+    // corrects" behavior SyncSeparator.CurrentSyncRegion's own remarks
     // already describe as acceptable for live, causal classification.
     private void UpdateVerticalBlanking()
     {

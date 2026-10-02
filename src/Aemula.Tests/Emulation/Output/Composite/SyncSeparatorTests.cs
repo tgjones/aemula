@@ -1,14 +1,14 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Aemula.Emulation.Output;
-using Aemula.Emulation.Output.Ntsc;
+using Aemula.Emulation.Output.Composite;
 
-namespace Aemula.Tests.Emulation.Output.Ntsc;
+namespace Aemula.Tests.Emulation.Output.Composite;
 
-public class NtscSyncSeparatorTests
+public class SyncSeparatorTests
 {
     // Comfortably below the seeded sync/black midpoint threshold (see
-    // NtscSyncSeparator's InitialSyncLevel/InitialBlackLevel) and
+    // SyncSeparator's InitialSyncLevel/InitialBlackLevel) and
     // comfortably above it, respectively - stand-ins for "sync tip" and
     // "picture" samples that don't need to represent any particular real
     // voltage for these tests.
@@ -19,7 +19,7 @@ public class NtscSyncSeparatorTests
     public async Task DetectsHSyncAtEachPulseTrailingEdge()
     {
         const int lineLength = 200;
-        const int hsyncWidth = 67; // matches NtscSyncSeparator's ~67.3-sample nominal HSYNC width
+        const int hsyncWidth = 67; // matches SyncSeparator's ~67.3-sample nominal HSYNC width
 
         var samples = new List<byte>();
         var expectedHSyncIndices = new List<int>();
@@ -47,7 +47,7 @@ public class NtscSyncSeparatorTests
         // trailing edge to actually fire against.
         samples.Add(HighSample);
 
-        var separator = new NtscSyncSeparator();
+        var separator = new SyncSeparator();
         var actualHSyncIndices = new List<int>();
 
         for (var i = 0; i < samples.Count; i++)
@@ -70,7 +70,7 @@ public class NtscSyncSeparatorTests
 
         // ~5.8x a normal HSYNC pulse, matching the real ~27.1µs broad
         // vertical sync pulse vs. ~4.7µs HSYNC ratio - comfortably past
-        // NtscSyncSeparator's 3x-of-current-HSYNC-estimate VSYNC threshold.
+        // SyncSeparator's 3x-of-current-HSYNC-estimate VSYNC threshold.
         // This test approximates the real serrated vertical-sync waveform
         // as one uniform long low run, since only pulse-width
         // classification is under test here, not serration shape.
@@ -82,7 +82,7 @@ public class NtscSyncSeparatorTests
         for (var i = 0; i < vsyncWidth; i++) samples.Add(SyncSample);
         for (var i = 0; i < highSegmentLength; i++) samples.Add(HighSample);
 
-        var separator = new NtscSyncSeparator();
+        var separator = new SyncSeparator();
 
         var hsyncEverFired = false;
         var vsyncIndex = -1;
@@ -114,15 +114,15 @@ public class NtscSyncSeparatorTests
     public async Task CurrentSyncRegionIsHSyncThroughoutANormalPulseAndNullOutsideIt()
     {
         const int highSegmentLength = 50;
-        const int hsyncWidth = 67; // matches NtscSyncSeparator's ~67.3-sample nominal HSYNC width
-        const int confirmSamples = 2; // matches NtscSyncSeparator's own LiveSyncRegionConfirmSamples
+        const int hsyncWidth = 67; // matches SyncSeparator's ~67.3-sample nominal HSYNC width
+        const int confirmSamples = 2; // matches SyncSeparator's own LiveSyncRegionConfirmSamples
 
         var samples = new List<byte>();
         for (var i = 0; i < highSegmentLength; i++) samples.Add(HighSample);
         for (var i = 0; i < hsyncWidth; i++) samples.Add(SyncSample);
         for (var i = 0; i < highSegmentLength; i++) samples.Add(HighSample);
 
-        var separator = new NtscSyncSeparator();
+        var separator = new SyncSeparator();
 
         for (var i = 0; i < samples.Count; i++)
         {
@@ -157,7 +157,7 @@ public class NtscSyncSeparatorTests
         for (var i = 0; i < lowRunLength; i++) samples.Add(SyncSample);
         for (var i = 0; i < highSegmentLength; i++) samples.Add(HighSample);
 
-        var separator = new NtscSyncSeparator();
+        var separator = new SyncSeparator();
 
         RasterRegion? earlyRegion = null;
         RasterRegion? lateRegion = null;

@@ -1,4 +1,4 @@
-namespace Aemula.Emulation.Output.Ntsc;
+namespace Aemula.Emulation.Output.Composite;
 
 // A composite video signal carries picture, sync, and (during a short
 // window each line) a color reference burst all mixed together as one
@@ -25,7 +25,7 @@ namespace Aemula.Emulation.Output.Ntsc;
 // normal per-line HSYNC pulse (~4.7µs) from the much broader, much longer
 // VSYNC pulses that appear a handful of times per frame during vertical
 // blanking (~27µs) - that's the "sync separation" half of this class.
-public sealed class NtscSyncSeparator
+public sealed class SyncSeparator
 {
     // A completed low run only counts as "a normal HSYNC pulse" if its
     // width is within this fraction of the current running HSYNC-width
@@ -55,7 +55,7 @@ public sealed class NtscSyncSeparator
     // How many consecutive below-sync-level samples a low run has to reach
     // before CurrentSyncRegion (below) will actually report it as sync,
     // live. Below the classic RS-170A back-porch breakdown (breezeway,
-    // color burst, more back porch - see NtscTiming.BurstWindowStartSamples'
+    // color burst, more back porch - see TelevisionTiming.BurstWindowStartSamples'
     // remarks), color burst's own negative half-cycles genuinely dip below
     // the plain sync/black midpoint ClassifyBelowSyncLevel uses - on the
     // Apple II's calibrated levels (sync tip ~byte 0, black ~byte 64, burst
@@ -98,7 +98,7 @@ public sealed class NtscSyncSeparator
     private float _syncLevel = InitialSyncLevel;
     private float _blackLevel = InitialBlackLevel;
     private float _whiteLevel = InitialWhiteLevel;
-    private float _hsyncWidthEstimate = NtscTiming.NominalHSyncWidthSamples;
+    private float _hsyncWidthEstimate = TelevisionTiming.NominalHSyncWidthSamples;
 
     // How many consecutive samples we've been below sync level for, in the
     // pulse currently in progress (0 when not currently in a low pulse).

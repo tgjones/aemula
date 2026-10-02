@@ -40,7 +40,7 @@ public sealed partial class AppleIISystem
     // hard-clipped it either (its AGC keys off sync, not white, so the
     // excursion passed at full amplitude); what compressed it was soft -
     // beam-current limiting, CRT saturation, the viewer's contrast knob.
-    // NtscYiqDecoder's luma clamp downstream is a crude stand-in for that
+    // ChromaDecoder's luma clamp downstream is a crude stand-in for that
     // soft top-end compression. For 1-bit white text this is invisible;
     // only bright artifact-colour pixels whose luma+chroma exceeds 224
     // actually shift.

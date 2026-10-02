@@ -1,15 +1,15 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using Aemula.Emulation.Output.Ntsc;
+using Aemula.Emulation.Output.Composite;
 
-namespace Aemula.Tests.Emulation.Output.Ntsc;
+namespace Aemula.Tests.Emulation.Output.Composite;
 
-public class NtscColorBurstPllTests
+public class ColorBurstPllTests
 {
-    private sealed record Pipeline(NtscSyncSeparator Separator, NtscRasterOscillators Oscillators, NtscColorBurstPll Pll)
+    private sealed record Pipeline(SyncSeparator Separator, RasterOscillators Oscillators, ColorBurstPll Pll)
     {
-        public static Pipeline Create() => new(new NtscSyncSeparator(), new NtscRasterOscillators(), new NtscColorBurstPll());
+        public static Pipeline Create() => new(new SyncSeparator(), new RasterOscillators(), new ColorBurstPll());
 
         // Returns the PLL's PhaseOffsetRadians recorded at the end of each
         // line (i.e. once per completed line, in line order).
@@ -80,18 +80,18 @@ public class NtscColorBurstPllTests
     [Test]
     public async Task IsInBurstWindowTracksTheFixedBurstWindowLiveWithinALine()
     {
-        var pll = new NtscColorBurstPll();
+        var pll = new ColorBurstPll();
         const float blackLevel = 64;
         const float whiteLevel = 200;
 
-        var lineLength = (int)NtscTiming.NominalSamplesPerLine;
+        var lineLength = (int)TelevisionTiming.NominalSamplesPerLine;
 
         for (var column = 0; column < lineLength; column++)
         {
             pll.Process((byte)blackLevel, column, blackLevel, whiteLevel);
 
-            var expectedInWindow = column >= NtscTiming.BurstWindowStartSamples
-                && column < NtscTiming.BurstWindowStartSamples + NtscTiming.BurstWindowLengthSamples;
+            var expectedInWindow = column >= TelevisionTiming.BurstWindowStartSamples
+                && column < TelevisionTiming.BurstWindowStartSamples + TelevisionTiming.BurstWindowLengthSamples;
 
             await Assert.That(pll.IsInBurstWindow).IsEqualTo(expectedInWindow);
         }
@@ -122,11 +122,11 @@ public class NtscColorBurstPllTests
             {
                 byte value;
 
-                if (column >= NtscTiming.BurstWindowStartSamples
-                    && column < NtscTiming.BurstWindowStartSamples + NtscTiming.BurstWindowLengthSamples)
+                if (column >= TelevisionTiming.BurstWindowStartSamples
+                    && column < TelevisionTiming.BurstWindowStartSamples + TelevisionTiming.BurstWindowLengthSamples)
                 {
                     // Generated against the exact same "sample index mod 4"
-                    // reference NtscColorBurstPll itself uses internally
+                    // reference ColorBurstPll itself uses internally
                     // (samples.Count here is this sample's absolute index,
                     // matching the PLL's own free-running _sampleCounter at
                     // the point it processes this same sample) - so

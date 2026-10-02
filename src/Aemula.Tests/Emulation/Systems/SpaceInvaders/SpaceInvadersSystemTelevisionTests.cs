@@ -95,7 +95,7 @@ public class SpaceInvadersSystemTelevisionTests
         // this board's real ~15.6kHz horizontal rate being genuinely
         // slightly slower than broadcast NTSC's 15.734kHz. Bounds below
         // give the self-calibrating estimate comfortable room, the same
-        // style NtscRasterOscillatorsTests uses for its own locked-signal
+        // style RasterOscillatorsTests uses for its own locked-signal
         // assertions.
         await Assert.That(system.Television.DetectedSamplesPerLine).IsBetween(900.0f, 935.0f);
         await Assert.That(system.Television.DetectedLinesPerFrame).IsBetween(258.0f, 266.0f);

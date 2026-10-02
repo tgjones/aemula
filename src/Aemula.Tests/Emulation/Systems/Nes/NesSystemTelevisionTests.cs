@@ -22,7 +22,7 @@ namespace Aemula.Tests.Emulation.Systems.Nes;
 // across the entire active picture, so the decoded picture is one flat colour,
 // and it should land on Ricoh2C02Chip's own hardware-derived _systemPalette
 // entry for that code. Nothing in the burst -> I/Q path is fitted per system
-// (the 2C02's burst tap, NtscColorBurstPll's single lock, NtscYiqDecoder's
+// (the 2C02's burst tap, ColorBurstPll's single lock, ChromaDecoder's
 // spec-derived burst rotation), so this pins down absolute burst phase / hue
 // direction, not merely self-consistent colour. The bit-exact anchor for the
 // waveform itself is Ricoh2C02Tests (node-for-node against Flawless2C02).
@@ -167,7 +167,7 @@ public class NesSystemTelevisionTests
         // for saturated colours sitting near the YIQ I axis - the same reason
         // Atari2600SystemTelevisionTests measures its hues as a phase angle
         // instead - and $26 (red/orange) sits almost on it. On top of that,
-        // NtscYiqDecoder is a linear decoder while Ricoh2C02Chip._systemPalette
+        // ChromaDecoder is a linear decoder while Ricoh2C02Chip._systemPalette
         // carries display gamma, which compresses saturated-hue luminance the
         // decoder then can't reproduce, so every hue keeps a systematic
         // residual. NesSystem.CompositeVideo's band-limiting FIR is already

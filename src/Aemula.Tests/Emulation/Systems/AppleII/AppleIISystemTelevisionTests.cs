@@ -99,7 +99,7 @@ public class AppleIISystemTelevisionTests
     }
 
     // Rather than guess fixed-fraction sample coordinates (Apple II's real
-    // HBL/VBL geometry isn't the generic RS-170A window NtscTiming assumes
+    // HBL/VBL geometry isn't the generic RS-170A window TelevisionTiming assumes
     // for IsActiveVideo, and doesn't occupy the entire detected raster -
     // Television.SampleBuffer includes the full detected frame, vertical
     // blanking and all, most of which stays black), this scans every sample

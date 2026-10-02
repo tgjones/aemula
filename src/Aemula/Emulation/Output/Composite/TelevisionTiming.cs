@@ -1,12 +1,12 @@
-namespace Aemula.Emulation.Output.Ntsc;
+namespace Aemula.Emulation.Output.Composite;
 
 // Shared nominal timing constants every Ntsc* class in this decoder starts
 // from. These are only *starting points*/search centers for
-// self-calibrating estimates elsewhere in this decoder (NtscSyncSeparator's
-// HSYNC width tracking, NtscRasterOscillators' horizontal/vertical period
+// self-calibrating estimates elsewhere in this decoder (SyncSeparator's
+// HSYNC width tracking, RasterOscillators' horizontal/vertical period
 // tracking) - nothing in this decoder hardcodes an assumption that real
 // signals match these exactly.
-internal static class NtscTiming
+internal static class TelevisionTiming
 {
     // 4x the NTSC color subcarrier (3.579545MHz) - every Decode() caller in
     // this codebase samples at exactly this rate (see Television.Decode),
@@ -31,15 +31,15 @@ internal static class NtscTiming
     public const float NominalSamplesPerField = NominalLinesPerField * NominalSamplesPerLine; // ~238,691 samples
 
     // Color burst timing, measured from the HSYNC trailing edge (i.e. from
-    // NtscRasterOscillators.CurrentColumn == 0, which is exactly where
-    // NtscSyncSeparator fires HSyncDetected - the very start of back
+    // RasterOscillators.CurrentColumn == 0, which is exactly where
+    // SyncSeparator fires HSyncDetected - the very start of back
     // porch): a 0.6µs "breezeway" gap, then the burst itself, 8-11 cycles
-    // (nominally 9 - see NtscSyncSeparator's remarks on where that number
+    // (nominally 9 - see SyncSeparator's remarks on where that number
     // comes from) at exactly 4 samples/cycle, since every sample in this
     // decoder is locked to 4x the subcarrier. Unlike line/field length,
     // this window's position is *not* self-calibrated - color burst is far
     // too short and low-amplitude for the kind of pulse-width measurement
-    // NtscSyncSeparator/NtscRasterOscillators do, so NtscColorBurstPll
+    // SyncSeparator/RasterOscillators do, so ColorBurstPll
     // starts from this fixed, spec-derived window and instead self-
     // calibrates the burst's *phase* within it (see that class).
     public const float BurstWindowStartSamples = 0.6e-6f * SamplesPerSecond; // ~8.6 samples
@@ -71,7 +71,7 @@ internal static class NtscTiming
     // remaining fixed proportion Television.ActiveVideoLengthSamples still
     // needs (nothing distinguishes front porch from active video by signal
     // content, the same reason burst's own window position isn't
-    // self-calibrated - see NtscColorBurstPll's remarks), applied to the
+    // self-calibrated - see ColorBurstPll's remarks), applied to the
     // *detected* line length rather than kept as a hardcoded absolute
     // sample count, so it still scales if a real signal's line length
     // differs from nominal (as Apple II's 912-vs-909.3 already does).

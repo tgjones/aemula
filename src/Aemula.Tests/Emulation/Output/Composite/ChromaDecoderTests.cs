@@ -1,13 +1,13 @@
 using System;
 using System.Threading.Tasks;
-using Aemula.Emulation.Output.Ntsc;
+using Aemula.Emulation.Output.Composite;
 
-namespace Aemula.Tests.Emulation.Output.Ntsc;
+namespace Aemula.Tests.Emulation.Output.Composite;
 
-// Isolated, synthetic-signal tests for NtscYiqDecoder: full smpte.ntsc
+// Isolated, synthetic-signal tests for ChromaDecoder: full smpte.ntsc
 // property assertions belong in TelevisionTests, focused per-class math
 // checks belong here.
-public class NtscYiqDecoderTests
+public class ChromaDecoderTests
 {
     // Both the comb filter and the I/Q box-average are 4-sample rolling
     // windows seeded with zeros, so their very first few outputs are still
@@ -27,28 +27,28 @@ public class NtscYiqDecoderTests
     private const float BlackLevel = 64f;
     private const float DecodeScale = 255f / (224f - 64f);
 
-    // Builds a synthetic sample exactly the way NtscYiqDecoder.Process's own
+    // Builds a synthetic sample exactly the way ChromaDecoder.Process's own
     // internal phase formula expects it: rawLuma plus a sinusoid at the
     // decoder's own reference phase (slot*90 degrees + phaseOffsetRadians +
     // its internal burst-to-I-axis rotation), offset by an extra
     // caller-chosen angle. Because this generates chroma using the *same*
     // phase formula Process uses internally, the amplitude/angle predicted
-    // by the derivation in NtscYiqDecoder's own remarks (I = amplitude *
+    // by the derivation in ChromaDecoder's own remarks (I = amplitude *
     // sin(extraAngle), Q = amplitude * cos(extraAngle) once the box filter
     // is warmed up, both then scaled by DecodeScale) can be checked
     // directly - the same "generate against the decoder's own reference"
-    // approach NtscColorBurstPllTests already uses for its synthetic burst.
+    // approach ColorBurstPllTests already uses for its synthetic burst.
     private static byte BuildSample(int sampleIndex, float rawLuma, float amplitude, float extraAngle)
     {
         var slot = sampleIndex % 4;
-        var phase = Math.PI / 2.0 * slot + NtscYiqDecoder.BurstToIAxisRotationRadians + extraAngle;
+        var phase = Math.PI / 2.0 * slot + ChromaDecoder.BurstToIAxisRotationRadians + extraAngle;
         return (byte)Math.Clamp(Math.Round(rawLuma + amplitude * Math.Sin(phase)), 0, 255);
     }
 
     [Test]
     public async Task CombFilterRecoversConstantLumaWithNoChroma()
     {
-        var decoder = new NtscYiqDecoder();
+        var decoder = new ChromaDecoder();
 
         // Raw byte 150 sits (150 - 64) above black, so after the sync-
         // anchored rescale it decodes to 86 * 1.59375.
@@ -81,7 +81,7 @@ public class NtscYiqDecoderTests
         var expectedLuma = (rawLuma - BlackLevel) * DecodeScale;
         var expectedQ = amplitude * DecodeScale;
 
-        var decoder = new NtscYiqDecoder();
+        var decoder = new ChromaDecoder();
 
         for (var i = 0; i < 40; i++)
         {
@@ -107,7 +107,7 @@ public class NtscYiqDecoderTests
 
         var expectedI = amplitude * DecodeScale;
 
-        var decoder = new NtscYiqDecoder();
+        var decoder = new ChromaDecoder();
 
         for (var i = 0; i < 40; i++)
         {
@@ -134,7 +134,7 @@ public class NtscYiqDecoderTests
         var expectedI = amplitude * DecodeScale * MathF.Sin(extraAngle);
         var expectedQ = amplitude * DecodeScale * MathF.Cos(extraAngle);
 
-        var decoder = new NtscYiqDecoder();
+        var decoder = new ChromaDecoder();
 
         for (var i = 0; i < 40; i++)
         {
@@ -152,7 +152,7 @@ public class NtscYiqDecoderTests
     [Test]
     public async Task NoChromaProducesGrayscaleRgb()
     {
-        var decoder = new NtscYiqDecoder();
+        var decoder = new ChromaDecoder();
 
         for (var i = 0; i < 40; i++)
         {
@@ -185,7 +185,7 @@ public class NtscYiqDecoderTests
 
         var expectedLuma = (int)MathF.Round((rawLuma - BlackLevel) * DecodeScale);
 
-        var decoder = new NtscYiqDecoder();
+        var decoder = new ChromaDecoder();
 
         for (var i = 0; i < 40; i++)
         {
@@ -214,7 +214,7 @@ public class NtscYiqDecoderTests
         const float rawLuma = 128;
         const float amplitude = 40;
 
-        var decoder = new NtscYiqDecoder();
+        var decoder = new ChromaDecoder();
 
         for (var i = 0; i < 40; i++)
         {
@@ -245,14 +245,14 @@ public class NtscYiqDecoderTests
         // reference-white (224) sample. That invariance is the dim-scene
         // gain-stability guarantee (a forest, a night sky: no reference
         // white anywhere in frame) checked at the decoder level; the same
-        // property end-to-end through NtscSyncSeparator's level tracking is
+        // property end-to-end through SyncSeparator's level tracking is
         // a Television-level test.
         const byte MidGrey = 144;
         const byte ReferenceWhite = 224;
 
         var expectedLuma = (MidGrey - BlackLevel) * DecodeScale; // 80 * 1.59375 = 127.5
 
-        var greyOnly = new NtscYiqDecoder();
+        var greyOnly = new ChromaDecoder();
         for (var i = 0; i < 40; i++)
         {
             greyOnly.Process(MidGrey, phaseOffsetRadians: 0, blackLevel: BlackLevel, syncLevel: SyncLevel, colorBurstDetected: true);
@@ -261,7 +261,7 @@ public class NtscYiqDecoderTests
         // Reference white first, then the same mid-grey run - warmed well
         // past the 8-sample comb/box-filter window so no residue of the
         // white samples remains in either filter.
-        var withWhite = new NtscYiqDecoder();
+        var withWhite = new ChromaDecoder();
         for (var i = 0; i < 20; i++)
         {
             withWhite.Process(ReferenceWhite, phaseOffsetRadians: 0, blackLevel: BlackLevel, syncLevel: SyncLevel, colorBurstDetected: true);
@@ -276,8 +276,8 @@ public class NtscYiqDecoderTests
         await Assert.That(withWhite.Luma).IsEqualTo(greyOnly.Luma);
     }
 
-    // This isn't a test of NtscYiqDecoder.Process at all - it's a check on
-    // the *derivation* behind NtscYiqDecoder.BurstToIAxisRotationRadians
+    // This isn't a test of ChromaDecoder.Process at all - it's a check on
+    // the *derivation* behind ChromaDecoder.BurstToIAxisRotationRadians
     // (see that constant's own remarks): that I/Q really are just the
     // standard Y'UV plane's U/V axes rotated by 33 degrees, not merely a
     // number that happens to be close. It reconstructs the well-known

@@ -889,7 +889,7 @@ public sealed class TiaChip
     /// locked, not just during active picture lines). The breezeway gap
     /// isn't just cosmetic: without it, burst's own first sample would
     /// immediately follow HSYNC's trailing edge - exactly the sample
-    /// NtscSyncSeparator uses to (re)calibrate its black-level estimate
+    /// SyncSeparator uses to (re)calibrate its black-level estimate
     /// each line - so a burst *peak* landing there, instead of genuine flat
     /// blanking, drags that estimate away from the real black level, which
     /// in turn misclassifies burst's own low half as more sync (confirmed

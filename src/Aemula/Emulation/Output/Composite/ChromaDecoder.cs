@@ -1,10 +1,10 @@
 using System;
 using System.Runtime.Intrinsics;
 
-namespace Aemula.Emulation.Output.Ntsc;
+namespace Aemula.Emulation.Output.Composite;
 
-// Everything up to this point (NtscSyncSeparator, NtscRasterOscillators,
-// NtscColorBurstPll) exists to answer "where in the raster is this sample,
+// Everything up to this point (SyncSeparator, RasterOscillators,
+// ColorBurstPll) exists to answer "where in the raster is this sample,
 // and what phase is the color subcarrier at" - genuinely important
 // questions, but none of them turn a sample into a *pixel*. This class is
 // the last step: given one composite-video sample and the phase/timing
@@ -17,10 +17,10 @@ namespace Aemula.Emulation.Output.Ntsc;
 // them, and then decoding chroma's own phase/amplitude into a hue/
 // saturation pair (I and Q), is the classic problem this class solves in
 // three steps below.
-public sealed class NtscYiqDecoder
+public sealed class ChromaDecoder
 {
     // The fixed rotation between the color-burst PLL's own phase-zero
-    // reference (which NtscColorBurstPll locks to wherever the burst
+    // reference (which ColorBurstPll locks to wherever the burst
     // signal's positive peak happens to land) and the NTSC-standard I axis
     // the YIQ->RGB matrix below assumes - derived from the standard NTSC
     // Y'UV/Y'IQ axis geometry, not fitted to smpte.ntsc's bar colors:
@@ -31,7 +31,7 @@ public sealed class NtscYiqDecoder
     //     coefficients below are *derived from* this 33-degree rotation
     //     together with the 0.492/0.877 U/V scale factors, not the other
     //     way around) - see e.g. Poynton, "Digital Video and HDTV", the
-    //     classic Y'UV/Y'IQ vector diagram. NtscYiqDecoderTests'
+    //     classic Y'UV/Y'IQ vector diagram. ChromaDecoderTests'
     //     MatchesUvToIqDefinition test reconstructs the standard 0.596/
     //     -0.274/-0.322/0.211/-0.523/0.312 matrix coefficients from this
     //     same 33-degree figure, as a check that this really is the
@@ -54,9 +54,9 @@ public sealed class NtscYiqDecoder
     //
     // An earlier version of this constant added a further 180 degrees,
     // justified as resolving a supposed lock-branch ambiguity in
-    // NtscColorBurstPll's phase detector ("a squaring/Costas-style detector
+    // ColorBurstPll's phase detector ("a squaring/Costas-style detector
     // can't tell a lock from a lock 180 degrees away"). That reasoning was
-    // wrong on both counts. NtscColorBurstPll is not a Costas loop: it
+    // wrong on both counts. ColorBurstPll is not a Costas loop: it
     // correlates the incoming sample *directly* against its own cos/sin
     // references and uses the quadrature accumulation alone as its error
     // term (see that class's Process/FinishBurstWindow) - it never squares
@@ -129,7 +129,7 @@ public sealed class NtscYiqDecoder
     // mantissa is far more precision than the result can ever show, and
     // nothing recursively accumulates error sample-to-sample (each sample's
     // phase is recomputed fresh from phaseOffsetRadians, not integrated) -
-    // see the NtscYiqDecoder float-vs-double discussion in chat history for
+    // see the ChromaDecoder float-vs-double discussion in chat history for
     // the full reasoning.
     private readonly byte[] _sampleHistory = new byte[5];
     private readonly float[] _iProductHistory = new float[4];
@@ -140,7 +140,7 @@ public sealed class NtscYiqDecoder
     // sin/cos of the demodulation base angle, memoised across samples. The
     // base angle is phaseOffsetRadians (the color-burst PLL's slowly-drifting
     // lock) plus a fixed rotation constant, and the PLL only nudges its offset
-    // once per line (NtscColorBurstPll.FinishBurstWindow) - so this argument
+    // once per line (ColorBurstPll.FinishBurstWindow) - so this argument
     // holds steady for a whole line's ~900 samples, and recomputing SinCos
     // every sample was pure waste. Recompute only when the angle actually
     // moves; NaN-safe because the initial _lastBaseAngle != any real angle.
@@ -182,18 +182,18 @@ public sealed class NtscYiqDecoder
 
     /// <summary>
     /// Decodes one composite-video sample into a pixel. <paramref name="phaseOffsetRadians"/>
-    /// should be <see cref="NtscColorBurstPll.PhaseOffsetRadians"/>, and
+    /// should be <see cref="ColorBurstPll.PhaseOffsetRadians"/>, and
     /// <paramref name="blackLevel"/>/<paramref name="syncLevel"/> should be
-    /// <see cref="NtscSyncSeparator.BlackLevel"/>/<see cref="NtscSyncSeparator.SyncLevel"/>
+    /// <see cref="SyncSeparator.BlackLevel"/>/<see cref="SyncSeparator.SyncLevel"/>
     /// for this same sample - reference white is reconstructed from those
     /// two points (see <see cref="WhiteReference"/>), not taken from a
     /// running picture peak. This class doesn't know or care whether the
     /// sample it's given actually falls in active video; callers only need
-    /// to consult <see cref="NtscYiqDecoder"/>'s output where
+    /// to consult <see cref="ChromaDecoder"/>'s output where
     /// <c>Television.IsActiveVideo</c> is true (sync/blanking samples decode
     /// to meaningless colors, harmlessly, since nothing displays them).
     /// <paramref name="colorBurstDetected"/> should be
-    /// <see cref="NtscColorBurstPll.BurstDetected"/> for the line this sample
+    /// <see cref="ColorBurstPll.BurstDetected"/> for the line this sample
     /// belongs to: when it is false this acts as a real receiver's color
     /// killer and mutes the chroma path entirely (see below), so a
     /// burst-less source (a monochrome signal, or an Apple II with its
@@ -232,7 +232,7 @@ public sealed class NtscYiqDecoder
         var rawChroma = sample - rawLuma;
 
         // Rescale from this signal's own self-calibrated levels (see
-        // NtscSyncSeparator) onto the fixed 0-255 black-to-white scale the
+        // SyncSeparator) onto the fixed 0-255 black-to-white scale the
         // YIQ->RGB matrix below assumes - the same rescale factor applies to
         // chroma, since chroma's amplitude lives in the same volts/byte
         // units as luma does. Reference white is reconstructed from sync
@@ -266,7 +266,7 @@ public sealed class NtscYiqDecoder
         // the 2x-subcarrier-frequency term the multiplication also
         // produces (that term averages to exactly zero over any 4
         // consecutive samples, the same trick the comb filter above uses) -
-        // and, like NtscColorBurstPll.FinishBurstWindow's amplitude
+        // and, like ColorBurstPll.FinishBurstWindow's amplitude
         // recovery (which this is "the same math applied to chroma", per
         // that class's own remarks), the raw average needs multiplying by 2
         // to recover the true I/Q amplitude, not just a scaled-down

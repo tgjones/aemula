@@ -420,7 +420,7 @@ public class Atari2600SystemTelevisionTests
     // (U, V) plane a vectorscope displays - degrees counterclockwise from
     // +U, so burst is at 180, yellow at ~167, red at ~103.
     //
-    // NtscYiqDecoder's I and Q are components on axes that sit at 123 and 33
+    // ChromaDecoder's I and Q are components on axes that sit at 123 and 33
     // degrees in that same plane (its BurstToIAxisRotationRadians remarks
     // derive both figures), and Q's axis is I's rotated -90, which is what
     // collapses the two-axis projection into the single atan2 below.
@@ -495,9 +495,9 @@ public class Atari2600SystemTelevisionTests
     // worth being clear about why absolute phase is even checkable. Nothing
     // is calibrated per-system anywhere in this path: TIA transmits color
     // burst off the same delay-line tap as hue 1 (TiaChip drives Col = 1
-    // during the burst window), NtscColorBurstPll has exactly one stable
+    // during the burst window), ColorBurstPll has exactly one stable
     // lock for any signal (see its phase-detector remarks), and
-    // NtscYiqDecoder rotates off that recovered burst by the plain
+    // ChromaDecoder rotates off that recovered burst by the plain
     // spec-derived figure with nothing fitted on top. Burst is precisely
     // what makes absolute hue a fixed point rather than a per-source
     // adjustment - which is why a period television needed no re-tinting
@@ -607,7 +607,7 @@ public class Atari2600SystemTelevisionTests
     // The grayscale ramp: hold each luminance code 0..7 (hue 0, no chroma)
     // full-screen and check the decoded Luma against Palette.NtscPalette
     // row 0 directly. The emitted curve is that row run backwards through
-    // NtscYiqDecoder's normalization (byte = blanking + Y * (WhiteLevel -
+    // ChromaDecoder's normalization (byte = blanking + Y * (WhiteLevel -
     // blanking) / 255), so a settled grey screen decodes straight back to
     // the palette Y - code 7 included, which lands near 236 (~92 IRE), not
     // full white, because real 2600 grey doesn't reach reference white. The
