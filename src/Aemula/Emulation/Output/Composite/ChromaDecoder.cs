@@ -72,6 +72,9 @@ public sealed class ChromaDecoder
 
     private ulong _sampleCounter;
 
+    // Consecutive samples decoded with the colour killer engaged.
+    private int _killedSamples;
+
     // sin/cos of the demodulation base angle, memoised across samples. The
     // base angle is phaseOffsetRadians (the color-burst PLL's slowly-drifting
     // lock) plus a fixed rotation constant, and the PLL only nudges its offset
@@ -195,6 +198,31 @@ public sealed class ChromaDecoder
         if (!colorBurstDetected)
         {
             chroma = 0f;
+
+            // Once a whole demodulator window of zero chroma has gone through,
+            // every product the box filter holds is zero, so I and Q are zero
+            // and the matrix collapses to Rgb = (Luma, Luma, Luma): a receiver
+            // with its chroma path cut off. Skipping the demodulation is
+            // therefore output-identical, not an approximation - the first
+            // four killed samples still run it so that I and Q decay exactly
+            // as they always did, and the products are left zeroed for when
+            // the burst returns.
+            if (_killedSamples >= _iProductHistory.Length)
+            {
+                _sampleCounter++;
+                Chroma = 0f;
+                I = 0f;
+                Q = 0f;
+                var grey = (byte)Luma;
+                Rgb = new RgbaByte(grey, grey, grey, 255);
+                return;
+            }
+
+            _killedSamples++;
+        }
+        else
+        {
+            _killedSamples = 0;
         }
 
         Chroma = chroma;

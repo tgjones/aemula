@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using Aemula.Emulation.Output;
 using Aemula.Emulation.Output.Composite;
 
 namespace Aemula.Tests.Emulation.Output.Composite;
@@ -312,5 +313,69 @@ public class ChromaDecoderTests
 
         await Assert.That(i).IsBetween(expectedI - 0.005, expectedI + 0.005);
         await Assert.That(q).IsBetween(expectedQ - 0.005, expectedQ + 0.005);
+    }
+
+    // Pins the decoder's complete output (colour, luma, chroma and both
+    // demodulated components) over a signal that switches the colour killer on
+    // and off in runs both shorter and longer than the 4-sample demodulator
+    // window, so any shortcut taken while the killer is engaged is proved
+    // output-identical, including the samples either side of each switch. The
+    // golden values are what the decoder produced when this was written.
+    // (+ 0f folds -0 into +0: the two are the same number.)
+    private static ulong HashKillerSwitchingStream(TelevisionStandard standard)
+    {
+        var decoder = new ChromaDecoder(standard);
+        var hash = 14695981039346656037UL;
+        var random = new Random(12345);
+        var burst = true;
+        var untilSwitch = 0;
+        var sign = 1f;
+
+        for (var i = 0; i < 200_000; i++)
+        {
+            if (untilSwitch-- <= 0)
+            {
+                burst = !burst;
+                untilSwitch = random.Next(1, 3) == 1 ? random.Next(1, 8) : random.Next(8, 400);
+            }
+
+            if (i % 97 == 0)
+            {
+                sign = -sign;
+            }
+
+            // Mostly flat luma with steps and a little subcarrier-band noise.
+            var level = 64 + (i / 301 % 7) * 22 + random.Next(-6, 7);
+            var sample = (byte)Math.Clamp(level, 0, 255);
+            var phaseOffset = (i / 5000) * 0.37f;
+
+            decoder.Process(sample, phaseOffset, BlackLevel, SyncLevel, burst, sign);
+
+            foreach (var value in new[]
+            {
+                (ulong)decoder.Rgb.R, decoder.Rgb.G, decoder.Rgb.B,
+                (ulong)BitConverter.SingleToUInt32Bits(decoder.Luma + 0f),
+                BitConverter.SingleToUInt32Bits(decoder.Chroma + 0f),
+                BitConverter.SingleToUInt32Bits(decoder.I + 0f),
+                BitConverter.SingleToUInt32Bits(decoder.Q + 0f),
+            })
+            {
+                hash = (hash ^ value) * 1099511628211UL;
+            }
+        }
+
+        return hash;
+    }
+
+    [Test]
+    public async Task NtscOutputIsUnchangedAcrossKillerSwitching()
+    {
+        await Assert.That(HashKillerSwitchingStream(TelevisionStandard.Ntsc)).IsEqualTo(14899384237263941348UL);
+    }
+
+    [Test]
+    public async Task PalOutputIsUnchangedAcrossKillerSwitching()
+    {
+        await Assert.That(HashKillerSwitchingStream(TelevisionStandard.Pal)).IsEqualTo(11865611736260710547UL);
     }
 }
