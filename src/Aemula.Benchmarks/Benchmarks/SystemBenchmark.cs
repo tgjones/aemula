@@ -110,3 +110,11 @@ public class SpaceInvadersBenchmark : SystemBenchmark
     [Benchmark]
     public long Tick() => RunTicks();
 }
+
+public class ZX80Benchmark : SystemBenchmark
+{
+    private protected override string SystemName => "zx80";
+
+    [Benchmark]
+    public long Tick() => RunTicks();
+}

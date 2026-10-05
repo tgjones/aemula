@@ -68,6 +68,13 @@ internal static class SystemSpecs
             WarmupTicks: 340_000,          // ≈1 frame: into attract mode
             TicksPerInvocation: 680_000,   // ≈2 frames (covers both the mid-screen and VBLANK IRQs)
             TelevisionRow),
+
+        new SystemSpec(
+            "zx80", // The default UK PAL board; one tick is one 6.5MHz oscillator cycle
+            static () => [], // Boots the bundled ROM; no removable media
+            WarmupTicks: 3_000_000,        // ≈23 frames: past the ROM's init, into the steady display routine at the K cursor
+            TicksPerInvocation: 260_000,   // ≈2 frames (130000 ticks/frame at 50Hz)
+            TelevisionRow),
     ];
 
     public static SystemSpec Get(string name) =>

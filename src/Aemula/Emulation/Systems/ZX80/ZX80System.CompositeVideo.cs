@@ -9,6 +9,9 @@ public sealed partial class ZX80System
     private const byte BlackByte = 57;
     private const byte WhiteByte = 255;
 
+    // The byte most recently handed to Television.Decode.
+    internal byte CompositeSampleForTest { get; private set; }
+
     private void TickCompositeVideo()
     {
         // IC20 gate 2 XORs the shift register's complemented output against
@@ -39,6 +42,7 @@ public sealed partial class ZX80System
             ? SyncTipByte
             : video ? WhiteByte : BlackByte;
 
+        CompositeSampleForTest = sample;
         Television.Decode(sample);
     }
 }
