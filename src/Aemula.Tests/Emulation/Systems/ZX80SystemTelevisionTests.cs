@@ -88,6 +88,45 @@ public class ZX80SystemTelevisionTests
         await Assert.That(Math.Abs(television.DetectedSamplesPerLine - 828f) < 1f).IsTrue();
     }
 
+    // TelevisionStandard is a class, not an enum, so its instances can't be
+    // attribute arguments.
+    public static IEnumerable<Func<TelevisionStandard>> Standards()
+    {
+        yield return () => TelevisionStandard.Ntsc;
+        yield return () => TelevisionStandard.Pal;
+    }
+
+    // The ZX80 emits no colour burst, so the colour killer must stay engaged
+    // however the burst window lands on the picture. Its back porch is so short
+    // that the window falls on flat white paper; a window that is not a whole
+    // number of the decoder's 4-sample subcarrier cycles turns that DC level into
+    // spurious subcarrier correlation and un-kills the chroma, which shows up as
+    // colour fringing on every glyph edge.
+    [Test]
+    [MethodDataSource(nameof(Standards))]
+    public async Task NoBurstIsDetectedBecauseTheBoardEmitsNone(TelevisionStandard standard)
+    {
+        var system = new ZX80System(standard);
+
+        for (var i = 0; i < 30_000_000; i++)
+        {
+            system.Tick();
+        }
+
+        var detected = 0;
+        const int ticks = 2_000_000;
+        for (var i = 0; i < ticks; i++)
+        {
+            system.Tick();
+            if (system.Television.ColorBurstLocked)
+            {
+                detected++;
+            }
+        }
+
+        await Assert.That(detected).IsEqualTo(0);
+    }
+
     [Test]
     public async Task HoldingDownAKeyChangesWhatsOnScreen()
     {

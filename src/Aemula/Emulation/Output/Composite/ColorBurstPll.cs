@@ -77,6 +77,24 @@ public sealed class ColorBurstPll
     private readonly float _burstWindowStart;
     private readonly float _burstWindowEnd;
 
+    // A real receiver never correlates the raw composite signal against its
+    // oscillator: the burst is first picked out by a resonant circuit at the
+    // subcarrier (a tuned transformer or crystal), which is AC-coupled by
+    // nature. A flat level - white paper where a board with no back porch puts
+    // the burst gate, say - therefore contributes nothing however the gate
+    // falls against whole subcarrier cycles. This is that resonator, as an RBJ
+    // constant-peak-gain biquad: unity gain and zero phase shift exactly at the
+    // subcarrier, so the amplitude and phase maths below see a burst unchanged
+    // in the middle of its band. Q trades how fast the burst rises through the
+    // filter (a 9-10 cycle burst must reach most of its amplitude inside the
+    // window) against how long a sync-to-picture edge rings into it; a free
+    // parameter, not from spec.
+    private const float BandpassQ = 4f;
+    private readonly float _bandpassB0;
+    private readonly float _bandpassA1;
+    private readonly float _bandpassA2;
+    private float _bandpassX1, _bandpassX2, _bandpassY1, _bandpassY2;
+
     // PAL's burst swings +/-45 degrees about the phase the oscillator locks to,
     // alternating line by line. _swingSin/_swingCos rotate the measured burst
     // back onto where it should sit for the line's parity; both are (0, 1) for
@@ -95,6 +113,13 @@ public sealed class ColorBurstPll
         _burstWindowStart = timing.BurstWindowStartSamples;
         _burstWindowEnd = timing.BurstWindowStartSamples + timing.BurstWindowLengthSamples;
         _burstSwingRadians = timing.Standard.BurstSwingRadians;
+
+        var omega = 2.0 * Math.PI * timing.Standard.ColorSubcarrierHz / timing.SamplesPerSecond;
+        var alpha = Math.Sin(omega) / (2.0 * BandpassQ);
+        var a0 = 1.0 + alpha;
+        _bandpassB0 = (float)(alpha / a0);
+        _bandpassA1 = (float)(-2.0 * Math.Cos(omega) / a0);
+        _bandpassA2 = (float)((1.0 - alpha) / a0);
     }
 
     /// <summary>
@@ -147,12 +172,11 @@ public sealed class ColorBurstPll
     /// <summary>
     /// Feeds one composite-video sample into the PLL. <paramref name="currentColumn"/>
     /// should be <see cref="RasterOscillators.CurrentColumn"/> for this
-    /// same sample, and <paramref name="blackLevel"/> should be
-    /// <see cref="SyncSeparator.BlackLevel"/> - burst oscillates around
-    /// the black/blanking level, not around byte value zero, so it has to
-    /// be re-centered before correlating against the local oscillator.
-    /// <paramref name="whiteReference"/> is only used to scale the detection
-    /// threshold to this signal's own black-to-white swing. It is a fixed
+    /// same sample. <paramref name="blackLevel"/> (<see cref="SyncSeparator.BlackLevel"/>)
+    /// and <paramref name="whiteReference"/> are only used to scale the
+    /// detection threshold to this signal's own black-to-white swing; the
+    /// subcarrier bandpass already removes the DC level the burst sits on.
+    /// The reference white is a fixed
     /// sync-derived reference white (<see cref="TelevisionStandard.WhiteReference"/>),
     /// not a running picture-peak maximum - a stable threshold makes burst
     /// detection steadier on dim signals, where a running peak would sag.
@@ -165,9 +189,19 @@ public sealed class ColorBurstPll
 
         IsInBurstWindow = currentColumn >= _burstWindowStart && currentColumn < _burstWindowEnd;
 
+        // Run on every sample, in or out of the window, so the resonator is
+        // already ringing with the line's content when the gate opens - as the
+        // analog one is. (b1 = 0 and b2 = -b0 for a bandpass.)
+        var filtered = _bandpassB0 * (sample - _bandpassX2)
+            - _bandpassA1 * _bandpassY1 - _bandpassA2 * _bandpassY2;
+        _bandpassX2 = _bandpassX1;
+        _bandpassX1 = sample;
+        _bandpassY2 = _bandpassY1;
+        _bandpassY1 = filtered;
+
         if (IsInBurstWindow)
         {
-            var acSample = sample - blackLevel;
+            var acSample = filtered;
 
             // The classic quadrature phase-detector correlation: multiply
             // the incoming (DC-removed) sample by the local oscillator's
