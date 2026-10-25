@@ -169,7 +169,7 @@ from git history.
       whether its HTTP API is usable for memory/register inspection. Record
       the finding in `Systems/BbcMicro/README.md`.
 - [x] Confirm the ROM CRCs above in a test; collect DFS and SAA5050 sources.
-- [ ] Update `Systems/BbcMicro/README.md` with the links found in research
+- [x] Update `Systems/BbcMicro/README.md` with the links found in research
       (schematic thread, Stirling's vidproc, SerialULA, jsbeeb
       `MachineSession`, b2 debug docs).
 

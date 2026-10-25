@@ -51,20 +51,33 @@
 ### Video ULA
 
 * [Video ULA](http://beebwiki.mdfs.net/Video_ULA)
+* [Mike Stirling's FPGA BBC `vidproc.vhd`](https://github.com/mikestir/fpga-bbc/blob/master/vidproc.vhd)
+
+### Serial ULA
+
+* [hoglet67/SerialULA](https://github.com/hoglet67/SerialULA)
+
+## Schematics
+
+* [amb5l's searchable Issue 7 mainboard schematic](https://stardot.org.uk/forums/viewtopic.php?t=23329)
+  (`bbc_micro_mainboard_iss7_20210909.pdf`), the netlist extraction source
+* [TobyLobster's circuit diagrams](https://tobylobster.github.io/mos/mos/S-s25.html)
+  (`CircuitDiagram.pdf`, `CircuitKeyboard.pdf`), a second source of truth
 
 ## Reference implementations
 
 Aemula's BBC Micro emulation is tested against the excellent jsbeeb and b2 as 
 reference implementations.
 
-For jsbeeb, a harness exists at `tools/jsbeeb-harness`.
+For jsbeeb, a harness exists at `tools/jsbeeb-harness`, built on its
+[`MachineSession`](https://github.com/mattgodbolt/jsbeeb/blob/main/src/machine-session.js).
 
 For b2, there's an HTTP API. The HTTP API doesn't expose as much information as
 we can get from jsbeeb, so we'll use it as a manual tie-breaker. To use it, 
 build b2 from source  (`make _unixr OS=osx`, then `ninja b2` in `build/r.osx`;
 the `RelWithDebInfo` build includes the debugger and HTTP API). The
 HTTP API listens on `localhost:48075` and is documented at the end of
-`doc/Debug-version.md`. Findings from running it:
+[`doc/Debug-version.md`](https://github.com/tom-seddon/b2/blob/master/doc/Debug-version.md). Findings from running it:
 
 * **Memory peek/poke works**: `GET /peek/b2/<begin>/+<len>` returns raw bytes
   (host address space, max `0xffff`), `POST /poke/b2/<addr>` stores the body.
