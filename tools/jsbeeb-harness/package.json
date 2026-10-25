@@ -1,0 +1,11 @@
+{
+  "name": "aemula-jsbeeb-harness",
+  "private": true,
+  "type": "module",
+  "description": "Headless jsbeeb runner that dumps BBC Micro state for comparison with Aemula",
+  "engines": { "node": ">=24.15.0" },
+  "dependencies": {
+    "jsbeeb": "2.11.0",
+    "sharp": "^0.35.3"
+  }
+}

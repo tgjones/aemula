@@ -161,7 +161,7 @@ from git history.
 
 ### Phase 0 — Reference harness and groundwork
 
-- [ ] Stand up a jsbeeb headless harness (Node script outside the Aemula
+- [x] Stand up a jsbeeb headless harness (Node script outside the Aemula
       solution, e.g. `tools/`) that runs a model-B session for N cycles and
       dumps registers, selected RAM, PC trace, and a frame PNG as JSON/files
       that Aemula tests can compare to.
