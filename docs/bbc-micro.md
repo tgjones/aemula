@@ -165,7 +165,7 @@ from git history.
       solution, e.g. `tools/`) that runs a model-B session for N cycles and
       dumps registers, selected RAM, PC trace, and a frame PNG as JSON/files
       that Aemula tests can compare to.
-- [ ] Build b2's debug version locally; read `doc/Debug-version.md` and decide
+- [x] Build b2's debug version locally; read `doc/Debug-version.md` and decide
       whether its HTTP API is usable for memory/register inspection. Record
       the finding in `Systems/BbcMicro/README.md`.
 - [ ] Confirm the ROM CRCs above in a test; collect DFS and SAA5050 sources.

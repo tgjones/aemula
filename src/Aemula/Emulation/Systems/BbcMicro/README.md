@@ -51,3 +51,30 @@
 ### Video ULA
 
 * [Video ULA](http://beebwiki.mdfs.net/Video_ULA)
+
+## Reference implementations
+
+Aemula's BBC Micro emulation is tested against the excellent jsbeeb and b2 as 
+reference implementations.
+
+For jsbeeb, a harness exists at `tools/jsbeeb-harness`.
+
+For b2, there's an HTTP API. The HTTP API doesn't expose as much information as
+we can get from jsbeeb, so we'll use it as a manual tie-breaker. To use it, 
+build b2 from source  (`make _unixr OS=osx`, then `ninja b2` in `build/r.osx`;
+the `RelWithDebInfo` build includes the debugger and HTTP API). The
+HTTP API listens on `localhost:48075` and is documented at the end of
+`doc/Debug-version.md`. Findings from running it:
+
+* **Memory peek/poke works**: `GET /peek/b2/<begin>/+<len>` returns raw bytes
+  (host address space, max `0xffff`), `POST /poke/b2/<addr>` stores the body.
+  After `reset` the banner was readable from screen RAM at `&7C00`.
+* Also available: `reset` (power-on, by config name), `paste`, `mount`, `run`,
+  `load-disc`.
+* **Not available over HTTP**: CPU registers, cycle counter, stop/run/step,
+  breakpoints, PC trace. Peeks sample the machine while it is running, so
+  there is no way to compare state at an exact cycle. Those features exist
+  only in the GUI debugger (trace to file, manual stop).
+* The configs saved in a fresh b2 profile are 1770-based (`B/Acorn 1770`
+  etc.); an 8271 configuration has to be added by hand in the GUI before the
+  phase 8 comparison.
