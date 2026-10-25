@@ -168,7 +168,7 @@ from git history.
 - [x] Build b2's debug version locally; read `doc/Debug-version.md` and decide
       whether its HTTP API is usable for memory/register inspection. Record
       the finding in `Systems/BbcMicro/README.md`.
-- [ ] Confirm the ROM CRCs above in a test; collect DFS and SAA5050 sources.
+- [x] Confirm the ROM CRCs above in a test; collect DFS and SAA5050 sources.
 - [ ] Update `Systems/BbcMicro/README.md` with the links found in research
       (schematic thread, Stirling's vidproc, SerialULA, jsbeeb
       `MachineSession`, b2 debug docs).
