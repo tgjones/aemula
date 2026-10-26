@@ -120,7 +120,8 @@ Already present in `Emulation/Chips/` and reusable as-is: `Mos6502Chip`,
 `74138`, `74139`, `74259`, `74283`.
 
 **Needed, generic 74xx/CMOS (flat files, with tests):**
-`Ttl7430`, `Ttl7438` (open-collector NAND), `Ttl7451`, `Ttl74132`
+`Ttl7430`, `Ttl7438` (open-collector NAND), `Ttl74LS51` (the LS part is a 3-wide
++ 2-wide AOI, not the plain 7451's 2+2, which is `Ttl7450`), `Ttl74132`
 (Schmitt NAND), `Ttl74163`, `Ttl74244`, `Ttl74245`, `Ttl74273`, `Ttl74393`,
 `Cd4013`, `Cd4020`. 74S00/74S04 reuse `Ttl7400/7404` (the S-family timing
 difference is irrelevant to a zero-delay model, but note any place the
@@ -134,7 +135,7 @@ by the `81LS95` buffers, so no multiplexer chip is needed. The 74LS123
 
 | Part (refs) | Notes |
 |---|---|
-| `81LS95` (IC8–IC13) | 3-state octal buffer; switches the video (VMA) and CPU (A) addresses onto the DRAM row/column lines RA0–RA6, and buffers /WE. Generic, with tests. |
+| `Ttl8195` (81LS95; IC8–IC13) | 3-state octal buffer; switches the video (VMA) and CPU (A) addresses onto the DRAM row/column lines RA0–RA6, and buffers /WE. Generic, with tests. |
 | `HM4816` (IC53–IC68) | 16 × 16K×1 DRAM, i.e. 32K RAM as two banks. Model as a RAM chip with the multiplexed row/column interface (/RAS, /CAS, /WE). |
 | `23128` (IC51, IC52), `27128` (IC88, IC100, IC101) | 16K ROMs. IC51's two chip-select pins are driven straight from A14/A15 (the OS socket); the rest are sideways-ROM sockets selected through the paged-ROM latch. |
 | `uPD7002` (IC73) | 4-channel ADC for the analogue port. Behavioural. |
@@ -210,7 +211,7 @@ from git history.
 
 ### Phase 2 — Missing generic chips
 
-- [ ] Implement the generic parts listed above, pin-level, with
+- [x] Implement the generic parts listed above, pin-level, with
       truth-table/behaviour tests per class.
 
 ### Phase 3 — 6522 VIA and 6845 CRTC
