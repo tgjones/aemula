@@ -202,7 +202,7 @@ from git history.
 - [x] Sanity checks: every IC has all its power/ground pins; every gate input
       is driven; bus-by-label connectivity (A0–A15, D0–D7, address/data bus
       labels) resolves.
-- [ ] **User verification passes** over the areas most likely to be wrong
+- [x] **User verification passes** over the areas most likely to be wrong
       (RS423/Econet and the keyboard are the expected trouble spots). The
       first pass is mine; wherever I get stuck, the user traces that area by
       hand. Record each pass in the netlist header as the ZX80 did.
