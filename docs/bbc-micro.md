@@ -175,7 +175,7 @@ from git history.
 
 ### Phase 1 — Netlist extraction
 
-- [ ] Write the extractor: parse the PDF's vector geometry and text layer
+- [x] Write the extractor: parse the PDF's vector geometry and text layer
       (wires, junction dots, pin ends, labels, bus rippers) into the ZX80
       netlist format. Report suspicious nodes (dangling or passive-only,
       unlabelled nets joining two outputs, both-ends-same-bus buffers) as
