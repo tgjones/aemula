@@ -17,6 +17,8 @@ Checks, in order:
   3. buses: every A0-A15 / D0-D7 pin of the CPU, VIAs, ROMs and other address/data users is
      on the net of that name, and the bus nets contain nothing outside the expected set
      unless listed as extra (reported for review).
+  4. contention: a net with two or more output pins of modelled ICs (open-collector and
+     3-state parts, which legitimately share a net, are left out) is reported for review.
 
 Exit status is the number of errors; warnings (review items) do not count.
 """
@@ -146,6 +148,10 @@ DATA_PINS = {
 # Inputs the sheet itself leaves unconnected on purpose: (ref, pin) -> reason.
 ACCEPTED = {("IC97", str(p)): "spare 74LS74 section; the sheet's own note says its inputs should be tied"
             for p in (10, 11, 12, 13)}
+
+
+# Nets that are wired-OR by design (open-drain IRQ outputs of the VIAs and ACIA).
+WIRED_OR = {"IRQ#"}
 
 
 def norm_type(t):
@@ -307,6 +313,21 @@ def main(path, pins_json=None):
 
     check_bus("A", 16, ADDR_PINS)
     check_bus("D", 8, DATA_PINS)
+
+    # ---- 4. contention
+    print("== output contention ==")
+    shared_ok = {"7438", "74LS38", "74LS244", "74LS245", "81LS95", "74LS123", "74LS132", "74LS393"}
+    for n, ps in sorted(nets.items()):
+        if n in rails or n in WIRED_OR or re.match(r"[AD]\d+$", n):
+            continue
+        outs = []
+        for ref, pin in ps:
+            if ref in ics and norm_type(ics[ref]) not in shared_ok:
+                po = pinout_for(ics[ref])
+                if po and int(pin) in po["outs"]:
+                    outs.append(f"{ref}.{pin}")
+        if len(outs) > 1:
+            warn(f"{n}: {len(outs)} outputs on one net: {' '.join(outs)}")
 
     print(f"\n{errors} errors, {warnings} warnings")
     return errors

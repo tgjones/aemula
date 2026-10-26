@@ -124,9 +124,26 @@ Already present in `Emulation/Chips/` and reusable as-is: `Mos6502Chip`,
 (Schmitt NAND), `Ttl74163`, `Ttl74244`, `Ttl74245`, `Ttl74273`, `Ttl74393`,
 `Cd4013`, `Cd4020`. 74S00/74S04 reuse `Ttl7400/7404` (the S-family timing
 difference is irrelevant to a zero-delay model, but note any place the
-schematic relies on a propagation delay). The sheet's text layer may list
-further types (e.g. the DRAM address multiplexers); the extraction phase
-produces the definitive list and this section is updated then.
+schematic relies on a propagation delay). The netlist's component list
+(IC1–IC101) confirms this set; the DRAM row/column address multiplexing is done
+by the `81LS95` buffers, so no multiplexer chip is needed. The 74LS123
+(IC87) is the existing `Ttl74123Chip`. `Ne555Chip` already covers the 555
+(IC16).
+
+**Needed, other parts the netlist shows (not in the first draft of this list):**
+
+| Part (refs) | Notes |
+|---|---|
+| `81LS95` (IC8–IC13) | 3-state octal buffer; switches the video (VMA) and CPU (A) addresses onto the DRAM row/column lines RA0–RA6, and buffers /WE. Generic, with tests. |
+| `HM4816` (IC53–IC68) | 16 × 16K×1 DRAM, i.e. 32K RAM as two banks. Model as a RAM chip with the multiplexed row/column interface (/RAS, /CAS, /WE). |
+| `23128` (IC51, IC52), `27128` (IC88, IC100, IC101) | 16K ROMs. IC51's two chip-select pins are driven straight from A14/A15 (the OS socket); the rest are sideways-ROM sockets selected through the paged-ROM latch. |
+| `uPD7002` (IC73) | 4-channel ADC for the analogue port. Behavioural. |
+| `DS88LS120` (IC74), `DS3691` (IC75) | Line interface between the serial ULA (IC7) and the cassette/RS423 connectors. Behavioural, logic levels only. |
+| `68B54` (IC89), `75159` (IC93) | IC89 is the MC68B54 **ADLC** (not a 6850) and, with the 75159 differential driver, forms the Econet interface on SK7. Optional; the 6850 ACIA (IC4) is the serial one and is already listed above. |
+| `LM319` (IC94, IC95), `LM324` (IC17, IC35), `LM386` (IC19) | Comparators, quad op-amp and audio amplifier: the cassette input, sound mixer and speaker output. Analogue; decide in phase 1/2 whether to model or abstract them (`Lm311Chip` exists for reference). |
+| `TMS5220` (IC99), `TMS6100` (IC98) | Speech processor and its phrase ROM. Fitted on the schematic but optional on a real Model B; leave out initially. |
+| `UM1233-E36` (U1) | RF modulator; not modelled. |
+| Tube (PL12), Econet (SK7) | Connectors only; the off-board hardware is out of scope. |
 
 **Needed, system-specific:**
 
@@ -189,7 +206,7 @@ from git history.
       (RS423/Econet and the keyboard are the expected trouble spots). The
       first pass is mine; wherever I get stuck, the user traces that area by
       hand. Record each pass in the netlist header as the ZX80 did.
-- [ ] Update the chip inventory above from the real component list.
+- [x] Update the chip inventory above from the real component list.
 
 ### Phase 2 — Missing generic chips
 
