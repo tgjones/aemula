@@ -45,6 +45,10 @@ HEADER = [
     '#   IC31.12 (74LS74 D, the second half of the 1 MHz synchroniser) is drawn with no wire at all on this',
     '#     sheet. Acorn\'s own circuit diagram connects it to IC29.10 and IC33.2 (the IC33 inverter output',
     '#     that also feeds the IC29 OR gate), so it is moved onto that net (user verification pass).',
+    '#   PL13 (keyboard connector) pins 2-4: the sheet leaves pin 2 with a wire and no label and puts the',
+    '#     KBDSW and 1MHZE labels one pin too high. On Acorn\'s own diagram pin 2 is KBDSW (labelled RST SW),',
+    '#     pin 3 is 1MHZE and pin 4 is IC32.7 (Q3 of the addressable latch, the keyboard enable). The extractor',
+    '#     had also put IC32.7 on the 1MHZE net, shorting two outputs; it moves to PL13.4 (user verification pass).',
     '#',
     '# OPEN (drawn that way on the sheet, not corrected; for the user verification passes):',
     '#   IC97B (spare 74LS74 section) has all inputs open; the sheet notes "INPUTS SHOULD BE TIED...".',
@@ -62,6 +66,11 @@ CORRECTIONS = [
     ('swap', 'IC27.9', 'IC27.10'),
     ('swap', 'IC2.23', 'IC2.25'),
     ('move', 'IC31.12', 'IC33.2'),
+    # PL13.2 is alone on a raw net; build the keyboard-enable net there, then rotate the labels down
+    ('move', 'PL13.4', 'PL13.2'),
+    ('move', 'PL13.3', '1MHZE'),
+    ('move', 'PL13.2', 'KBDSW'),
+    ('move', 'IC32.7', 'PL13.4'),
 ]
 
 # state each correction expects of the raw extraction: pin -> net it must currently be on
@@ -76,6 +85,9 @@ EXPECT = {
     'IC2.25': 'CRTC#',
     'IC2.23': '1MHZE',
     'IC33.2': 'IC29.10',
+    'PL13.3': 'KBDSW',
+    'PL13.4': '1MHZE',
+    'IC32.7': '1MHZE',
 }
 
 
