@@ -28,10 +28,23 @@ HEADER = [
     '#     (IC89.6), not RTS (IC89.2 / IC91A.1,2).',
     '#   IC27 (7438) pins 9 and 10 are transposed: pin 10 is tied to +5V (R65 pull-up), pin 9 takes the',
     '#     8271 INT / S9 net. (Logically a no-op on a NAND, but the pins are now as on the service manual.)',
+    '#   IC2 (6845): the symbol numbers /CS as pin 25 and E as pin 23; on the HD6845SP /CS is pin 23 and E',
+    '#     is pin 25, so the two pins\' nets are exchanged (CRTC# on 23, 1MHZE on 25).',
     '#   Keyboard "spurious extra wire": reported against TobyLobster\'s own diagram, which he fixed.',
     '#     It is not an error of this schematic, so nothing is applied for it.',
     '#   Extractor fix, not a schematic error: a +5V symbol drawn with its label further than 3pt from the',
     '#     bar (R65.1) was left unattached; the rail labels now reach 3.5pt.',
+    '#   Extractor fix, not a schematic error: the 1MHZE arrow on the 6845 E pin was attached to the',
+    '#     neighbouring DEN pin\'s wire, whose corner lay under the label; an arrow tip level with the',
+    '#     start of its label now wins.',
+    '#   Extractor fixes, not schematic errors: IC20A was swallowed by the rotated A8/A9 bus labels beside it',
+    '#     (taken for a decoupling-capacitor reference) and A8/A9 landed on the wrong wires; +5V written as a',
+    '#     plain label (IC22.2/.4, IC42.1/.7/.10) was left unattached; one wire is drawn with a 1.5pt break',
+    '#     (IC40.6 to IC38.4) and is now joined.',
+    '#',
+    '# OPEN (drawn that way on the sheet, not corrected; for the user verification passes):',
+    '#   IC31.12 (74LS74 D, the second half of the 1 MHz synchroniser) is drawn with no wire at all.',
+    '#   IC97B (spare 74LS74 section) has all inputs open; the sheet notes "INPUTS SHOULD BE TIED...".',
     '#',
 ]
 
@@ -43,6 +56,7 @@ CORRECTIONS = [
     ('move', 'IC93.10', '+5V'),
     ('move', 'IC93.11', 'IC89.6'),
     ('swap', 'IC27.9', 'IC27.10'),
+    ('swap', 'IC2.23', 'IC2.25'),
 ]
 
 # state each correction expects of the raw extraction: pin -> net it must currently be on
@@ -54,6 +68,8 @@ EXPECT = {
     'IC93.11': '+5V',
     'IC27.9': '+5V',
     'IC27.10': 'IC78.11',
+    'IC2.25': 'CRTC#',
+    'IC2.23': '1MHZE',
 }
 
 

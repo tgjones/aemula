@@ -485,7 +485,10 @@ def main():
         return False
 
     # ---- refs and values ----
-    refs = [t for t in texts if t['kind'] == 'text' and REF_RE.match(t['text'])]
+    # Rotated "A8"/"A9" next to a bus ripper are address-line labels; the A<n> decoupling-capacitor
+    # references are all drawn horizontally.
+    refs = [t for t in texts if t['kind'] == 'text' and REF_RE.match(t['text'])
+            and not (re.match(r'A\d+$', t['text']) and t['dir'] != (1, 0))]
     # Transistors, switches and links are drawn without pin stubs: each lead ends in a lone tick
     # stroke, which is the connection point. Number it from the nearest leftover digit.
     stub_ends = [(x, y) for st in stubs for x, y in ((st[0], st[1]), (st[2], st[3]))]
@@ -633,7 +636,8 @@ def main():
             diag.append(f'pin stub at {p["x"]:.0f},{p["y"]:.0f} has no pin number')
 
     # values: nearest plain text to the ref that is not itself a ref / wire label
-    plain = [t for t in texts if t['kind'] == 'text' and not t.get('is_ref') and not POWER_RE.match(t['text'])]
+    plain = [t for t in texts if t['kind'] == 'text' and not t.get('is_ref') and not POWER_RE.match(t['text'])
+             and not (re.match(r'A\d+$', t['text']) and t['dir'] != (1, 0))]
     vgrid = Grid(8)
     for i, t in enumerate(plain):
         vgrid.add(i, *t['bbox'])
@@ -716,6 +720,27 @@ def main():
         for j in on[1:]:
             wd.union(on[0], j)
             wire_edges.append((on[0], j, f'junction dot at {x:.1f},{y:.1f}'))
+    # A few wires are drawn with a visible break (1.5pt or so, nothing in it) where the export dropped a
+    # piece; collinear facing ends that close are one wire.
+    bridged = 0
+    for i in range(nblue):
+        if i in bus_like:
+            continue
+        w = wires[i]
+        for ex, ey in live_ends[i]:
+            for j in wg.query(ex - 2.6, ey - 2.6, ex + 2.6, ey + 2.6):
+                if j <= i or j >= nblue or j in bus_like:
+                    continue
+                for fx, fy in live_ends[j]:
+                    gap = math.hypot(ex - fx, ey - fy)
+                    if not 0.5 < gap <= 2.0 or (abs(ex - fx) > 0.1 and abs(ey - fy) > 0.1):
+                        continue
+                    if wd.find(i) != wd.find(j):
+                        wd.union(i, j)
+                        wire_edges.append((i, j, f'across a break at {(ex + fx) / 2:.1f},{(ey + fy) / 2:.1f}'))
+                        bridged += 1
+                        diag.append(f'info: wire break bridged at {(ex + fx) / 2:.1f},{(ey + fy) / 2:.1f}')
+    diag.append(f'info: {bridged} wire breaks bridged')
     # undotted crossings are left unjoined, but noted: they are where a missed dot would hide
     undotted = 0
     dot_grid = Grid(4)
@@ -771,7 +796,7 @@ def main():
         reach = 3.5 if is_power else LABEL_REACH
         if t['kind'] == 'offpage':
             # off-page connector: the label sits a few points past the arrow, which ends on the wire
-            best, bd = None, 1e9
+            cands = []
             for j in wg.query(bb[0] - 8, bb[1] - 8, bb[2] + 8, bb[3] + 8):
                 if j >= nblue:
                     continue
@@ -782,34 +807,50 @@ def main():
                     column = max(bb[0] - 1.5 - x, x - bb[2] - 1.5, 0)
                     if level > 2.0 and column > 0:
                         continue
-                    d = rect_dist((x, y, x, y), bb) + 2 * min(level, column)
-                    if d < bd:
-                        best, bd = j, d
+                    cands.append((rect_dist((x, y, x, y), bb) + 2 * min(level, column), level, column, j))
+            if t['dir'] == (1, 0) and any(c[1] <= 1.0 and c[2] <= 3.0 for c in cands):
+                # an arrow tip level with the label and abutting it (either end: the label can sit
+                # before or after the arrow) beats a wire end that merely lies under or over it (the
+                # corner of a neighbouring pin's wire can sit inside the label's span)
+                cands = [c for c in cands if c[1] <= 1.0 and c[2] <= 3.0]
+            best, bd = None, 1e9
+            for d, _, _, j in cands:
+                if d < bd:
+                    best, bd = j, d
             t['wire'] = best if best is not None and bd <= 8.0 else None
             continue
         if not is_power and NOT_A_LABEL.match(name):
             t['wire'] = None
             continue
-        best, bd = None, 1e9
-        for j in wg.query(bb[0] - reach, bb[1] - reach, bb[2] + reach, bb[3] + reach):
-            if (j >= nblue) != is_power:
-                continue  # rail names sit on black power symbols, every other label on a blue wire
-            w = wires[j]
-            # distance from the text box (not just its centre) to the wire
-            if is_power:
-                d = dist_pt_seg(t['cx'], t['cy'], *w)
-            elif abs(w[1] - w[3]) < 0.01:
-                # horizontal wire: the label's baseline sits on it (or, for a few, its top hangs below it)
-                gap = max(min(w[0], w[2]) - bb[2], bb[0] - max(w[0], w[2]), 0)
-                d = min(abs(bb[3] - w[1]), abs(bb[1] - w[1]) + 0.3) + gap
-            else:
-                d = seg_rect_dist(w, bb)
-            if d < bd:
-                best, bd = j, d
-        if best is not None and bd <= reach:
-            t['wire'] = best
-        else:
-            t['wire'] = None
+        t['wire'] = None
+        # rail names normally sit on black power symbols; a few are written like ordinary labels on a
+        # blue wire (IC22.2/.4, IC42.1), so a rail name that finds no symbol is tried as a plain label
+        for as_power in ((True, False) if is_power else (False,)):
+            reach_ = reach if as_power else LABEL_REACH
+            best, bd = None, 1e9
+            for j in wg.query(bb[0] - reach_, bb[1] - reach_, bb[2] + reach_, bb[3] + reach_):
+                if (j >= nblue) != as_power:
+                    continue  # power symbols are black strokes, every other label sits on a blue wire
+                w = wires[j]
+                # distance from the text box (not just its centre) to the wire
+                if as_power:
+                    d = dist_pt_seg(t['cx'], t['cy'], *w)
+                elif abs(w[1] - w[3]) < 0.01:
+                    # horizontal wire: the label's baseline sits on it (or, for a few, its top hangs below it)
+                    gap = max(min(w[0], w[2]) - bb[2], bb[0] - max(w[0], w[2]), 0)
+                    d = min(abs(bb[3] - w[1]), abs(bb[1] - w[1]) + 0.3) + gap
+                elif t['dir'] == (0.0, 1.0) and abs(w[0] - w[2]) < 0.01:
+                    # vertical wire, upward-reading label: the text's left edge sits on the wire, so
+                    # of two wires within the text's width the one at that edge is the label's
+                    gap = max(min(w[1], w[3]) - bb[3], bb[1] - max(w[1], w[3]), 0)
+                    d = abs(w[0] - bb[0]) + gap
+                else:
+                    d = seg_rect_dist(w, bb)
+                if d < bd:
+                    best, bd = j, d
+            if best is not None and bd <= reach_:
+                t['wire'] = best
+                break
     # label text => net name
     for t in texts:
         if t.get('wire') is None:

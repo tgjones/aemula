@@ -182,7 +182,7 @@ from git history.
       diagnostics — these were the tell-tales last time.
 - [x] Apply the known corrections above; emit
       `Systems/BbcMicro/docs/bbc-netlist.txt`.
-- [ ] Sanity checks: every IC has all its power/ground pins; every gate input
+- [x] Sanity checks: every IC has all its power/ground pins; every gate input
       is driven; bus-by-label connectivity (A0–A15, D0–D7, address/data bus
       labels) resolves.
 - [ ] **User verification passes** over the areas most likely to be wrong

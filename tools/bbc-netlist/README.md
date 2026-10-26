@@ -23,6 +23,21 @@ python3 apply_corrections.py /tmp/bbc-raw/netlist.txt ../../src/Aemula/Emulation
 
 The corrections are pin-based and each is checked against the raw extraction first.
 
+## Sanity checks
+
+`check_netlist.py` checks the corrected netlist (`pins.json` is optional and tells it which pins
+carry a no-connect cross):
+
+```sh
+python3 check_netlist.py ../../src/Aemula/Emulation/Systems/BbcMicro/docs/bbc-netlist.txt /tmp/bbc-raw/pins.json
+```
+
+It verifies that power/ground pins that are drawn are on the right rail (most ICs have them
+implicit), that every input of a pinned-out IC is driven, and that the A0-A15 / D0-D7 pins of the
+CPU, VIAs, ACIA, ROMs and the other address/data users sit on the net of that name. It carries
+pinouts only for the common logic parts, the 6502, 6522, 6845, 6850 and the ROMs/DRAM; the other
+chips are listed as unchecked. Sheet omissions it is told to accept are in `ACCEPTED`.
+
 ## Tracing a merge
 
 `--why LABEL1 LABEL2` prints the chain of wire joins that ties two labels together,
