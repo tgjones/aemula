@@ -15,7 +15,13 @@ Writes `netlist.txt` (COMPONENTS, NETS, then a DIAGNOSTICS block), `diagnostics.
 drawn pin name, net, position, whether it carries a no-connect cross).
 
 No hand corrections are applied here; they are layered on top of `netlist.txt`
-afterwards as a patch list, so the extraction can be regenerated at any time.
+afterwards by `apply_corrections.py`, so the extraction can be regenerated at any time:
+
+```sh
+python3 apply_corrections.py /tmp/bbc-raw/netlist.txt ../../src/Aemula/Emulation/Systems/BbcMicro/docs/bbc-netlist.txt
+```
+
+The corrections are pin-based and each is checked against the raw extraction first.
 
 ## Tracing a merge
 

@@ -768,7 +768,7 @@ def main():
         name = t['text']
         bb = t['bbox']
         is_power = bool(POWER_RE.match(name))
-        reach = 3.0 if is_power else LABEL_REACH
+        reach = 3.5 if is_power else LABEL_REACH
         if t['kind'] == 'offpage':
             # off-page connector: the label sits a few points past the arrow, which ends on the wire
             best, bd = None, 1e9

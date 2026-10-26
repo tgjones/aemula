@@ -81,10 +81,10 @@ service manual main-PCB circuit diagram, appendix 9.5):
   should go to .4, and the junction goes to IC89.6 (TxD) and IC93B.11, not
   IC89.2 (RTS) / IC91A.1,2. (RS423 area.)
 - IC27 pins 9 and 10 transposed.
-- Keyboard circuit has a spurious extra wire (reported by IanS; confirmed by
-  TobyLobster, whose
-  [vector diagrams](https://tobylobster.github.io/mos/mos/S-s25.html) —
-  `CircuitDiagram.pdf` / `CircuitKeyboard.pdf` — are a second source of truth).
+- (The keyboard "spurious extra wire" reported by IanS was in TobyLobster's
+  own [vector diagrams](https://tobylobster.github.io/mos/mos/S-s25.html) —
+  `CircuitDiagram.pdf` / `CircuitKeyboard.pdf`, a second source of truth — and
+  he has fixed it; it is not an error of this schematic.)
 
 Extracted netlist format and conventions follow the ZX80 netlist (COMPONENTS /
 NETS, leading `/` for active-low, `_Nnnn` for unnamed nets, a header recording
@@ -180,7 +180,7 @@ from git history.
       netlist format. Report suspicious nodes (dangling or passive-only,
       unlabelled nets joining two outputs, both-ends-same-bus buffers) as
       diagnostics — these were the tell-tales last time.
-- [ ] Apply the known corrections above; emit
+- [x] Apply the known corrections above; emit
       `Systems/BbcMicro/docs/bbc-netlist.txt`.
 - [ ] Sanity checks: every IC has all its power/ground pins; every gate input
       is driven; bus-by-label connectivity (A0–A15, D0–D7, address/data bus
