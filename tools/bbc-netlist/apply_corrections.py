@@ -42,9 +42,13 @@ HEADER = [
     '#     plain label (IC22.2/.4, IC42.1/.7/.10) was left unattached; one wire is drawn with a 1.5pt break',
     '#     (IC40.6 to IC38.4) and is now joined.',
     '#',
+    '#   IC31.12 (74LS74 D, the second half of the 1 MHz synchroniser) is drawn with no wire at all on this',
+    '#     sheet. Acorn\'s own circuit diagram connects it to IC29.10 and IC33.2 (the IC33 inverter output',
+    '#     that also feeds the IC29 OR gate), so it is moved onto that net (user verification pass).',
+    '#',
     '# OPEN (drawn that way on the sheet, not corrected; for the user verification passes):',
-    '#   IC31.12 (74LS74 D, the second half of the 1 MHz synchroniser) is drawn with no wire at all.',
     '#   IC97B (spare 74LS74 section) has all inputs open; the sheet notes "INPUTS SHOULD BE TIED...".',
+    '#     It does not exist on Acorn\'s own circuit diagram, so it is an unused section, left as drawn.',
     '#',
 ]
 
@@ -57,6 +61,7 @@ CORRECTIONS = [
     ('move', 'IC93.11', 'IC89.6'),
     ('swap', 'IC27.9', 'IC27.10'),
     ('swap', 'IC2.23', 'IC2.25'),
+    ('move', 'IC31.12', 'IC33.2'),
 ]
 
 # state each correction expects of the raw extraction: pin -> net it must currently be on
@@ -70,6 +75,7 @@ EXPECT = {
     'IC27.10': 'IC78.11',
     'IC2.25': 'CRTC#',
     'IC2.23': '1MHZE',
+    'IC33.2': 'IC29.10',
 }
 
 

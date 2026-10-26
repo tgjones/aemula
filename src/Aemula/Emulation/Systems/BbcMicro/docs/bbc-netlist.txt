@@ -28,9 +28,13 @@
 #     plain label (IC22.2/.4, IC42.1/.7/.10) was left unattached; one wire is drawn with a 1.5pt break
 #     (IC40.6 to IC38.4) and is now joined.
 #
+#   IC31.12 (74LS74 D, the second half of the 1 MHz synchroniser) is drawn with no wire at all on this
+#     sheet. Acorn's own circuit diagram connects it to IC29.10 and IC33.2 (the IC33 inverter output
+#     that also feeds the IC29 OR gate), so it is moved onto that net (user verification pass).
+#
 # OPEN (drawn that way on the sheet, not corrected; for the user verification passes):
-#   IC31.12 (74LS74 D, the second half of the 1 MHz synchroniser) is drawn with no wire at all.
 #   IC97B (spare 74LS74 section) has all inputs open; the sheet notes "INPUTS SHOULD BE TIED...".
+#     It does not exist on Acorn's own circuit diagram, so it is an unused section, left as drawn.
 #
 ## COMPONENTS
 A1 | | 47n
@@ -799,7 +803,7 @@ _N169: IC85.7
 _N170: IC95.4 IC95.9 R62.2 R63.1 R64.2
 _N171: IC85.5
 _N172: IC85.4
-_N173: IC29.10 IC33.2
+_N173: IC29.10 IC31.12 IC33.2
 _N174: IC85.6
 _N175: IC85.13
 _N176: IC27.2 IC91.11 S2.1
@@ -812,7 +816,6 @@ _N182: IC85.15
 _N183: IC86.10
 _N184: IC85.1
 _N185: C12.1 IC99.6 R32.1 VR2.1 VR2.3
-_N186: IC31.12
 _N187: IC31.9
 _N188: IC29.8 IC34.2
 _N189: IC34.5
