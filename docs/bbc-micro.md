@@ -232,7 +232,7 @@ phase with thorough tests.
 
 ### Phase 4 — CPU, memory, decode, clocks (no video yet)
 
-- [ ] Create `BbcMicroSystem` wiring from the netlist: 6502A, 32K RAM array,
+- [x] Create `BbcMicroSystem` wiring from the netlist: 6502A, 32K RAM array,
       OS ROM, paged ROM slots, address decode, SHEILA register space, both VIAs
       present, ROM-select latch, reset circuit, the 16 MHz oscillator and
       divider chain.
