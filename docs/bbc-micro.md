@@ -238,7 +238,7 @@ phase with thorough tests.
       divider chain.
 - [x] The 1 MHz bus synchronisation: IO accesses stretch the CPU clock to
       1 MHz phase; model it from the netlist (do not special-case).
-- [ ] Decide and document the master tick (likely 16 MHz, with chips
+- [x] Decide and document the master tick (likely 16 MHz, with chips
       evaluated only when their inputs or clock edge change — see
       Performance).
 - [ ] Interim video-less verification: run OS 1.20 and compare the PC trace

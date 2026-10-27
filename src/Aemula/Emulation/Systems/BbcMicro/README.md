@@ -46,6 +46,28 @@
 * [Address translation page on BeebWiki](http://beebwiki.mdfs.net/Address_translation)
 * [FPGA implementation of address translation](https://github.com/hoglet67/BeebFpga/blob/cde79b5913196e2a900a71c41bf3f2741de2fc14/src/common/bbc_micro_core.vhd#L1707)
 
+## Master tick
+
+One tick is one cycle of the 16MHz crystal (X1), so `CyclesPerSecond` is
+16,000,000 and a 2MHz CPU cycle is eight ticks. 16MHz is the finest clock on the
+board: the video ULA divides it to 8, 4 and 2MHz (the 1MHz bus clock, 1MHZE, is
+IC34 halving 2MHz), and the synchroniser delays the CPU's clock by two 8MHz
+edges, so nothing coarser can place its edges. Each tick:
+
+* the ULA's divider and the reset 555 advance, and the CRTC's clock input
+  follows the ULA;
+* the clock glue (IC28-IC31, IC34, IC76, IC97, the NMI gate, the CPU clock gate)
+  is evaluated net by net and repeated until nothing changes (normally two or
+  three passes, at most 16);
+* the CPU, VIAs and CRTC are not stepped every tick but on the edges of their
+  own clocks (PHI2 for the CPU, 1MHZE for the VIAs, the character clock for
+  the CRTC), so they cost nothing between edges.
+
+The glue evaluation every tick is the part that does not scale. Replacing it
+with event-driven evaluation, or with phase tables for the always-quiet
+dividers, is deferred to the performance phase, and the benchmark will show
+what it costs.
+
 ## Chips
 
 ### Video ULA
