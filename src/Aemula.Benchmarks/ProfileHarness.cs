@@ -26,7 +26,7 @@ internal static class ProfileHarness
         var seconds = args.Length > 2 && double.TryParse(args[2], out var s) ? s : 15.0;
 
         var spec = SystemSpecs.Get(name);
-        var system = EmulatedSystems.FindById(name)!.Build(ExpansionSlotConfiguration.Empty).System;
+        var system = SystemSpecs.Build(name);
         foreach (var (bayId, image) in spec.Media())
         {
             system.InsertMedia(bayId, image);

@@ -35,7 +35,7 @@ public class DebuggerOverheadBenchmark
     {
         var spec = SystemSpecs.Get(SystemName);
 
-        _system = EmulatedSystems.FindById(SystemName)!.Build(ExpansionSlotConfiguration.Empty).System;
+        _system = SystemSpecs.Build(SystemName);
         foreach (var (bayId, image) in spec.Media())
         {
             _system.InsertMedia(bayId, image);

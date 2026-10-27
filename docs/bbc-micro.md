@@ -246,7 +246,7 @@ phase with thorough tests.
       and VIA register states at fixed cycle counts. The 6845 and ULA stubs
       here are inert so the CPU is not contended yet — expected divergence
       from jsbeeb at the first video fetch is noted and removed in phase 5.
-- [ ] Add `BbcMicroBenchmark` to `Aemula.Benchmarks` now (ns/cycle baseline),
+- [x] Add `BbcMicroBenchmark` to `Aemula.Benchmarks` now (ns/cycle baseline),
       as was done for the ZX80, so every later phase sees the cost it adds.
 
 ### Phase 5 — Video, monochrome composite

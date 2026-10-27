@@ -30,14 +30,14 @@ public abstract class SystemBenchmark
     // time into a "% of real-time budget" figure. Comes from the real system's
     // own CyclesPerSecond, not a value tracked here - a fresh instance is cheap
     // (construction only, no ROM/warmup) so there's no reason to cache it.
-    public ulong NominalCyclesPerSecond => EmulatedSystems.FindById(SystemName)!.Build(ExpansionSlotConfiguration.Empty).System.CyclesPerSecond;
+    public ulong NominalCyclesPerSecond => SystemSpecs.CyclesPerSecond(SystemName);
     public int TicksPerInvocation => SystemSpecs.Get(SystemName).TicksPerInvocation;
 
     [GlobalSetup]
     public void Setup()
     {
         _spec = SystemSpecs.Get(SystemName);
-        _system = EmulatedSystems.FindById(SystemName)!.Build(ExpansionSlotConfiguration.Empty).System;
+        _system = SystemSpecs.Build(SystemName);
         foreach (var (bayId, image) in _spec.Media())
         {
             _system.InsertMedia(bayId, image);
@@ -114,6 +114,14 @@ public class SpaceInvadersBenchmark : SystemBenchmark
 public class ZX80Benchmark : SystemBenchmark
 {
     private protected override string SystemName => "zx80";
+
+    [Benchmark]
+    public long Tick() => RunTicks();
+}
+
+public class BbcMicroBenchmark : SystemBenchmark
+{
+    private protected override string SystemName => "bbcmicro";
 
     [Benchmark]
     public long Tick() => RunTicks();

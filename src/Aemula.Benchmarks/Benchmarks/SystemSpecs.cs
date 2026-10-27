@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using Aemula.Emulation.Systems;
+using Aemula.Emulation.Systems.BbcMicro;
 
 namespace Aemula.Benchmarks;
 
@@ -75,7 +76,23 @@ internal static class SystemSpecs
             WarmupTicks: 3_000_000,        // ≈23 frames: past the ROM's init, into the steady display routine at the K cursor
             TicksPerInvocation: 260_000,   // ≈2 frames (130000 ticks/frame at 50Hz)
             TelevisionRow),
+
+        new SystemSpec(
+            "bbcmicro", // One tick is one 16MHz master clock cycle
+            static () => [], // Boots the bundled OS ROM; no removable media
+            WarmupTicks: 8_000_000,        // 1.76M ticks of reset pulse plus ≈4M to the OS's first keyboard poll, into the steady idle loop
+            TicksPerInvocation: 640_000,   // ≈2 frames (320000 ticks/frame at 50Hz)
+            TelevisionRow),
     ];
+
+    // The BBC Micro isn't in EmulatedSystems until it is registered, so it is
+    // built directly; everything else goes through its descriptor.
+    public static EmulatedSystem Build(string name) =>
+        name == "bbcmicro"
+            ? new BbcMicroSystem()
+            : EmulatedSystems.FindById(name)!.Build(ExpansionSlotConfiguration.Empty).System;
+
+    public static ulong CyclesPerSecond(string name) => Build(name).CyclesPerSecond;
 
     public static SystemSpec Get(string name) =>
         All.FirstOrDefault(s => s.Name == name)
