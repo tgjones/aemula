@@ -236,7 +236,7 @@ phase with thorough tests.
       OS ROM, paged ROM slots, address decode, SHEILA register space, both VIAs
       present, ROM-select latch, reset circuit, the 16 MHz oscillator and
       divider chain.
-- [ ] The 1 MHz bus synchronisation: IO accesses stretch the CPU clock to
+- [x] The 1 MHz bus synchronisation: IO accesses stretch the CPU clock to
       1 MHz phase; model it from the netlist (do not special-case).
 - [ ] Decide and document the master tick (likely 16 MHz, with chips
       evaluated only when their inputs or clock edge change — see
