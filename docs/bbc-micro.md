@@ -224,7 +224,7 @@ phase with thorough tests.
       read-clears-flag and write-clears-flag rules and their off-by-one cycle
       edge cases. Tests from the datasheet behaviour plus a jsbeeb
       differential on timer/IRQ timing.
-- [ ] `Motorola6845Chip`: HD6845SP, all registers and masks, character/row/
+- [x] `Motorola6845Chip`: HD6845SP, all registers and masks, character/row/
       frame counters, vertical adjust, interlace modes, cursor blink/modes,
       DISPEN/HS/VS widths, light pen, R14/R15 and R16/R17. Differential test
       versus jsbeeb's CRTC output for the BBC's standard mode register sets

@@ -26,3 +26,14 @@ node via-timing.mjs ../../src/Aemula.Tests/Emulation/Chips/Mos6522/Assets/jsbeeb
 Drives jsbeeb's `UserVia` through scripted timer/IRQ scenarios and records
 every register read and the IRQ line at the start of every cycle; replayed by
 `Mos6522ChipJsbeebTests`.
+
+## 6845 timing fixture
+
+```sh
+node crtc-timing.mjs ../../src/Aemula.Tests/Emulation/Chips/Motorola6845/Assets/jsbeeb-crtc-timing.txt
+```
+
+Programs jsbeeb's CRTC with the BBC's Mode 0/4/7 register sets and a range of
+nonstandard ones, clocks it a character at a time and records every change of
+RA/DISPEN/HS/VS/cursor plus periodic MA samples; replayed by
+`Motorola6845ChipJsbeebTests`.
