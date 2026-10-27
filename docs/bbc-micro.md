@@ -219,7 +219,7 @@ from git history.
 Both are stubs today and everything else depends on them; they get their own
 phase with thorough tests.
 
-- [ ] `Mos6522Chip`: pin-level; T1 (one-shot/free-run, PB7), T2 (one-shot,
+- [x] `Mos6522Chip`: pin-level; T1 (one-shot/free-run, PB7), T2 (one-shot,
       pulse count), SR modes, CA1/CA2/CB1/CB2 handshake, IFR/IER/IRQ, the
       read-clears-flag and write-clears-flag rules and their off-by-one cycle
       edge cases. Tests from the datasheet behaviour plus a jsbeeb

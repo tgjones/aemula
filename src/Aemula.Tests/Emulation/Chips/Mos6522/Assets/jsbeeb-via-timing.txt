@@ -1,0 +1,392 @@
+scenario t1-one-shot-n5 24
+i 0 1
+w 0 e c0
+i 1 1
+w 1 4 5
+i 2 1
+w 2 5 0
+i 3 1
+i 4 1
+i 5 1
+r 5 4 3
+i 6 1
+i 7 1
+i 8 1
+i 9 0
+r 9 d c0
+i 10 0
+r 10 d c0
+i 11 0
+r 11 4 4
+i 12 1
+r 12 d 0
+i 13 1
+i 14 1
+r 14 5 0
+i 15 1
+i 16 1
+i 17 1
+i 18 1
+i 19 1
+i 20 1
+r 20 d 0
+i 21 1
+i 22 1
+i 23 1
+scenario t1-one-shot-n0 12
+i 0 1
+w 0 e c0
+i 1 1
+w 1 4 0
+i 2 1
+w 2 5 0
+i 3 1
+i 4 0
+i 5 0
+r 5 d c0
+i 6 0
+i 7 0
+r 7 d c0
+i 8 0
+i 9 0
+i 10 0
+i 11 0
+scenario t1-one-shot-n1 12
+i 0 1
+w 0 e c0
+i 1 1
+w 1 4 1
+i 2 1
+w 2 5 0
+i 3 1
+i 4 1
+i 5 0
+r 5 d c0
+i 6 0
+i 7 0
+r 7 d c0
+i 8 0
+i 9 0
+i 10 0
+i 11 0
+scenario t1-free-run-n3 40
+i 0 1
+w 0 e c0
+i 1 1
+w 1 b 40
+i 2 1
+w 2 4 3
+i 3 1
+w 3 5 0
+i 4 1
+i 5 1
+i 6 1
+i 7 1
+i 8 0
+r 8 4 ff
+i 9 0
+i 10 0
+i 11 0
+i 12 0
+i 13 0
+r 13 d c0
+i 14 0
+r 14 d c0
+i 15 0
+r 15 4 2
+i 16 1
+i 17 1
+i 18 0
+i 19 0
+i 20 0
+i 21 0
+i 22 0
+i 23 0
+i 24 0
+r 24 d c0
+i 25 0
+r 25 4 2
+i 26 1
+i 27 1
+i 28 0
+i 29 0
+i 30 0
+i 31 0
+i 32 0
+i 33 0
+i 34 0
+r 34 d c0
+i 35 0
+i 36 0
+i 37 0
+i 38 0
+i 39 0
+scenario t1-counter-16bit 20
+i 0 1
+w 0 4 2
+i 1 1
+w 1 5 1
+i 2 1
+i 3 1
+i 4 1
+r 4 4 0
+r 4 5 1
+i 5 1
+i 6 1
+i 7 1
+i 8 1
+i 9 1
+i 10 1
+r 10 4 fa
+r 10 5 0
+i 11 1
+i 12 1
+i 13 1
+i 14 1
+i 15 1
+i 16 1
+i 17 1
+r 17 4 f3
+r 17 5 0
+i 18 1
+i 19 1
+scenario t1-pb7-one-shot 20
+i 0 1
+w 0 b 80
+i 1 1
+w 1 4 4
+i 2 1
+w 2 5 0
+i 3 1
+r 3 0 7f
+i 4 1
+i 5 1
+i 6 1
+r 6 0 7f
+i 7 1
+r 7 0 7f
+i 8 1
+r 8 0 ff
+i 9 1
+i 10 1
+i 11 1
+i 12 1
+r 12 0 ff
+i 13 1
+i 14 1
+i 15 1
+i 16 1
+i 17 1
+i 18 1
+i 19 1
+scenario t1-pb7-free-run 30
+i 0 1
+w 0 b c0
+i 1 1
+w 1 4 2
+i 2 1
+w 2 5 0
+i 3 1
+i 4 1
+i 5 1
+r 5 0 7f
+i 6 1
+r 6 0 ff
+i 7 1
+r 7 0 ff
+i 8 1
+i 9 1
+i 10 1
+r 10 0 7f
+i 11 1
+r 11 0 7f
+i 12 1
+i 13 1
+i 14 1
+r 14 0 ff
+i 15 1
+r 15 0 ff
+i 16 1
+i 17 1
+i 18 1
+i 19 1
+i 20 1
+i 21 1
+i 22 1
+i 23 1
+i 24 1
+i 25 1
+i 26 1
+i 27 1
+i 28 1
+i 29 1
+scenario t1-latch-write-clears-flag 20
+i 0 1
+w 0 4 2
+i 1 1
+w 1 5 0
+i 2 1
+i 3 1
+i 4 1
+i 5 1
+i 6 1
+r 6 d 40
+i 7 1
+w 7 7 5
+i 8 1
+r 8 d 0
+i 9 1
+i 10 1
+i 11 1
+i 12 1
+i 13 1
+i 14 1
+i 15 1
+i 16 1
+i 17 1
+i 18 1
+i 19 1
+scenario t1-clear-on-the-cycle-it-fires 16
+i 0 1
+w 0 e c0
+i 1 1
+w 1 4 3
+i 2 1
+w 2 5 0
+i 3 1
+i 4 1
+i 5 1
+i 6 1
+w 6 d 40
+i 7 0
+r 7 d c0
+i 8 0
+w 8 d 40
+i 9 1
+r 9 d 0
+i 10 1
+r 10 d 0
+i 11 1
+i 12 1
+i 13 1
+i 14 1
+i 15 1
+scenario t2-one-shot-n4 24
+i 0 1
+w 0 e a0
+i 1 1
+w 1 8 4
+i 2 1
+w 2 9 0
+i 3 1
+i 4 1
+i 5 1
+r 5 8 2
+i 6 1
+i 7 1
+r 7 d 0
+i 8 0
+r 8 d a0
+i 9 0
+r 9 8 fe
+i 10 1
+r 10 d 0
+i 11 1
+i 12 1
+i 13 1
+i 14 1
+r 14 8 f9
+i 15 1
+r 15 9 ff
+i 16 1
+i 17 1
+i 18 1
+i 19 1
+i 20 1
+i 21 1
+i 22 1
+i 23 1
+scenario t2-keeps-counting-after-timeout 20
+i 0 1
+w 0 8 2
+i 1 1
+w 1 9 0
+i 2 1
+i 3 1
+i 4 1
+i 5 1
+r 5 8 ff
+r 5 9 ff
+i 6 1
+i 7 1
+i 8 1
+r 8 8 fc
+r 8 9 ff
+i 9 1
+i 10 1
+i 11 1
+i 12 1
+i 13 1
+i 14 1
+i 15 1
+i 16 1
+i 17 1
+i 18 1
+i 19 1
+scenario t2-flag-cleared-by-high-write 24
+i 0 1
+w 0 8 2
+i 1 1
+w 1 9 0
+i 2 1
+i 3 1
+i 4 1
+i 5 1
+i 6 1
+i 7 1
+i 8 1
+r 8 d 20
+i 9 1
+w 9 8 3
+i 10 1
+w 10 9 0
+i 11 1
+r 11 d 0
+i 12 1
+i 13 1
+i 14 1
+i 15 1
+i 16 1
+r 16 d 20
+i 17 1
+i 18 1
+i 19 1
+i 20 1
+i 21 1
+i 22 1
+i 23 1
+scenario ier-enable-disable 16
+i 0 1
+w 0 4 2
+i 1 1
+w 1 5 0
+i 2 1
+i 3 1
+i 4 1
+i 5 1
+i 6 1
+w 6 e c0
+i 7 0
+r 7 e c0
+r 7 d c0
+i 8 0
+w 8 e 40
+i 9 1
+r 9 e 80
+r 9 d 40
+i 10 1
+i 11 1
+i 12 1
+i 13 1
+i 14 1
+i 15 1

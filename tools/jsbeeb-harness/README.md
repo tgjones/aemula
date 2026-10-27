@@ -16,3 +16,13 @@ Model B with OS 1.20, BASIC 2 and the 8271 FDC; jsbeeb fits sideways RAM in
 banks Aemula does not have, so only compare RAM that the OS owns.
 
 Requires Node >= 24.15 (jsbeeb's requirement).
+
+## 6522 timing fixture
+
+```sh
+node via-timing.mjs ../../src/Aemula.Tests/Emulation/Chips/Mos6522/Assets/jsbeeb-via-timing.txt
+```
+
+Drives jsbeeb's `UserVia` through scripted timer/IRQ scenarios and records
+every register read and the IRQ line at the start of every cycle; replayed by
+`Mos6522ChipJsbeebTests`.
