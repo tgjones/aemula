@@ -97,15 +97,6 @@ HTTP API listens on `localhost:48075` and is documented at the end of
 Places where `bbc-netlist.txt` as extracted disagrees with how the board has to
 work, and how `BbcMicroSystem` treats them. For the user verification passes.
 
-* **IC20 pins 2/3 (A8/A9).** The netlist has A9 on pin 2 (1A) and A8 on pin 3
-  (1B), which makes output 1Y1 &FE00 and 1Y2 &FD00. The S17 link takes JIM#
-  from 1Y1 and the ROM output-enable gate IC25 takes SHEILA from 1Y2, so they
-  must be the other way round (1Y1 = &FD00 JIM, 1Y2 = &FE00 SHEILA). The system
-  wires A8 to 1A and A9 to 1B.
-* **R/W (IC33E/IC33F).** IC33F inverts the CPU's R/W and IC33E inverts it back,
-  but the netlist puts every chip's R/W pin on the IC33F output and the "W/R"
-  loads (IC77.9, IC14.1) on the IC33E output, i.e. the opposite polarity to
-  their names. The system gives R/W chips true R/W and W/R loads its inverse.
 * **Solder links.** The netlist cannot say which links are made. Assumed as on
   a stock Model B: S15/S16 and S17 made (FRED and JIM are 1MHz-bus pages),
   LK35-LK38 made with S21 joining pads 2 and 4 (sockets answer at

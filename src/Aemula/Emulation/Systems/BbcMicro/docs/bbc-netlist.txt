@@ -35,6 +35,13 @@
 #     KBDSW and 1MHZE labels one pin too high. On Acorn's own diagram pin 2 is KBDSW (labelled RST SW),
 #     pin 3 is 1MHZE and pin 4 is IC32.7 (Q3 of the addressable latch, the keyboard enable). The extractor
 #     had also put IC32.7 on the 1MHZE net, shorting two outputs; it moves to PL13.4 (user verification pass).
+#   IC20 (74LS139) pins 2/3: A9 is on pin 3 (1B) and A8 on pin 2 (1A) on Acorn's own diagram; the
+#     searchable schematic has them the other way round, so 1Y1 would decode &FE00 and 1Y2 &FD00 and
+#     the S17 JIM# link and the IC25 SHEILA gate would be crossed (user verification pass).
+#   R/W buffer (IC33F/IC33E): IC33F (13 to 12) inverts the CPU R/W and IC33E (11 to 10) inverts it back.
+#     The chips' R/W pins belong on the IC33E output (pin 10) and the W/R loads (IC77.9, IC14.1) on the
+#     IC33F output (pin 12, which also feeds IC33.11); the sheet has them the other way round, so the
+#     nets of pins 10 and 12 are exchanged and pin 11 follows pin 12 (user verification pass).
 #
 # OPEN (drawn that way on the sheet, not corrected; for the user verification passes):
 #   IC97B (spare 74LS74 section) has all inputs open; the sheet notes "INPUTS SHOULD BE TIED...".
@@ -534,8 +541,8 @@ A4: IC1.13 IC12.16 IC26.13 IC26.2 IC51.6 IC52.6 IC71.17 IC88.6 IC100.6 IC101.6 P
 A5: IC1.14 IC12.4 IC24.1 IC51.5 IC52.5 IC71.15 IC88.5 IC100.5 IC101.5 PL12.38
 A6: IC1.15 IC12.2 IC24.2 IC51.4 IC52.4 IC71.13 IC88.4 IC100.4 IC101.4 PL12.40
 A7: IC1.16 IC13.12 IC24.3 IC51.3 IC52.3 IC71.11 IC88.3 IC100.3 IC101.3
-A8: IC1.17 IC13.8 IC20.3 IC24.4 IC51.25 IC52.25 IC88.25 IC100.25 IC101.25
-A9: IC1.18 IC13.14 IC20.2 IC24.6 IC51.24 IC52.24 IC88.24 IC100.24 IC101.24
+A8: IC1.17 IC13.8 IC20.2 IC24.4 IC51.25 IC52.25 IC88.25 IC100.25 IC101.25
+A9: IC1.18 IC13.14 IC20.3 IC24.6 IC51.24 IC52.24 IC88.24 IC100.24 IC101.24
 ACIA#: IC4.9 IC26.11
 ADC#: IC23.6 IC24.9 IC73.23
 ADLC#: IC24.10 IC89.9
@@ -590,7 +597,7 @@ NMI#: IC1.6 IC27.3 IC27.8 PL11.6 R81.2
 NRDS: IC73.25 IC77.6 IC78.9
 NWDS: IC73.24 IC77.8 IC78.10
 PHI1: IC1.3 IC28.13 IC29.1 IC37.11 IC97.3
-R/W: IC2.22 IC3.22 IC4.13 IC26.3 IC29.5 IC33.11 IC33.12 IC69.22 IC72.1 IC77.4 IC89.12 PL11.2 PL12.2
+R/W: IC2.22 IC3.22 IC4.13 IC26.3 IC29.5 IC33.10 IC69.22 IC72.1 IC77.4 IC89.12 PL11.2 PL12.2
 RA0: IC8.11 IC9.11 IC10.11 IC11.11 IC12.11 IC13.11 IC53.5 IC54.5 IC55.5 IC56.5 IC57.5 IC58.5 IC59.5 IC60.5 IC61.5 IC62.5 IC63.5 IC64.5 IC65.5 IC66.5 IC67.5 IC68.5
 RA1: IC8.9 IC9.9 IC10.9 IC11.9 IC12.9 IC13.9 IC53.7 IC54.7 IC55.7 IC56.7 IC57.7 IC58.7 IC59.7 IC60.7 IC61.7 IC62.7 IC63.7 IC64.7 IC65.7 IC66.7 IC67.7 IC68.7
 RA2: IC8.13 IC9.13 IC10.13 IC11.13 IC12.13 IC13.13 IC53.6 IC54.6 IC55.6 IC56.6 IC57.6 IC58.6 IC59.6 IC60.6 IC61.6 IC62.6 IC63.6 IC64.6 IC65.6 IC66.6 IC67.6 IC68.6
@@ -632,7 +639,7 @@ VSPINT: IC3.16
 VSPINT#: IC99.17
 VSPRDY: IC3.17
 VSPRDY#: IC99.18
-W/R: IC14.1 IC33.10 IC77.9
+W/R: IC14.1 IC33.11 IC33.12 IC77.9
 WE#: IC8.17 IC9.17 IC10.17 IC11.17 IC12.17 IC13.17 IC53.3 IC54.3 IC55.3 IC56.3 IC57.3 IC58.3 IC59.3 IC60.3 IC61.3 IC62.3 IC63.3 IC64.3 IC65.3 IC66.3 IC67.3 IC68.3
 X: C47.1 IC6.15 R107.2 R114.2
 _N001: IC87.9 R33.2 R49.1

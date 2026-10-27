@@ -49,6 +49,13 @@ HEADER = [
     '#     KBDSW and 1MHZE labels one pin too high. On Acorn\'s own diagram pin 2 is KBDSW (labelled RST SW),',
     '#     pin 3 is 1MHZE and pin 4 is IC32.7 (Q3 of the addressable latch, the keyboard enable). The extractor',
     '#     had also put IC32.7 on the 1MHZE net, shorting two outputs; it moves to PL13.4 (user verification pass).',
+    '#   IC20 (74LS139) pins 2/3: A9 is on pin 3 (1B) and A8 on pin 2 (1A) on Acorn\'s own diagram; the',
+    '#     searchable schematic has them the other way round, so 1Y1 would decode &FE00 and 1Y2 &FD00 and',
+    '#     the S17 JIM# link and the IC25 SHEILA gate would be crossed (user verification pass).',
+    '#   R/W buffer (IC33F/IC33E): IC33F (13 to 12) inverts the CPU R/W and IC33E (11 to 10) inverts it back.',
+    '#     The chips\' R/W pins belong on the IC33E output (pin 10) and the W/R loads (IC77.9, IC14.1) on the',
+    '#     IC33F output (pin 12, which also feeds IC33.11); the sheet has them the other way round, so the',
+    '#     nets of pins 10 and 12 are exchanged and pin 11 follows pin 12 (user verification pass).',
     '#',
     '# OPEN (drawn that way on the sheet, not corrected; for the user verification passes):',
     '#   IC97B (spare 74LS74 section) has all inputs open; the sheet notes "INPUTS SHOULD BE TIED...".',
@@ -71,6 +78,9 @@ CORRECTIONS = [
     ('move', 'PL13.3', '1MHZE'),
     ('move', 'PL13.2', 'KBDSW'),
     ('move', 'IC32.7', 'PL13.4'),
+    ('swap', 'IC20.2', 'IC20.3'),
+    ('swap', 'IC33.12', 'IC33.10'),
+    ('move', 'IC33.11', 'IC33.12'),
 ]
 
 # state each correction expects of the raw extraction: pin -> net it must currently be on
@@ -88,6 +98,11 @@ EXPECT = {
     'PL13.3': 'KBDSW',
     'PL13.4': '1MHZE',
     'IC32.7': '1MHZE',
+    'IC20.2': 'A9',
+    'IC20.3': 'A8',
+    'IC33.12': 'R/W',
+    'IC33.11': 'R/W',
+    'IC33.10': 'W/R',
 }
 
 

@@ -74,10 +74,7 @@ public sealed partial class BbcMicroSystem
         _ic22.H = Address(10);
         var ioPageBar = _ic22.Y;
 
-        // IC20, first half: FRED (&FC), JIM (&FD) and SHEILA (&FE). The netlist
-        // has A8 and A9 on the pins that make JIM and SHEILA the other way
-        // round; the S17 link (JIM# from the output for &FD) and the ROM
-        // output-enable gate need them as they are here.
+        // IC20, first half: FRED (&FC), JIM (&FD) and SHEILA (&FE).
         _ic20.G1 = ioPageBar;
         _ic20.A1 = Address(8);
         _ic20.B1 = Address(9);
