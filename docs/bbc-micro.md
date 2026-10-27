@@ -241,7 +241,7 @@ phase with thorough tests.
 - [x] Decide and document the master tick (likely 16 MHz, with chips
       evaluated only when their inputs or clock edge change — see
       Performance).
-- [ ] Interim video-less verification: run OS 1.20 and compare the PC trace
+- [x] Interim video-less verification: run OS 1.20 and compare the PC trace
       and cycle count to jsbeeb up to the first keyboard poll; checkpoint RAM
       and VIA register states at fixed cycle counts. The 6845 and ULA stubs
       here are inert so the CPU is not contended yet — expected divergence

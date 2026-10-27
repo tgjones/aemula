@@ -257,6 +257,12 @@ public sealed class Mos6522Chip
     private byte _ifr;
     private byte _ier;
 
+    // Register contents, for tests comparing the chip with a reference.
+    internal byte OrbValue => _orb;
+    internal byte AcrValue => _acr;
+    internal byte PcrValue => _pcr;
+    internal byte IerValue => (byte)(_ier & 0x7F);
+
     // Flags the counters raised on the most recent falling edge. An access in
     // that edge's cycle or the next one cannot clear them.
     private byte _flagsSetThisEdge;

@@ -37,3 +37,13 @@ Programs jsbeeb's CRTC with the BBC's Mode 0/4/7 register sets and a range of
 nonstandard ones, clocks it a character at a time and records every change of
 RA/DISPEN/HS/VS/cursor plus periodic MA samples; replayed by
 `Motorola6845ChipJsbeebTests`.
+
+## Boot trace fixture
+
+```sh
+node boot-trace.mjs ../../src/Aemula.Tests/Emulation/Systems/BbcMicro/Assets/jsbeeb-boot-trace.txt
+```
+
+Runs a Model B from power-on to the OS's first keyboard poll (the fetch at `&F02A`) and records
+every instruction fetch with its 2MHz cycle, plus the zero page and both VIAs' registers at the
+poll; replayed by `BbcMicroBootJsbeebTests`.
