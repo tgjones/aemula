@@ -166,7 +166,7 @@ public sealed class VideoUlaChip
     /// <see cref="Data"/> into the shift register: at count 0 of the divider, and
     /// at count 8 too with the 2MHz character clock.
     /// </summary>
-    internal bool Fetching => (_counter & 7) == 0 && ((_counter & 8) == 0 || (Control & ControlCrtcClock2MHz) != 0);
+    private bool Fetching => (_counter & 7) == 0 && ((_counter & 8) == 0 || (Control & ControlCrtcClock2MHz) != 0);
 
     /// <summary>
     /// The data bus (pins 17-24, the BD0-BD7 net): the video byte, sampled at the
