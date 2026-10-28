@@ -13,8 +13,9 @@ namespace Aemula.Tests.Emulation.Systems.BbcMicro;
 // tools/jsbeeb-harness/boot-trace.mjs from jsbeeb: the instruction sequence,
 // when each instruction is fetched, and a zero-page and VIA register checkpoint at the poll.
 //
-// Neither emulator has video fetches at this point (the 6845 is not yet
-// programmed), so there is no contention to disagree about.
+// Neither the real board nor jsbeeb ever holds the CPU back for a video fetch (the RAM
+// is accessed at 4MHz, alternately by the CPU and the video ULA), so the video fetches
+// the OS starts late in the boot add nothing to disagree about.
 //
 // The first 158,651 instructions (507,445 cycles) are the same sequence as jsbeeb's. Their
 // timing agrees up to the phase of the 1 MHz clock at power-on, which is 0 or 1 two-MHz

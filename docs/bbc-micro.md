@@ -257,7 +257,7 @@ phase with thorough tests.
       → screen-address wrap and the Mode 7 / non-Mode 7 wraparound
       latches). Source: Stirling's `vidproc_orig.vhd` and beebwiki; test
       mode-by-mode against jsbeeb.
-- [ ] RAM contention: the DRAM address multiplexing and the CPU/video access
+- [x] RAM contention: the DRAM address multiplexing and the CPU/video access
       alternation, taken from the netlist; at 2 MHz CPU, and with 1 MHz CPU
       for 40-column (clock-rate bit) modes. Verify cycle-by-cycle against
       jsbeeb on a RAM-heavy loop in each mode.

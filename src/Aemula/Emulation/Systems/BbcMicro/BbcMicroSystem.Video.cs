@@ -17,9 +17,20 @@ public sealed partial class BbcMicroSystem
     // byte each, so MA0-MA9 are the low bits of the RAM address, placed in
     // the top 1K of a 16K bank (&3C00), and MA11 is address bit 14, which is
     // how the OS's screen at &7C00 is reached from the 6845 address &2800.
-    private ushort VideoAddress => VideoAddressFor(Crtc.MA, Crtc.RA);
-
     internal ushort VideoAddressFor(ushort ma, byte ra)
+    {
+        var high = VideoAdder(ma);
+
+        if ((ma & 0x2000) != 0)
+        {
+            return (ushort)(0x3C00 | (ma & 0x3FF) | ((high & 8) << 11));
+        }
+
+        return (ushort)((high << 11) | ((ma & 0xFF) << 3) | (ra & 7));
+    }
+
+    // The adder's outputs, VAA0-VAA3: MA8-MA11 plus the wrap.
+    private int VideoAdder(ushort ma)
     {
         var wrap = (ma & 0x1000) != 0;
 
@@ -51,13 +62,6 @@ public sealed partial class BbcMicroSystem
         _ic39.B4 = _ic27.Y4 ?? true;
         _ic39.C0 = true;
 
-        var high = (_ic39.S1 ? 1 : 0) | (_ic39.S2 ? 2 : 0) | (_ic39.S3 ? 4 : 0) | (_ic39.S4 ? 8 : 0);
-
-        if ((ma & 0x2000) != 0)
-        {
-            return (ushort)(0x3C00 | (ma & 0x3FF) | ((high & 8) << 11));
-        }
-
-        return (ushort)((high << 11) | ((ma & 0xFF) << 3) | (ra & 7));
+        return (_ic39.S1 ? 1 : 0) | (_ic39.S2 ? 2 : 0) | (_ic39.S3 ? 4 : 0) | (_ic39.S4 ? 8 : 0);
     }
 }

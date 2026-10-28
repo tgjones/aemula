@@ -19,12 +19,9 @@ namespace Aemula.Emulation.Systems.BbcMicro;
 /// the 1MHz bus, decodes addresses and latches the paged-ROM number is the
 /// board's own 74xx logic, evaluated net by net.
 ///
-/// What is not on the board's wires yet: the DRAM is a flat 32K array that the
-/// CPU reads and writes directly (the video fetch and the address
-/// multiplexers that share it with the CPU come with the video), and the
-/// 6850 ACIA, serial ULA, 8271 FDC, µPD7002 ADC, SAA5050, SN76489 and
-/// keyboard are absent, so their register ranges read as an open bus and
-/// their interrupt lines stay inactive.
+/// What is not on the board's wires yet: the 6850 ACIA, serial ULA, 8271 FDC,
+/// µPD7002 ADC, SAA5050, SN76489 and keyboard are absent, so their register
+/// ranges read as an open bus and their interrupt lines stay inactive.
 /// </summary>
 public sealed partial class BbcMicroSystem : EmulatedSystem
 {
@@ -45,10 +42,6 @@ public sealed partial class BbcMicroSystem : EmulatedSystem
 
     // IC6.
     internal readonly VideoUlaChip VideoUla;
-
-    // The 16 HM4816 DRAMs (IC53-IC68): two banks of eight 16Kx1 chips, i.e.
-    // 32K of RAM, kept as plain data.
-    private readonly byte[] _ram = new byte[0x8000];
 
     // IC51: the OS ROM socket. Its two programmed chip-select inputs are
     // wired to A15 and A14, so it answers at &C000-&FFFF only.
@@ -137,6 +130,16 @@ public sealed partial class BbcMicroSystem : EmulatedSystem
         _ic34 = new Ttl7474Chip();
         _ic37 = new Ttl7404Chip();
 
+        _ic8 = new Ttl8195Chip();
+        _ic9 = new Ttl8195Chip();
+        _ic10 = new Ttl8195Chip();
+        _ic11 = new Ttl8195Chip();
+        _ic12 = new Ttl8195Chip();
+        _ic13 = new Ttl8195Chip();
+        _ic43 = new Ttl7404Chip();
+        _ic44 = new Ttl7474Chip();
+        _ic45 = new Ttl74139Chip();
+
         _resetTimer = new Ne555Chip { PulseTicks = resetPulseTicks };
 
         // Nothing is attached to the ports of either VIA. A floating TTL
@@ -220,12 +223,13 @@ public sealed partial class BbcMicroSystem : EmulatedSystem
             _busRw = Cpu.RW;
         }
 
-        // The ULA's data bus carries the RAM's video byte for the fetch at
-        // the next 16MHz edge (the 8MHz, 4MHz and 2MHz outputs all low), and
-        // otherwise the CPU's data, which the ULA takes for a register write.
+        // The ULA's data bus carries the video byte the RAM put on BD for the
+        // fetch at the next 16MHz edge (the 8MHz, 4MHz and 2MHz outputs all
+        // low), and otherwise the CPU's data, which the ULA takes for a
+        // register write.
         if (!VideoUla.Clock8MHz && !VideoUla.Clock4MHz && !VideoUla.Clock2MHz)
         {
-            VideoUla.Data = _ram[VideoAddress];
+            VideoUla.Data = _bd;
         }
         else if (!_vidprocBar)
         {
@@ -252,6 +256,7 @@ public sealed partial class BbcMicroSystem : EmulatedSystem
         SystemVia.Ca1 = Crtc.VSync;
 
         Settle();
+        StepRam();
     }
 
     // Reads and writes without side effects, for tests and the debugger.
@@ -259,7 +264,7 @@ public sealed partial class BbcMicroSystem : EmulatedSystem
     {
         if ((address & 0x8000) == 0)
         {
-            return _ram[address];
+            return ReadRam(address);
         }
 
         if ((address & 0xC000) == 0xC000)
@@ -275,7 +280,7 @@ public sealed partial class BbcMicroSystem : EmulatedSystem
     {
         if ((address & 0x8000) == 0)
         {
-            _ram[address] = value;
+            WriteRam(address, value);
         }
     }
 }

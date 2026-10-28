@@ -155,19 +155,10 @@ public sealed partial class BbcMicroSystem
 
         var address = _busAddress;
 
-        if (!_busRw)
+        // RAM is read and written through the DRAM cycle that ends the CPU's
+        // slot (see StepRam), not here.
+        if (!_busRw || (address & 0x8000) == 0)
         {
-            if ((address & 0x8000) == 0)
-            {
-                _ram[address] = Cpu.Data;
-            }
-
-            return;
-        }
-
-        if ((address & 0x8000) == 0)
-        {
-            Cpu.Data = _ram[address];
             return;
         }
 

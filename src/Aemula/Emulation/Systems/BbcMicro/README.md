@@ -126,3 +126,20 @@ work, and how `BbcMicroSystem` treats them. For the user verification passes.
 * **Paged ROM numbers.** IC20's second half decodes only the latch's low two
   bits (QA, QB), so each socket answers to four ROM numbers. BASIC is put in
   the socket that answers to 15, and a DFS goes in the socket for 14.
+* **IC14's direction pin.** The netlist puts IC14.1 (DIR of the 74LS245 between
+  the RAM data bus and the CPU's) on W/R, the inverse of R/W, with pins 2-9 (A)
+  on BD and 11-18 (B) on D. Taken literally, a write would drive BD onto the
+  CPU's bus. `BbcMicroSystem` passes data the way the board must work: RAM to
+  CPU on a read, CPU to RAM on a write.
+* **RAM is not contended.** The DRAM is accessed at 4MHz, the CPU taking one
+  slot of every 2MHz cycle and the video ULA the other (see `StepRam`), so
+  neither the 1MHz nor the 2MHz character-clock modes ever hold the CPU back;
+  jsbeeb agrees. Only the 1MHz bus stretches the CPU.
+* **Video fetch alignment.** The byte the ULA latches is the one fetched in the
+  video slot before its edge, so with the 6845 clocked on that same edge it is
+  the byte for the address the 6845 put out for the previous character. The
+  ULA's `Disen` input is sampled one edge later; the alignment of the picture to
+  the sync pulses is to be settled against jsbeeb in the screenshot comparison.
+* **`_N352` (ULA pin 4).** IC38 exclusive-ORs it with MA6 to make RA6 in Mode 7.
+  The ULA's teletext timing output is not modelled and is taken as low, which
+  gives the MA-only addresses jsbeeb uses.
