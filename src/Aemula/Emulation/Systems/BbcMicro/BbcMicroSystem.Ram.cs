@@ -280,8 +280,10 @@ public sealed partial class BbcMicroSystem
             else
             {
                 // IC10: MA0-MA5, and MA6 exclusive-ORed by IC38's third gate
-                // with the ULA's teletext timing output (_N352), a ULA pin
-                // that is not modelled and taken as low.
+                // with the inverted 1MHz clock (_N352). The video ULA's byte
+                // comes from the slot in which that clock is low, so it is
+                // MA6 itself; the other slot, which nothing reads at 1MHz,
+                // fetches the neighbouring row.
                 _ic10.G1 = false;
                 _ic10.G2 = false;
                 _ic10.A1 = Ma(0);
@@ -290,7 +292,10 @@ public sealed partial class BbcMicroSystem
                 _ic10.A4 = Ma(3);
                 _ic10.A5 = Ma(4);
                 _ic10.A6 = Ma(5);
-                _ic10.A7 = Ma(6);
+                _ic37.A3 = VideoUla.Clock1MHz;
+                _ic38.A3 = Ma(6);
+                _ic38.B3 = _ic37.Y3;
+                _ic10.A7 = _ic38.Y3;
                 _ic10.A8 = true;
                 ra = Pack(_ic10);
                 we = _ic10.Y8;

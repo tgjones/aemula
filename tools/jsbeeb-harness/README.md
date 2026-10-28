@@ -58,3 +58,7 @@ Records jsbeeb's video ULA tables (the logical colour of each 16MHz tick of ever
 pixel rate, and the colour of every palette write with and without flash) and the RAM addresses it
 reads for sampled 6845 addresses, rows and hardware scroll sizes; replayed by
 `VideoUlaChipJsbeebTests` and `BbcMicroVideoAddressTests`.
+
+`teletext.mjs <file>` records what jsbeeb's SAA5050 shows for pages of character
+codes (`Saa5050ChipJsbeebTests`), and `teletext-glyphs.mjs <file.cs>` regenerates
+`Saa5050CharacterRom.cs` from jsbeeb's glyph data.

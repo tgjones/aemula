@@ -4,6 +4,7 @@ using Aemula.Emulation.Chips;
 using Aemula.Emulation.Chips.Mos6502;
 using Aemula.Emulation.Chips.Mos6522;
 using Aemula.Emulation.Chips.Motorola6845;
+using Aemula.Emulation.Chips.Saa5050;
 using Aemula.Emulation.Chips.VideoUla;
 using Aemula.Emulation.Output;
 
@@ -20,7 +21,7 @@ namespace Aemula.Emulation.Systems.BbcMicro;
 /// board's own 74xx logic, evaluated net by net.
 ///
 /// What is not on the board's wires yet: the 6850 ACIA, serial ULA, 8271 FDC,
-/// µPD7002 ADC, SAA5050, SN76489 and keyboard are absent, so their register
+/// µPD7002 ADC, SN76489 and keyboard are absent, so their register
 /// ranges read as an open bus and their interrupt lines stay inactive.
 /// </summary>
 public sealed partial class BbcMicroSystem : EmulatedSystem
@@ -42,6 +43,9 @@ public sealed partial class BbcMicroSystem : EmulatedSystem
 
     // IC6.
     internal readonly VideoUlaChip VideoUla;
+
+    // IC5.
+    internal readonly Saa5050Chip Teletext;
 
     // IC51: the OS ROM socket. Its two programmed chip-select inputs are
     // wired to A15 and A14, so it answers at &C000-&FFFF only.
@@ -90,6 +94,9 @@ public sealed partial class BbcMicroSystem : EmulatedSystem
     private readonly Ttl7474Chip _ic34;
     private readonly Ttl7404Chip _ic37;
 
+    // The teletext data path: IC15 latches the video bus for the SAA5050.
+    private readonly Ttl74273Chip _ic15;
+
     public BbcMicroSystem(TelevisionStandard? standard = null)
         : this(standard, ResetPulseTicks)
     {
@@ -104,6 +111,7 @@ public sealed partial class BbcMicroSystem : EmulatedSystem
         UserVia = new Mos6522Chip();
         Crtc = new Motorola6845Chip();
         VideoUla = new VideoUlaChip();
+        Teletext = new Saa5050Chip();
 
         _ic20 = new Ttl74139Chip();
         _ic21 = new Ttl7400Chip();
@@ -129,6 +137,7 @@ public sealed partial class BbcMicroSystem : EmulatedSystem
         _ic31 = new Ttl7474Chip();
         _ic34 = new Ttl7474Chip();
         _ic37 = new Ttl7404Chip();
+        _ic15 = new Ttl74273Chip();
 
         _ic8 = new Ttl8195Chip();
         _ic9 = new Ttl8195Chip();
@@ -235,6 +244,8 @@ public sealed partial class BbcMicroSystem : EmulatedSystem
         {
             VideoUla.Data = Cpu.Data;
         }
+
+        StepTeletext();
 
         VideoUla.A0 = (_busAddress & 1) != 0;
         VideoUla.CS = _vidprocBar;

@@ -140,6 +140,17 @@ work, and how `BbcMicroSystem` treats them. For the user verification passes.
   the byte for the address the 6845 put out for the previous character. The
   ULA's `Disen` input is sampled one edge later; the alignment of the picture to
   the sync pulses is to be settled against jsbeeb in the screenshot comparison.
-* **`_N352` (ULA pin 4).** IC38 exclusive-ORs it with MA6 to make RA6 in Mode 7.
-  The ULA's teletext timing output is not modelled and is taken as low, which
-  gives the MA-only addresses jsbeeb uses.
+* **`_N352` (ULA pin 4).** Pin 4 is the ULA's 1MHz clock; IC37 inverts it into
+  `_N352`, which clocks IC15 and the SAA5050's F1 input and is exclusive-ORed
+  with MA6 by IC38 to make RA6 in Mode 7. The ULA's byte comes from the video
+  slot in which `_N352` is low, so it is the byte for MA6 itself, as jsbeeb
+  reads; the other video slot of each 1MHz cycle fetches the neighbouring row
+  and nothing reads it.
+* **Teletext dot clock.** The SAA5050's TR6 (pin 19) comes from an analogue
+  ring of IC40 and IC37 gates with RC delays (R94, R102, R105, R119, C41, C42,
+  C44, C48), XORed with the 2MHz clock by IC38. That is not modelled: TR6 is a
+  square wave restarted at each rising edge of `_N352` with 12 edges in the
+  following microsecond, three in every four 16MHz ticks. A character reaches
+  the screen one character time after its fetch, as the chip samples IC15's
+  outputs from before the edge that loads it. The picture's alignment to the
+  sync pulses is to be settled in the screenshot comparison.

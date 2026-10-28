@@ -154,7 +154,12 @@ public class BbcMicroRamTests
 
             // The video ULA latches the byte the RAM put on the data bus during the video slot, at the
             // address the 6845 was putting out then (it moves on at the same edge).
-            if (entered && !system.VideoUla.Clock8MHz && !system.VideoUla.Clock4MHz && !system.VideoUla.Clock2MHz)
+            // In Mode 7 the RAM's row address bit 6 is MA6 exclusive-ORed with the inverted 1MHz clock, so
+            // the video slot of the second half of the 1MHz cycle, which the ULA does not use, fetches the
+            // neighbouring row.
+            var unusedTeletextSlot = (previousMa & 0x2000) != 0 && system.VideoUla.Clock1MHz;
+
+            if (entered && !unusedTeletextSlot && !system.VideoUla.Clock8MHz && !system.VideoUla.Clock4MHz && !system.VideoUla.Clock2MHz)
             {
                 var expected = system.ReadByteDebug(system.VideoAddressFor(previousMa, previousRa));
                 videoFetches++;

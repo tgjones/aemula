@@ -261,7 +261,7 @@ phase with thorough tests.
       alternation, taken from the netlist; at 2 MHz CPU, and with 1 MHz CPU
       for 40-column (clock-rate bit) modes. Verify cycle-by-cycle against
       jsbeeb on a RAM-heavy loop in each mode.
-- [ ] `Saa5050Chip` (Mode 7): control codes, held graphics, double height,
+- [x] `Saa5050Chip` (Mode 7): control codes, held graphics, double height,
       flash, separated graphics; take the glyph/row timing from the
       datasheet/MAME and compare screenshots of known Mode 7 screens.
 - [ ] Monochrome composite out: sum R/G/B to a luma level, combine with the
