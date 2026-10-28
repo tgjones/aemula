@@ -47,3 +47,14 @@ node boot-trace.mjs ../../src/Aemula.Tests/Emulation/Systems/BbcMicro/Assets/jsb
 Runs a Model B from power-on to the OS's first keyboard poll (the fetch at `&F02A`) and records
 every instruction fetch with its 2MHz cycle, plus the zero page and both VIAs' registers at the
 poll; replayed by `BbcMicroBootJsbeebTests`.
+
+## Video ULA and screen address fixture
+
+```sh
+node ula-video.mjs ../../src/Aemula.Tests/Emulation/Chips/VideoUla/Assets/jsbeeb-ula-video.txt
+```
+
+Records jsbeeb's video ULA tables (the logical colour of each 16MHz tick of every video byte in each
+pixel rate, and the colour of every palette write with and without flash) and the RAM addresses it
+reads for sampled 6845 addresses, rows and hardware scroll sizes; replayed by
+`VideoUlaChipJsbeebTests` and `BbcMicroVideoAddressTests`.

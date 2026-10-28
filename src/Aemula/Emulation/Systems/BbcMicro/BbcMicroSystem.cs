@@ -77,7 +77,17 @@ public sealed partial class BbcMicroSystem : EmulatedSystem
     private readonly Ttl7438Chip _ic27;
     private readonly Ttl7474Chip _ic97;
     private readonly Ttl7404Chip _ic33;
-    private readonly Ttl74259Chip _ic32;
+    internal readonly Ttl74259Chip _ic32;
+
+    // The screen address's wrap at the end of screen memory (hardware
+    // scroll); IC27's fourth gate is the other part of it.
+    private readonly Ttl7410Chip _ic36;
+    private readonly Ttl74283Chip _ic39;
+    private readonly Ttl7400Chip _ic40;
+
+    // DISEN: the 6845's display enable, blanked from raster line 8 on.
+    private readonly Ttl7486Chip _ic38;
+    private readonly Ttl7402Chip _ic41;
 
     // The 6502's clock and its synchronisation to the 1MHz bus.
     private readonly Ttl74LS51Chip _ic28;
@@ -115,6 +125,11 @@ public sealed partial class BbcMicroSystem : EmulatedSystem
         _ic97 = new Ttl7474Chip();
         _ic33 = new Ttl7404Chip();
         _ic32 = new Ttl74259Chip();
+        _ic36 = new Ttl7410Chip();
+        _ic39 = new Ttl74283Chip();
+        _ic40 = new Ttl7400Chip();
+        _ic38 = new Ttl7486Chip();
+        _ic41 = new Ttl7402Chip();
         _ic28 = new Ttl74LS51Chip();
         _ic29 = new Ttl7432Chip();
         _ic30 = new Ttl7474Chip();
@@ -205,10 +220,35 @@ public sealed partial class BbcMicroSystem : EmulatedSystem
             _busRw = Cpu.RW;
         }
 
-        VideoUla.Tick();
+        // The ULA's data bus carries the RAM's video byte for the fetch at
+        // the next 16MHz edge (the 8MHz, 4MHz and 2MHz outputs all low), and
+        // otherwise the CPU's data, which the ULA takes for a register write.
+        if (!VideoUla.Clock8MHz && !VideoUla.Clock4MHz && !VideoUla.Clock2MHz)
+        {
+            VideoUla.Data = _ram[VideoAddress];
+        }
+        else if (!_vidprocBar)
+        {
+            VideoUla.Data = Cpu.Data;
+        }
+
+        VideoUla.A0 = (_busAddress & 1) != 0;
+        VideoUla.CS = _vidprocBar;
+
+        VideoUla.Clk16MHz = true;
+        VideoUla.Clk16MHz = false;
         _resetTimer.Tick();
 
         Crtc.Clk = VideoUla.CrtcClock;
+
+        // IC38's gate (the other input tied to +5V) inverts DISPEN, and IC41's
+        // NORs that with RA3.
+        _ic38.A1 = true;
+        _ic38.B1 = Crtc.DispEn;
+        _ic41.A3 = _ic38.Y1;
+        _ic41.B3 = (Crtc.RA & 8) != 0;
+        VideoUla.Disen = _ic41.Y3;
+        VideoUla.Cursor = Crtc.Cursor;
         SystemVia.Ca1 = Crtc.VSync;
 
         Settle();

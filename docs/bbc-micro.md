@@ -251,7 +251,7 @@ phase with thorough tests.
 
 ### Phase 5 — Video, monochrome composite
 
-- [ ] `VideoUla` behavioural: control register (clock rate, cursor, teletext
+- [x] `VideoUla` behavioural: control register (clock rate, cursor, teletext
       select, flash, palette) and palette register, pixel shift per mode,
       clock outputs, RAM-fetch addressing handshake with the 6845 (`MA`/`RA`
       → screen-address wrap and the Mode 7 / non-Mode 7 wraparound

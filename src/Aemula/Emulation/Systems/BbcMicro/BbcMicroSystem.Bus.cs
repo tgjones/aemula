@@ -20,7 +20,7 @@ public sealed partial class BbcMicroSystem
     private bool _viaABar;
     private bool _viaBBar;
     private bool _adcBar;
-    private bool _vidprocBar;
+    private bool _vidprocBar = true;
     private bool _romselBar;
     private bool _intonBar;
     private bool _crtcBar;
@@ -236,12 +236,6 @@ public sealed partial class BbcMicroSystem
     // edge, and the CPU moves on to the next address.
     private void OnCpuPhi2Falling()
     {
-        // The video ULA's registers are written as the cycle ends.
-        if (!_vidprocBar && !_busRw)
-        {
-            VideoUla.Write((_busAddress & 1) != 0, Cpu.Data);
-        }
-
         Cpu.Phi0 = false;
         _busHoldTicks = AddressDelayTicks;
     }
