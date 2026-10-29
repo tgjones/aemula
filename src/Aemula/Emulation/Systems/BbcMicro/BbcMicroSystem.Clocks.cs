@@ -27,19 +27,93 @@ public sealed partial class BbcMicroSystem
     // clocked by it last saw it.
     private bool _eHigh;
 
+    // The settled state is a fixed point of EvaluatePass for the nets the pass
+    // reads from outside its own flip-flops (see SettleInputs). While those are
+    // unchanged another pass can do nothing, so a tick skips it. The 2MHz and
+    // 8MHz clocks are left out of that key because they toggle every few ticks
+    // and are only ever flip-flop clocks (and IC30's D inputs, which matter
+    // only as the 8MHz clock rises): a falling edge just updates the stored
+    // clock level, and a rising edge needs a pass unless it clocks IC30 into
+    // the state it is already in.
+    private long _settleInputs = -1;
+
+    // The flip-flops' state as the last settle left it; nothing else changes
+    // it, so the next settle starts from it.
+    private int _settledSignature = int.MinValue;
+    private bool _clock2MHz;
+    private bool _clock8MHz;
+
     private void Settle()
     {
+        var clock2MHz = VideoUla.Clock2MHz;
+        var clock8MHz = VideoUla.Clock8MHz;
+
+        if (SettleInputs() == _settleInputs
+            && !(clock2MHz && !_clock2MHz)
+            && (!(clock8MHz && !_clock8MHz) || IsIc30Steady(clock2MHz)))
+        {
+            if (clock2MHz != _clock2MHz)
+            {
+                _clock2MHz = clock2MHz;
+                _ic34.Clk2 = false;
+            }
+
+            if (clock8MHz != _clock8MHz)
+            {
+                _clock8MHz = clock8MHz;
+                _ic30.D2 = clock2MHz;
+                _ic30.D1 = _ic30.Q2;
+                _ic30.Clk1 = clock8MHz;
+                _ic30.Clk2 = clock8MHz;
+            }
+
+            return;
+        }
+
+        _clock2MHz = clock2MHz;
+        _clock8MHz = clock8MHz;
+
+        var before = _settledSignature;
+
         for (var pass = 0; pass < MaxSettlePasses; pass++)
         {
-            var before = Signature();
             EvaluatePass();
 
-            if (Signature() == before)
+            var after = Signature();
+
+            if (after == before)
             {
-                return;
+                break;
             }
+
+            before = after;
         }
+
+        _settledSignature = before;
+        _settleInputs = SettleInputs();
     }
+
+    // IC30 is a two-stage shift register: on an 8MHz rising edge its second
+    // flip-flop takes the 2MHz clock and its first takes the second's old
+    // output. If both already hold what they would take, the edge changes
+    // nothing.
+    private bool IsIc30Steady(bool clock2MHz) =>
+        _ic30.Q2 == clock2MHz && _ic30.Q1 == _ic30.Q2;
+
+    // Everything EvaluatePass takes from outside the flip-flops it settles,
+    // other than the 2MHz and 8MHz clocks: the CPU's clock phases and data,
+    // the reset line, the address decode's inputs, the VIAs' IRQs and the
+    // port B bits that drive the addressable latch.
+    private long SettleInputs() =>
+        (Cpu.Phi1 ? 1L : 0)
+        | (Cpu.Phi2 ? 2L : 0)
+        | (_resetTimer.Out ? 4L : 0)
+        | (SystemVia.Irq ? 16L : 0)
+        | (UserVia.Irq ? 32L : 0)
+        | (_busRw ? 64L : 0)
+        | ((long)(Cpu.Data & 0x0F) << 8)
+        | ((long)(SystemVia.PortB & 0x0F) << 12)
+        | ((long)_busAddress << 16);
 
     private int Signature()
     {
@@ -66,6 +140,54 @@ public sealed partial class BbcMicroSystem
         Add(_eHigh);
 
         return signature;
+    }
+
+    private int _peripheralKey = -1;
+
+    private void EvaluatePeripherals(bool n130, bool phi1, bool resetBar, byte data, byte portB)
+    {
+        // IC76 latches the paged-ROM number from the data bus when the CPU's
+        // clock falls (IC30's /Q rises) during a write to &FE30-&FE3F.
+        _ic76.A = (data & 0x01) != 0;
+        _ic76.B = (data & 0x02) != 0;
+        _ic76.C = (data & 0x04) != 0;
+        _ic76.D = (data & 0x08) != 0;
+        _ic76.Load = _romselBar;
+        _ic76.Clk = n130;
+
+        // IC97: reading &FE20-&FE2F (INTON) clears the latch at the end of
+        // the cycle and reading &FE18-&FE1F (INTOFF) sets it, enabling or
+        // disabling the Econet NMI. Its /Q is an input to the NMI gate, IC27.
+        // Its /CLR is wired to its own Q, so once clear it stays clear until
+        // INTOFF sets it.
+        _ic97.D1 = _intonBar;
+        _ic97.Pre1 = _intoffBar;
+        _ic97.Clr1 = _ic97.Q1;
+        _ic97.Clk1 = phi1;
+
+        // IC27 is an open-collector wired-OR onto /NMI. Its first gate passes
+        // the Econet clock detector (IC91, whose output is low with no
+        // Econet fitted), the third the 8271's INT, which is low while the
+        // 8271 is absent.
+        _ic27.A1 = _ic97.Qn1;
+        _ic27.B1 = false;
+        _ic27.A3 = false;
+        _ic27.B3 = true;
+        var nmiAsserted = _ic27.Y1 == false || _ic27.Y3 == false;
+
+        Cpu.Nmi = !nmiAsserted;
+        Cpu.Irq = SystemVia.Irq && UserVia.Irq;
+        Cpu.Res = resetBar;
+        SystemVia.Res = resetBar;
+        UserVia.Res = resetBar;
+
+        // IC32, the addressable latch, follows System VIA PB0-PB3 whenever
+        // IC31's first flip-flop enables it.
+        _ic32.A0 = (portB & 0x01) != 0;
+        _ic32.A1 = (portB & 0x02) != 0;
+        _ic32.A2 = (portB & 0x04) != 0;
+        _ic32.D = (portB & 0x08) != 0;
+        _ic32.G = _ic31.Qn1;
     }
 
     // One evaluation of the glue logic. Every flip-flop samples the nets as
@@ -138,50 +260,29 @@ public sealed partial class BbcMicroSystem
         _ic31.D2 = n173;
         _ic31.Clk2 = e;
 
-        // IC76 latches the paged-ROM number from the data bus when the CPU's
-        // clock falls (IC30's /Q rises) during a write to &FE30-&FE3F.
+        // The latches, interrupt wiring and addressable latch below depend on
+        // only these nets, so they are re-evaluated only when one changes.
         var data = Cpu.Data;
-        _ic76.A = (data & 0x01) != 0;
-        _ic76.B = (data & 0x02) != 0;
-        _ic76.C = (data & 0x04) != 0;
-        _ic76.D = (data & 0x08) != 0;
-        _ic76.Load = _romselBar;
-        _ic76.Clk = n130;
-
-        // IC97: reading &FE20-&FE2F (INTON) clears the latch at the end of
-        // the cycle and reading &FE18-&FE1F (INTOFF) sets it, enabling or
-        // disabling the Econet NMI. Its /Q is an input to the NMI gate, IC27.
-        // Its /CLR is wired to its own Q, so once clear it stays clear until
-        // INTOFF sets it.
-        _ic97.D1 = _intonBar;
-        _ic97.Pre1 = _intoffBar;
-        _ic97.Clr1 = _ic97.Q1;
-        _ic97.Clk1 = phi1;
-
-        // IC27 is an open-collector wired-OR onto /NMI. Its first gate passes
-        // the Econet clock detector (IC91, whose output is low with no
-        // Econet fitted), the third the 8271's INT, which is low while the
-        // 8271 is absent.
-        _ic27.A1 = _ic97.Qn1;
-        _ic27.B1 = false;
-        _ic27.A3 = false;
-        _ic27.B3 = true;
-        var nmiAsserted = _ic27.Y1 == false || _ic27.Y3 == false;
-
-        Cpu.Nmi = !nmiAsserted;
-        Cpu.Irq = SystemVia.Irq && UserVia.Irq;
-        Cpu.Res = resetBar;
-        SystemVia.Res = resetBar;
-        UserVia.Res = resetBar;
-
-        // IC32, the addressable latch, follows System VIA PB0-PB3 whenever
-        // IC31's first flip-flop enables it.
         var portB = SystemVia.PortB;
-        _ic32.A0 = (portB & 0x01) != 0;
-        _ic32.A1 = (portB & 0x02) != 0;
-        _ic32.A2 = (portB & 0x04) != 0;
-        _ic32.D = (portB & 0x08) != 0;
-        _ic32.G = _ic31.Qn1;
+        var sysIrq = SystemVia.Irq;
+        var peripheralKey = (n130 ? 0x1 : 0)
+            | (phi1 ? 0x2 : 0)
+            | (_romselBar ? 0x4 : 0)
+            | (_intonBar ? 0x8 : 0)
+            | (_intoffBar ? 0x10 : 0)
+            | (_ic97.Q1 ? 0x20 : 0)
+            | (_ic31.Qn1 ? 0x40 : 0)
+            | (sysIrq ? 0x80 : 0)
+            | (UserVia.Irq ? 0x100 : 0)
+            | (resetBar ? 0x200 : 0)
+            | ((data & 0x0F) << 10)
+            | ((portB & 0x0F) << 14);
+
+        if (peripheralKey != _peripheralKey)
+        {
+            _peripheralKey = peripheralKey;
+            EvaluatePeripherals(n130, phi1, resetBar, data, portB);
+        }
 
         // The CPU's clock input is IC29's fourth OR gate.
         _ic29.A4 = _ic30.Q1;
