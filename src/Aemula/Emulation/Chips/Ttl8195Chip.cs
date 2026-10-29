@@ -5,7 +5,7 @@ namespace Aemula.Emulation.Chips;
 /// must be low for the outputs to drive; if either is high all eight outputs
 /// are high-impedance.
 /// </summary>
-public sealed class Ttl8195Chip
+public struct Ttl8195Chip
 {
     /// <summary>
     /// Enable 1, active low.

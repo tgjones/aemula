@@ -72,16 +72,16 @@ public sealed partial class AppleISystem
     // LINE0 = NAND(H6, CL), the 2519 line buffer's clock; C = /VBL. Gate D
     // is on the processor sheet (/RF, DRAM refresh - not modelled, the DRAM
     // is a flat array).
-    private readonly Ttl7400Chip _icd10 = new();
+    private Ttl7400Chip _icd10 = new();
 
     // ICD12 (7404): A inverts the CR line-fill latch
     // (AppleISystem.CharacterMemory.cs); B/C are the crystal oscillator,
     // which is the master tick itself; D = VBL; E = /MEM0; F = /LASTH.
-    private readonly Ttl7404Chip _icd12 = new();
+    private Ttl7404Chip _icd12 = new();
 
     // ICC15 (7400, drawn on the processor sheet): C = NAND(HSYNC, _S1_160)
     // into ICC13's FF2; D inverts the PIA's CB2 into the DA busy flag.
-    private readonly Ttl7400Chip _icc15 = new();
+    private Ttl7400Chip _icc15 = new();
 
     private bool _lastDotClock;
     private bool _lastMem0;

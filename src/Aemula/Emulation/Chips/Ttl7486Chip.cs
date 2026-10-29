@@ -3,7 +3,7 @@ namespace Aemula.Emulation.Chips;
 /// <summary>
 /// Quad 2-input XOR gate.
 /// </summary>
-public sealed class Ttl7486Chip
+public struct Ttl7486Chip
 {
     public bool A1 { private get; set; }
     public bool B1 { private get; set; }

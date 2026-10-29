@@ -3,7 +3,7 @@ namespace Aemula.Emulation.Chips;
 /// <summary>
 /// Hex inverter.
 /// </summary>
-public sealed class Ttl7404Chip
+public struct Ttl7404Chip
 {
     public bool A1 { private get; set; }
     public bool Y1 => !A1;

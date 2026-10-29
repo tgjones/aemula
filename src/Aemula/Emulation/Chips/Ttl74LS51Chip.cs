@@ -7,7 +7,7 @@ namespace Aemula.Emulation.Chips;
 /// plain 7451 instead has two 2-wide 2-input gates, which is
 /// <see cref="Ttl7450Chip"/> without its expander pins.
 /// </summary>
-public sealed class Ttl74LS51Chip
+public struct Ttl74LS51Chip
 {
     public bool A1 { private get; set; }
     public bool B1 { private get; set; }

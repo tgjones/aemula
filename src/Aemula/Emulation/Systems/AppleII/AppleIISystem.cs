@@ -59,11 +59,11 @@ public sealed partial class AppleIISystem : EmulatedSystem
     //   clear strobe ($C01X), cassette out ($C02X), speaker ($C03X), C040
     //   STROBE' ($C04X), screen mode/annunciator switches ($C05X), serial
     //   input mux ($C06X), paddle trigger ($C07X).
-    private readonly Ttl7404Chip _addressDecodeInverters;
-    private readonly Ttl74138Chip _highMemoryDecoder;
-    private readonly Ttl74138Chip _ioSectionDecoder;
-    private readonly Ttl74138Chip _deviceSelectDecoder;
-    private readonly Ttl74138Chip _ioControlDecoder;
+    private Ttl7404Chip _addressDecodeInverters;
+    private Ttl74138Chip _highMemoryDecoder;
+    private Ttl74138Chip _ioSectionDecoder;
+    private Ttl74138Chip _deviceSelectDecoder;
+    private Ttl74138Chip _ioControlDecoder;
 
     public AppleIISystem()
         : this(AppleIISystemOptions.Default)

@@ -80,11 +80,11 @@ public sealed partial class AppleIISystem
     // Selectable inverter between the shift register and the display:
     // implements NORMAL/INVERSE/FLASH by XORing the raw dot pattern with
     // the latched INVERT TEXT signal.
-    private readonly Ttl7486Chip _textVideoXor;
+    private Ttl7486Chip _textVideoXor;
 
     // Latches INVERT TEXT once per character, at the same time the dot
     // pattern loads, so it can't change mid-character.
-    private readonly Ttl7474Chip _invertTextLatch;
+    private Ttl7474Chip _invertTextLatch;
 
     // A second, physically distinct 74166 for HIRES (Sather: "There are two
     // shift registers, one for GRAPHICS and one for TEXT"). Shifts the

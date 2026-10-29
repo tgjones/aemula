@@ -3,7 +3,7 @@ namespace Aemula.Emulation.Chips;
 /// <summary>
 /// Triple 3-input NAND gate.
 /// </summary>
-public sealed class Ttl7410Chip
+public struct Ttl7410Chip
 {
     public bool A1 { private get; set; }
     public bool B1 { private get; set; }

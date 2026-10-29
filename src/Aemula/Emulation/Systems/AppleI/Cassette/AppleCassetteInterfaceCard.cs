@@ -40,7 +40,7 @@ namespace Aemula.Emulation.Systems.AppleI.Cassette;
 public sealed class AppleCassetteInterfaceCard : IExpansionCard
 {
     private readonly byte[] _rom = AciRom.Image;
-    private readonly Ttl7474Chip _flipFlops = new();
+    private Ttl7474Chip _flipFlops = new();
     private readonly Lm311Chip _comparator = new();
 
     /// <summary>

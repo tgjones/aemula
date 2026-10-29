@@ -3,7 +3,7 @@ namespace Aemula.Emulation.Chips;
 /// <summary>
 /// Dual 2-to-4 line decoder/demultiplexer with active-low outputs.
 /// </summary>
-public sealed class Ttl74139Chip
+public struct Ttl74139Chip
 {
     public bool A1 { private get; set; }
     public bool B1 { private get; set; }

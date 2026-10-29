@@ -5,7 +5,7 @@ namespace Aemula.Emulation.Chips;
 /// <see cref="Ttl7405Chip"/>, each output only ever pulls low or floats
 /// (<c>null</c>), so several can be wired-OR'd onto one net.
 /// </summary>
-public sealed class Ttl7438Chip
+public struct Ttl7438Chip
 {
     public bool A1 { private get; set; }
     public bool B1 { private get; set; }

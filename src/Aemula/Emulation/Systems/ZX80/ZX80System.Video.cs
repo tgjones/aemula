@@ -58,8 +58,8 @@ public sealed partial class ZX80System
     // via-software trick the sync chain below uses. IC12's other two gates
     // feed the ROM's chip-select mux channel, dangling on its video-mode
     // input in this netlist and deferred to phase 4 along with it.
-    private readonly Ttl7400Chip _ic11;
-    private readonly Ttl7400Chip _ic12;
+    private Ttl7400Chip _ic11;
+    private Ttl7400Chip _ic12;
 
     // IC13: three of its six inverters are used here (two more are already
     // doing unrelated work as ZX80System.cs's _addressDecodeInverters -
@@ -68,7 +68,7 @@ public sealed partial class ZX80System
     // that same decode; gate 4 feeds the inverse-video latch above. Two
     // more gates exist on the real board but feed only the keyboard-diode/
     // CS1 corner deferred to phase 4, so they're not modelled.
-    private readonly Ttl7404Chip _ic13;
+    private Ttl7404Chip _ic13;
 
     // IC14: the bulk of the NOP-forcing bank's eight open-collector
     // pulldowns (see TickNopGenerator/CombineSplitDataBus) - six gates,
@@ -91,8 +91,8 @@ public sealed partial class ZX80System
     // IC16/IC17: NAND/OR glue tying the pieces above together - see
     // TickVideo for what each gate does; there's no single label that
     // covers either chip as a whole.
-    private readonly Ttl7410Chip _ic16;
-    private readonly Ttl7432Chip _ic17;
+    private Ttl7410Chip _ic16;
+    private Ttl7432Chip _ic17;
 
     // IC19: the horizontal sync pulse itself. Both flip-flops clock
     // together off the same /M1-derived level as the shift-register load
@@ -102,7 +102,7 @@ public sealed partial class ZX80System
     // scanline counter directly and clears IC18's other flip-flop, which
     // the ROM's own code kicks back out of reset with a single OUT
     // instruction (see TickVideo).
-    private readonly Ttl7474Chip _ic19;
+    private Ttl7474Chip _ic19;
 
     // Edge-detects PHI for the RC differentiator on IC11 pin 2 (C11 into
     // R25): real hardware turns each PHI rising edge into a ~20ns spike,

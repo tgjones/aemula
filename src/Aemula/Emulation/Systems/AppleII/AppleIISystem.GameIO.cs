@@ -14,7 +14,7 @@ public sealed partial class AppleIISystem
     // $C030: the speaker toggle. A 74LS74 flip-flop with D wired to its own
     // Q', so every access to the $C03X range complements it; Q drives the
     // speaker through a transistor.
-    private readonly Ttl7474Chip _speakerFlipFlop;
+    private Ttl7474Chip _speakerFlipFlop;
 
     // $C061-$C067 read: the 74LS251 (H14) muxing the game connector's three
     // pushbuttons and four paddle one-shot outputs (plus the unmodelled

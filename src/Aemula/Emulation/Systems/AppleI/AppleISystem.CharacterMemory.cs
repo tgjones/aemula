@@ -131,7 +131,7 @@ public sealed partial class AppleISystem
     // row's last scanline. It gates the ring clock and is also the 2519's
     // Recirculate control. Gates A and C are on the processor sheet (DRAM
     // write and bus enable).
-    private readonly Ttl7410Chip _icb2 = new();
+    private Ttl7410Chip _icb2 = new();
 
     // ICC10 (7402, quad 2-input NOR). A: _S1_110 = NOR(_S1_139, RD7-plane
     // mux output) - the RD7 plane's line-buffer input, carrying the cursor
@@ -141,7 +141,7 @@ public sealed partial class AppleISystem
     // !ICD6.QD, which trims the blanked rows' contribution to 8 character-
     // times per line, and it's also ICD8/ICD9's scroll preset. D: _S1_155 =
     // NOR(V3, V4), one input of ICD15's diode-AND load.
-    private readonly Ttl7402Chip _icc10 = new();
+    private Ttl7402Chip _icc10 = new();
 
     // ICD13 - the free-running 555 that flashes the cursor. Wired as a
     // standard astable off R10 (10k), R11 (10k) and C7 (22uF): Out high for
@@ -169,7 +169,7 @@ public sealed partial class AppleISystem
     // busy flag registered on the previous ring clock is still set, i.e. a
     // character is committing into the rings this ring clock. Gate C:
     // _S1_198 = NAND(RD1, RD3, RD4).
-    private readonly Ttl7410Chip _icc6 = new();
+    private Ttl7410Chip _icc6 = new();
 
     // ICC8 (7450, dual 2-wide 2-input AND-OR-INVERT). Gate A: _S1_169 =
     // !((B4-12 . _S1_101) + (_S1_105 . _S1_85)) - drops at end of line (or
@@ -186,7 +186,7 @@ public sealed partial class AppleISystem
     // _verticalCounterLoadBar. Gate D: /WRITE = OR(_S1_89, _S1_71),
     // active-low, low exactly when a printable char (bit 5 or 6 set) is
     // committing at the cursor; drives the write-mux selects and ICC12:B.
-    private readonly Ttl7432Chip _icc9 = new();
+    private Ttl7432Chip _icc9 = new();
 
     // ICC12 (7408, quad 2-input AND). Gate A: _S1_139 = AND(555, _S1_96).
     // Gate B: /WC1 = AND(/WRITE, _S1_169). Gate C: _S1_93 = AND(_S1_162,

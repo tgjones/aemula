@@ -52,15 +52,15 @@ public sealed partial class ZX80System : EmulatedSystem
     // ROM-vs-RAM boolean the real decode does for every address that
     // matters, so it's kept rather than reworked mid-plan, but it isn't
     // claiming to be any specific pair of real gates any more.
-    private readonly Ttl7404Chip _addressDecodeInverters;
-    private readonly Ttl7400Chip _romRamSelect;
+    private Ttl7404Chip _addressDecodeInverters;
+    private Ttl7400Chip _romRamSelect;
 
     // IC18: two roles on the real board, both modelled on this one
     // instance. Flip-flop 2 (D2 tied to its own Qn2) divides PHI2X by 2 to
     // produce the Z80's own clock, PHI. Flip-flop 1 has no clock of its own
     // (CLK1 is tied to +5V) - it's a pure async latch, part of the
     // horizontal sync chain wired up in ZX80System.Video.cs.
-    private readonly Ttl7474Chip _ic18;
+    private Ttl7474Chip _ic18;
 
     // IC20: gate 1 buffers the abstracted master-oscillator toggle below
     // into PHI2X; gate 2 will XOR the video shift register's output against
@@ -70,7 +70,7 @@ public sealed partial class ZX80System : EmulatedSystem
     // fidelity notes): X1's oscillation itself is the abstracted toggle
     // this gate buffers, the same "stop at the analog boundary" convention
     // as every other exception in this codebase.
-    private readonly Ttl7486Chip _ic20;
+    private Ttl7486Chip _ic20;
 
     private bool _masterOscillatorHigh;
 

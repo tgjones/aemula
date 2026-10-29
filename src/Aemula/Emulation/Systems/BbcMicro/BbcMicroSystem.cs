@@ -60,39 +60,39 @@ public sealed partial class BbcMicroSystem : EmulatedSystem
     private readonly Ne555Chip _resetTimer;
 
     // Address decode.
-    private readonly Ttl74139Chip _ic20;
-    private readonly Ttl7400Chip _ic21;
-    private readonly Ttl7430Chip _ic22;
-    private readonly Ttl7430Chip _ic23;
-    private readonly Ttl74138Chip _ic24;
-    private readonly Ttl7420Chip _ic25;
-    private readonly Ttl74139Chip _ic26;
+    private Ttl74139Chip _ic20;
+    private Ttl7400Chip _ic21;
+    private Ttl7430Chip _ic22;
+    private Ttl7430Chip _ic23;
+    private Ttl74138Chip _ic24;
+    private Ttl7420Chip _ic25;
+    private Ttl74139Chip _ic26;
     private readonly Ttl74163Chip _ic76;
     private readonly Ttl74244Chip _ic96;
 
     // Interrupts, reset and the addressable latch.
-    private readonly Ttl7438Chip _ic27;
-    private readonly Ttl7474Chip _ic97;
-    private readonly Ttl7404Chip _ic33;
+    private Ttl7438Chip _ic27;
+    private Ttl7474Chip _ic97;
+    private Ttl7404Chip _ic33;
     internal readonly Ttl74259Chip _ic32;
 
     // The screen address's wrap at the end of screen memory (hardware
     // scroll); IC27's fourth gate is the other part of it.
-    private readonly Ttl7410Chip _ic36;
+    private Ttl7410Chip _ic36;
     private readonly Ttl74283Chip _ic39;
-    private readonly Ttl7400Chip _ic40;
+    private Ttl7400Chip _ic40;
 
     // DISEN: the 6845's display enable, blanked from raster line 8 on.
-    private readonly Ttl7486Chip _ic38;
-    private readonly Ttl7402Chip _ic41;
+    private Ttl7486Chip _ic38;
+    private Ttl7402Chip _ic41;
 
     // The 6502's clock and its synchronisation to the 1MHz bus.
-    private readonly Ttl74LS51Chip _ic28;
-    private readonly Ttl7432Chip _ic29;
-    private readonly Ttl7474Chip _ic30;
-    private readonly Ttl7474Chip _ic31;
-    private readonly Ttl7474Chip _ic34;
-    private readonly Ttl7404Chip _ic37;
+    private Ttl74LS51Chip _ic28;
+    private Ttl7432Chip _ic29;
+    private Ttl7474Chip _ic30;
+    private Ttl7474Chip _ic31;
+    private Ttl7474Chip _ic34;
+    private Ttl7404Chip _ic37;
 
     // The teletext data path: IC15 latches the video bus for the SAA5050.
     private readonly Ttl74273Chip _ic15;

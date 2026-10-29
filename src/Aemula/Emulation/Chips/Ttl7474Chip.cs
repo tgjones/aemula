@@ -4,8 +4,19 @@ namespace Aemula.Emulation.Chips;
 /// Dual D-type positive-edge-triggered flip-flop with active-low, asynchronous
 /// preset and clear.
 /// </summary>
-public sealed class Ttl7474Chip
+public struct Ttl7474Chip
 {
+    // Both flip-flops power up with PRE and CLR inactive and /Q high.
+    public Ttl7474Chip()
+    {
+        _pre1 = true;
+        _clr1 = true;
+        Qn1 = true;
+        _pre2 = true;
+        _clr2 = true;
+        Qn2 = true;
+    }
+
     public bool D1 { private get; set; }
 
     private bool _clk1;
@@ -24,7 +35,7 @@ public sealed class Ttl7474Chip
         }
     }
 
-    private bool _pre1 = true;
+    private bool _pre1;
     public bool Pre1
     {
         private get => _pre1;
@@ -35,7 +46,7 @@ public sealed class Ttl7474Chip
         }
     }
 
-    private bool _clr1 = true;
+    private bool _clr1;
     public bool Clr1
     {
         private get => _clr1;
@@ -67,7 +78,7 @@ public sealed class Ttl7474Chip
     }
 
     public bool Q1 { get; private set; }
-    public bool Qn1 { get; private set; } = true;
+    public bool Qn1 { get; private set; }
 
     public bool D2 { private get; set; }
 
@@ -87,7 +98,7 @@ public sealed class Ttl7474Chip
         }
     }
 
-    private bool _pre2 = true;
+    private bool _pre2;
     public bool Pre2
     {
         private get => _pre2;
@@ -98,7 +109,7 @@ public sealed class Ttl7474Chip
         }
     }
 
-    private bool _clr2 = true;
+    private bool _clr2;
     public bool Clr2
     {
         private get => _clr2;
@@ -130,5 +141,5 @@ public sealed class Ttl7474Chip
     }
 
     public bool Q2 { get; private set; }
-    public bool Qn2 { get; private set; } = true;
+    public bool Qn2 { get; private set; }
 }

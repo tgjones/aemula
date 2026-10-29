@@ -39,18 +39,18 @@ public sealed partial class BbcMicroSystem
     // The address buffers: IC8 and IC9 for the video address in the bitmap
     // modes, IC10 and IC11 in Mode 7, IC12 and IC13 for the CPU. Their eight
     // outputs are RA0-RA6 and WE#.
-    private readonly Ttl8195Chip _ic8;
-    private readonly Ttl8195Chip _ic9;
-    private readonly Ttl8195Chip _ic10;
-    private readonly Ttl8195Chip _ic11;
-    private readonly Ttl8195Chip _ic12;
-    private readonly Ttl8195Chip _ic13;
+    private Ttl8195Chip _ic8;
+    private Ttl8195Chip _ic9;
+    private Ttl8195Chip _ic10;
+    private Ttl8195Chip _ic11;
+    private Ttl8195Chip _ic12;
+    private Ttl8195Chip _ic13;
 
     // IC45 selects the buffers and /CAS; IC44's first flip-flop makes /RAS
     // from the 4MHz clock, through IC43's sixth inverter.
-    private readonly Ttl74139Chip _ic45;
-    private readonly Ttl7474Chip _ic44;
-    private readonly Ttl7404Chip _ic43;
+    private Ttl74139Chip _ic45;
+    private Ttl7474Chip _ic44;
+    private Ttl7404Chip _ic43;
 
     // The row/column address lines, WE# and the RAM data bus as last driven.
     private byte _ra;
@@ -374,7 +374,7 @@ public sealed partial class BbcMicroSystem
         }
     }
 
-    private static byte Pack(Ttl8195Chip chip) => (byte)(
+    private static byte Pack(in Ttl8195Chip chip) => (byte)(
         (chip.Y1 == true ? 0x01 : 0)
         | (chip.Y2 == true ? 0x02 : 0)
         | (chip.Y3 == true ? 0x04 : 0)

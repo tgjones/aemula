@@ -13,7 +13,7 @@ public sealed partial class AppleIISystem
 
     // The motherboard flip-flop the AY-5-3600's strobe output sets (data
     // bit 7 at $C000); cleared by any access to $C010-$C01F.
-    private readonly Ttl7474Chip _keyboardStrobeLatch;
+    private Ttl7474Chip _keyboardStrobeLatch;
 
     // Divides the master clock down to roughly the AY-5-3600's internal
     // ~80KHz RC oscillator rate - it's a free-running clock on real

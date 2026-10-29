@@ -33,7 +33,7 @@ public sealed partial class SpaceInvadersSystem
     // HBLANK (half 1) and VBLANK (half 2): each toggles on its own
     // counter's terminal count, and its output feeds directly back into
     // that same counter's high-nibble reload data - see TickVideoTiming.
-    private readonly Ttl7474Chip _blankingFlipFlops;
+    private Ttl7474Chip _blankingFlipFlops;
 
     // The interrupt-trigger latch: continuously resampled every pixel
     // clock from (!64V & 128V) | VBLANK, so its low-to-high *transition*
@@ -48,7 +48,7 @@ public sealed partial class SpaceInvadersSystem
     // acknowledgment is _cpu.Int itself (a separate flag, set from this
     // flip-flop's rising edge below, cleared in ReadCpuBus's
     // StatusWordInterruptAcknowledge case), not this flip-flop's own Q1.
-    private readonly Ttl7474Chip _interruptFlipFlop;
+    private Ttl7474Chip _interruptFlipFlop;
 
     private bool _lastInterruptFlipFlopQ1;
 
@@ -148,7 +148,7 @@ public sealed partial class SpaceInvadersSystem
         if (hTerminalCount)
         {
             _blankingFlipFlops.D1 = hblankNext;
-            PulseFlipFlop1(_blankingFlipFlops);
+            PulseFlipFlop1(ref _blankingFlipFlops);
         }
 
         if (vClockEnable)
@@ -182,7 +182,7 @@ public sealed partial class SpaceInvadersSystem
             if (vTerminalCount)
             {
                 _blankingFlipFlops.D2 = vblankNext;
-                PulseFlipFlop2(_blankingFlipFlops);
+                PulseFlipFlop2(ref _blankingFlipFlops);
             }
         }
 
@@ -195,7 +195,7 @@ public sealed partial class SpaceInvadersSystem
         var v7 = _vCounterHigh.Qd; // 128V
 
         _interruptFlipFlop.D1 = (!v6 && v7) || Vblank;
-        PulseFlipFlop1(_interruptFlipFlop);
+        PulseFlipFlop1(ref _interruptFlipFlop);
 
         var q1 = _interruptFlipFlop.Q1;
 
@@ -218,13 +218,13 @@ public sealed partial class SpaceInvadersSystem
         chip.Clk = true;
     }
 
-    private static void PulseFlipFlop1(Ttl7474Chip chip)
+    private static void PulseFlipFlop1(ref Ttl7474Chip chip)
     {
         chip.Clk1 = false;
         chip.Clk1 = true;
     }
 
-    private static void PulseFlipFlop2(Ttl7474Chip chip)
+    private static void PulseFlipFlop2(ref Ttl7474Chip chip)
     {
         chip.Clk2 = false;
         chip.Clk2 = true;
