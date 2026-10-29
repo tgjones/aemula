@@ -257,6 +257,7 @@ public sealed partial class BbcMicroSystem
     private void OnOneMHzEnableRising()
     {
         DecodeBus(Cpu.Phi1);
+        UpdateKeyboard();
 
         var address = _busAddress;
 

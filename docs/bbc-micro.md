@@ -275,7 +275,7 @@ phase with thorough tests.
 
 ### Phase 6 — Keyboard, input, sound
 
-- [ ] Keyboard matrix via the System VIA and scanning latch logic from the
+- [x] Keyboard matrix via the System VIA and scanning latch logic from the
       netlist; map host `KeyEvent`s via `Key` to matrix positions; BREAK key
       to reset. Typing `PRINT "HI"` headlessly via `Aemula.Console --input`
       is the end-to-end test.

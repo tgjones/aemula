@@ -21,7 +21,7 @@ namespace Aemula.Emulation.Systems.BbcMicro;
 /// board's own 74xx logic, evaluated net by net.
 ///
 /// What is not on the board's wires yet: the 6850 ACIA, serial ULA, 8271 FDC,
-/// µPD7002 ADC, SN76489 and keyboard are absent, so their register
+/// µPD7002 ADC and SN76489 are absent, so their register
 /// ranges read as an open bus and their interrupt lines stay inactive.
 /// </summary>
 public sealed partial class BbcMicroSystem : EmulatedSystem
@@ -151,10 +151,9 @@ public sealed partial class BbcMicroSystem : EmulatedSystem
 
         _resetTimer = new Ne555Chip { PulseTicks = resetPulseTicks };
 
-        // Nothing is attached to the ports of either VIA. A floating TTL
-        // input reads high, except where the board or the (absent)
-        // keyboard pulls it low: the keyboard drives PA7 low while no key is
-        // pressed, and CA2 (its key-pressed interrupt) low.
+        // Nothing but the keyboard (see UpdateKeyboard) is attached to the
+        // System VIA's port A, which it holds low except for PA7 and CA2
+        // while a key is down.
         SystemVia.PA = 0x00;
         SystemVia.PB = 0xFF;
         SystemVia.Ca2 = false;
