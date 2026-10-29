@@ -257,6 +257,13 @@ public sealed class Motorola6845Chip
     // Output pins.
 
     /// <summary>
+    /// Changes whenever the chip's outputs may have: each character clock,
+    /// register write and reset. Lets a consumer that derives something from
+    /// several outputs skip the work while they are known to be unchanged.
+    /// </summary>
+    internal int OutputVersion { get; private set; }
+
+    /// <summary>
     /// Memory address outputs (MA0-MA13).
     /// </summary>
     public ushort MA => _address;
@@ -319,6 +326,8 @@ public sealed class Motorola6845Chip
 
     private void WriteRegister(byte data)
     {
+        OutputVersion++;
+
         if (!RS)
         {
             _addressRegister = (byte)(data & 0x1F);
@@ -345,6 +354,7 @@ public sealed class Motorola6845Chip
 
     private void ResetCounters()
     {
+        OutputVersion++;
         _horizontalCounter = 0;
         _scanlineCounter = 0;
         _verticalCounter = 0;
@@ -392,6 +402,7 @@ public sealed class Motorola6845Chip
 
     private void Tick()
     {
+        OutputVersion++;
         var skew = (_registers[ModeControl] >> 4) & 3;
 
         if (_inHsync)

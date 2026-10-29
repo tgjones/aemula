@@ -221,7 +221,7 @@ public sealed partial class BbcMicroSystem : EmulatedSystem
         _resetTimer.TriggerBar = true;
     }
 
-    private int _crtcOutputs = -1;
+    private int _gateCrtcVersion = -1;
 
     public override void Tick()
     {
@@ -260,23 +260,21 @@ public sealed partial class BbcMicroSystem : EmulatedSystem
 
         // IC38's gate (the other input tied to +5V) inverts DISPEN, and IC41's
         // NORs that with RA3. The 6845's outputs move only when it is clocked,
-        // so the gates are evaluated only when one of them has changed.
-        var dispEn = Crtc.DispEn;
-        var cursor = Crtc.Cursor;
-        var vSync = Crtc.VSync;
-        var ra3 = (Crtc.RA & 8) != 0;
-        var crtcOutputs = (dispEn ? 1 : 0) | (cursor ? 2 : 0) | (vSync ? 4 : 0) | (ra3 ? 8 : 0);
-
-        if (crtcOutputs != _crtcOutputs)
+        // so the gates are evaluated only when it has been clocked or written.
+        if (Crtc.OutputVersion != _gateCrtcVersion)
         {
-            _crtcOutputs = crtcOutputs;
+            _gateCrtcVersion = Crtc.OutputVersion;
+
+            var dispEn = Crtc.DispEn;
+            var ra3 = (Crtc.RA & 8) != 0;
+            var vSync = Crtc.VSync;
 
             _ic38.A1 = true;
             _ic38.B1 = dispEn;
             _ic41.A3 = _ic38.Y1;
             _ic41.B3 = ra3;
             VideoUla.Disen = _ic41.Y3;
-            VideoUla.Cursor = cursor;
+            VideoUla.Cursor = Crtc.Cursor;
             SystemVia.Ca1 = vSync;
         }
 

@@ -36,6 +36,8 @@ public sealed partial class BbcMicroSystem
     private bool _n352;
     private bool _n352Now;
     private int _teletextInputs = -1;
+    private int _teletextCrtcVersion = -1;
+    private int _teletextCrtcBits;
     private bool _tr6;
     private int _teletextTicks;
     private bool _teletextVisible;
@@ -44,11 +46,16 @@ public sealed partial class BbcMicroSystem
     {
         // These inputs move only when the 6845 is clocked or the 1MHz clock
         // changes, so they are worked out again only then.
+        if (Crtc.OutputVersion != _teletextCrtcVersion)
+        {
+            _teletextCrtcVersion = Crtc.OutputVersion;
+            _teletextCrtcBits = ((Crtc.MA & 0x2000) != 0 ? 1 : 0)
+                | ((Crtc.RA & 1) != 0 ? 2 : 0)
+                | (Crtc.VSync ? 4 : 0);
+        }
+
         var clock1MHz = VideoUla.Clock1MHz;
-        var teletextInputs = ((Crtc.MA & 0x2000) != 0 ? 1 : 0)
-            | ((Crtc.RA & 1) != 0 ? 2 : 0)
-            | (Crtc.VSync ? 4 : 0)
-            | (clock1MHz ? 8 : 0);
+        var teletextInputs = _teletextCrtcBits | (clock1MHz ? 8 : 0);
 
         if (teletextInputs != _teletextInputs)
         {
