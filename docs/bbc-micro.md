@@ -264,7 +264,7 @@ phase with thorough tests.
 - [x] `Saa5050Chip` (Mode 7): control codes, held graphics, double height,
       flash, separated graphics; take the glyph/row timing from the
       datasheet/MAME and compare screenshots of known Mode 7 screens.
-- [ ] Monochrome composite out: sum R/G/B to a luma level, combine with the
+- [x] Monochrome composite out: sum R/G/B to a luma level, combine with the
       6845's HS/VS through the on-board sync network, and push samples into
       `Television.Decode` as the other systems do (television signal
       propagation note). Colour is ignored at this stage.

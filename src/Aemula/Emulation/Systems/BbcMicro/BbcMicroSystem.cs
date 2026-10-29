@@ -268,6 +268,7 @@ public sealed partial class BbcMicroSystem : EmulatedSystem
 
         Settle();
         StepRam();
+        TickCompositeVideo();
     }
 
     // Reads and writes without side effects, for tests and the debugger.
