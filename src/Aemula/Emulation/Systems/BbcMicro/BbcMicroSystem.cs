@@ -221,6 +221,8 @@ public sealed partial class BbcMicroSystem : EmulatedSystem
         _resetTimer.TriggerBar = true;
     }
 
+    private int _crtcOutputs = -1;
+
     public override void Tick()
     {
         // The CPU's address and R/W outputs reach the rest of the board a
@@ -257,14 +259,26 @@ public sealed partial class BbcMicroSystem : EmulatedSystem
         Crtc.Clk = VideoUla.CrtcClock;
 
         // IC38's gate (the other input tied to +5V) inverts DISPEN, and IC41's
-        // NORs that with RA3.
-        _ic38.A1 = true;
-        _ic38.B1 = Crtc.DispEn;
-        _ic41.A3 = _ic38.Y1;
-        _ic41.B3 = (Crtc.RA & 8) != 0;
-        VideoUla.Disen = _ic41.Y3;
-        VideoUla.Cursor = Crtc.Cursor;
-        SystemVia.Ca1 = Crtc.VSync;
+        // NORs that with RA3. The 6845's outputs move only when it is clocked,
+        // so the gates are evaluated only when one of them has changed.
+        var dispEn = Crtc.DispEn;
+        var cursor = Crtc.Cursor;
+        var vSync = Crtc.VSync;
+        var ra3 = (Crtc.RA & 8) != 0;
+        var crtcOutputs = (dispEn ? 1 : 0) | (cursor ? 2 : 0) | (vSync ? 4 : 0) | (ra3 ? 8 : 0);
+
+        if (crtcOutputs != _crtcOutputs)
+        {
+            _crtcOutputs = crtcOutputs;
+
+            _ic38.A1 = true;
+            _ic38.B1 = dispEn;
+            _ic41.A3 = _ic38.Y1;
+            _ic41.B3 = ra3;
+            VideoUla.Disen = _ic41.Y3;
+            VideoUla.Cursor = cursor;
+            SystemVia.Ca1 = vSync;
+        }
 
         Settle();
         StepRam();

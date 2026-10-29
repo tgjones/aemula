@@ -34,21 +34,36 @@ public sealed partial class BbcMicroSystem
     // first character's cell, so the cell is visible if DISPEN was high at
     // the edge that started it.
     private bool _n352;
+    private bool _n352Now;
+    private int _teletextInputs = -1;
     private bool _tr6;
     private int _teletextTicks;
     private bool _teletextVisible;
 
     private void StepTeletext()
     {
-        var teletextAddress = (Crtc.MA & 0x2000) != 0;
+        // These inputs move only when the 6845 is clocked or the 1MHz clock
+        // changes, so they are worked out again only then.
+        var clock1MHz = VideoUla.Clock1MHz;
+        var teletextInputs = ((Crtc.MA & 0x2000) != 0 ? 1 : 0)
+            | ((Crtc.RA & 1) != 0 ? 2 : 0)
+            | (Crtc.VSync ? 4 : 0)
+            | (clock1MHz ? 8 : 0);
 
-        _ic15.Clr = teletextAddress;
-        _ic43.A4 = (Crtc.RA & 1) != 0;
-        Teletext.Crs = _ic43.Y4;
-        Teletext.Dew = Crtc.VSync;
+        if (teletextInputs != _teletextInputs)
+        {
+            _teletextInputs = teletextInputs;
 
-        _ic37.A3 = VideoUla.Clock1MHz;
-        var n352 = _ic37.Y3;
+            _ic15.Clr = (teletextInputs & 1) != 0;
+            _ic43.A4 = (teletextInputs & 2) != 0;
+            Teletext.Crs = _ic43.Y4;
+            Teletext.Dew = (teletextInputs & 4) != 0;
+
+            _ic37.A3 = clock1MHz;
+            _n352Now = _ic37.Y3;
+        }
+
+        var n352 = _n352Now;
 
         if (n352 && !_n352)
         {
@@ -84,8 +99,12 @@ public sealed partial class BbcMicroSystem
         }
         else
         {
-            _ic15.Clk = false;
-            Teletext.F1 = false;
+            if (_teletextTicks == 0)
+            {
+                _ic15.Clk = false;
+                Teletext.F1 = false;
+            }
+
             _teletextTicks++;
 
             if (_teletextTicks < 16 && _teletextTicks * 3 / 4 != (_teletextTicks - 1) * 3 / 4)

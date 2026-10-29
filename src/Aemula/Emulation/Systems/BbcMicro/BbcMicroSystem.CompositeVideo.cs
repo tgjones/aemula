@@ -27,6 +27,25 @@ public sealed partial class BbcMicroSystem
     // The byte most recently handed to Television.Decode.
     internal byte CompositeSampleForTest { get; private set; }
 
+    // The summed output for each combination of red, green and blue (bit 0, 1
+    // and 2), worked out once rather than on every tick.
+    private static readonly byte[] LitSamples = BuildLitSamples();
+
+    private static byte[] BuildLitSamples()
+    {
+        var samples = new byte[8];
+
+        for (var rgb = 0; rgb < samples.Length; rgb++)
+        {
+            var lit = ((rgb & 1) != 0 ? RedWeight : 0)
+                + ((rgb & 2) != 0 ? GreenWeight : 0)
+                + ((rgb & 4) != 0 ? BlueWeight : 0);
+            samples[rgb] = (byte)Math.Round(BlackByte + (WhiteByte - BlackByte) * lit / TotalWeight);
+        }
+
+        return samples;
+    }
+
     private void TickCompositeVideo()
     {
         // CSYNC# is the NOR of HS and VS, so it is low while either pulse is
@@ -45,10 +64,7 @@ public sealed partial class BbcMicroSystem
         }
         else
         {
-            var lit = (VideoUla.Red ? RedWeight : 0)
-                + (VideoUla.Green ? GreenWeight : 0)
-                + (VideoUla.Blue ? BlueWeight : 0);
-            sample = (byte)Math.Round(BlackByte + (WhiteByte - BlackByte) * lit / TotalWeight);
+            sample = LitSamples[(VideoUla.Red ? 1 : 0) | (VideoUla.Green ? 2 : 0) | (VideoUla.Blue ? 4 : 0)];
         }
 
         CompositeSampleForTest = sample;
