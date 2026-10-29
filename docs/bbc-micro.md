@@ -279,7 +279,7 @@ phase with thorough tests.
       netlist; map host `KeyEvent`s via `Key` to matrix positions; BREAK key
       to reset. Typing `PRINT "HI"` headlessly via `Aemula.Console --input`
       is the end-to-end test.
-- [ ] `Sn76489Chip` and audio out (volume table, tone/noise LFSR, clock/32).
+- [x] `Sn76489Chip` and audio out (volume table, tone/noise LFSR, clock/32).
 - [ ] Printer/user-port/ADC-connector pins left idle but wired so the OS's
       probing behaves; joystick fire buttons if cheap.
 - [ ] Register the system, console controls (RESET/BREAK, shift-lock LED,

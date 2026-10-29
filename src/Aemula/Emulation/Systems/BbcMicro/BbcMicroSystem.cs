@@ -20,8 +20,8 @@ namespace Aemula.Emulation.Systems.BbcMicro;
 /// the 1MHz bus, decodes addresses and latches the paged-ROM number is the
 /// board's own 74xx logic, evaluated net by net.
 ///
-/// What is not on the board's wires yet: the 6850 ACIA, serial ULA, 8271 FDC,
-/// µPD7002 ADC and SN76489 are absent, so their register
+/// What is not on the board's wires yet: the 6850 ACIA, serial ULA, 8271 FDC
+/// and µPD7002 ADC are absent, so their register
 /// ranges read as an open bus and their interrupt lines stay inactive.
 /// </summary>
 public sealed partial class BbcMicroSystem : EmulatedSystem
@@ -247,6 +247,7 @@ public sealed partial class BbcMicroSystem : EmulatedSystem
         }
 
         StepTeletext();
+        TickSound();
 
         VideoUla.A0 = (_busAddress & 1) != 0;
         VideoUla.CS = _vidprocBar;
