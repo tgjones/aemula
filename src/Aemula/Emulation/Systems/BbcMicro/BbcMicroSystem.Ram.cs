@@ -105,9 +105,35 @@ public sealed partial class BbcMicroSystem
     {
         var c2 = VideoUla.Clock2MHz;
         var c4 = VideoUla.Clock4MHz;
+        var c8 = VideoUla.Clock8MHz;
 
+        // /RAS and the /CAS strobes are a function of these inputs alone (and
+        // IC44, which only moves on an 8MHz edge), and on most ticks none of
+        // them has changed, so the gates are evaluated only when one does.
+        var key = (c2 ? 0x01 : 0)
+            | (c4 ? 0x02 : 0)
+            | (c8 ? 0x04 : 0)
+            | (_vidprocBar ? 0x08 : 0)
+            | (_ic30.Q2 ? 0x10 : 0)
+            | (_ic30.Qn2 ? 0x20 : 0)
+            | ((_busAddress & 0x4000) != 0 ? 0x40 : 0)
+            | ((VideoAdderOutput() & 8) != 0 ? 0x80 : 0);
+
+        if (key != _ramStrobeKey)
+        {
+            _ramStrobeKey = key;
+            EvaluateRamStrobes(c2, c4, c8);
+        }
+
+        SelectAddressBuffers(c2, c4);
+    }
+
+    private int _ramStrobeKey = -1;
+
+    private void EvaluateRamStrobes(bool c2, bool c4, bool c8)
+    {
         _ic44.D1 = c4;
-        _ic44.Clk1 = VideoUla.Clock8MHz;
+        _ic44.Clk1 = c8;
         _ic43.A6 = _ic44.Qn1;
         var rasBar = _ic43.Y6;
 
@@ -150,8 +176,6 @@ public sealed partial class BbcMicroSystem
             _casBar1 = casBar1;
             StrobeCas(1, casBar1);
         }
-
-        SelectAddressBuffers(c2, c4);
     }
 
     private void StrobeCas(int bankIndex, bool casBar)

@@ -36,6 +36,8 @@ public sealed partial class BbcMicroSystem
     // _socketRoms.
     private readonly bool[] _socketEnableBar = new bool[4];
 
+    private int _decodeBusKey = -1;
+
     // Evaluates the address decode for the address and R/W as the board sees
     // them, with the CPU's clock in the given phase.
     //
@@ -46,6 +48,22 @@ public sealed partial class BbcMicroSystem
     // &8000-&BFFF). S18 and S19 are open, so their IC23 inputs float high.
     private void DecodeBus(bool phi1)
     {
+        // The decode is a pure function of the address, R/W, PHI1 and the
+        // paged-ROM latch's low two bits, none of which change on most ticks,
+        // so it is worked out again only when one does.
+        var key = _busAddress
+            | (_busRw ? 0x10000 : 0)
+            | (phi1 ? 0x20000 : 0)
+            | (_ic76.Qa ? 0x40000 : 0)
+            | (_ic76.Qb ? 0x80000 : 0);
+
+        if (key == _decodeBusKey)
+        {
+            return;
+        }
+
+        _decodeBusKey = key;
+
         var address = _busAddress;
 
         bool Address(int bit) => (address & (1 << bit)) != 0;
