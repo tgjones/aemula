@@ -27,9 +27,16 @@ public sealed partial class BbcMicroSystem
     // wave that starts again at each rising edge of _N352 and has 12 edges in
     // the 1us until the next, which the 16MHz tick cannot space evenly, so
     // they fall on three of every four ticks.
+    //
+    // The chip draws a cell from every code it is given, so outside the
+    // displayed area it would draw the screen memory that follows the row.
+    // The skew in R8 makes DISPEN rise just before the edge that starts the
+    // first character's cell, so the cell is visible if DISPEN was high at
+    // the edge that started it.
     private bool _n352;
     private bool _tr6;
     private int _teletextTicks;
+    private bool _teletextVisible;
 
     private void StepTeletext()
     {
@@ -73,6 +80,7 @@ public sealed partial class BbcMicroSystem
             Teletext.Lose = _ic15.Q0;
 
             _teletextTicks = 0;
+            _teletextVisible = Crtc.DispEn;
         }
         else
         {
@@ -89,8 +97,8 @@ public sealed partial class BbcMicroSystem
 
         _n352 = n352;
 
-        VideoUla.RedInput = Teletext.Red;
-        VideoUla.GreenInput = Teletext.Green;
-        VideoUla.BlueInput = Teletext.Blue;
+        VideoUla.RedInput = _teletextVisible && Teletext.Red;
+        VideoUla.GreenInput = _teletextVisible && Teletext.Green;
+        VideoUla.BlueInput = _teletextVisible && Teletext.Blue;
     }
 }

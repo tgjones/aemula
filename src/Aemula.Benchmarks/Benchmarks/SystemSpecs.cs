@@ -4,7 +4,6 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using Aemula.Emulation.Systems;
-using Aemula.Emulation.Systems.BbcMicro;
 
 namespace Aemula.Benchmarks;
 
@@ -85,12 +84,8 @@ internal static class SystemSpecs
             TelevisionRow),
     ];
 
-    // The BBC Micro isn't in EmulatedSystems until it is registered, so it is
-    // built directly; everything else goes through its descriptor.
     public static EmulatedSystem Build(string name) =>
-        name == "bbcmicro"
-            ? new BbcMicroSystem()
-            : EmulatedSystems.FindById(name)!.Build(ExpansionSlotConfiguration.Empty).System;
+        EmulatedSystems.FindById(name)!.Build(ExpansionSlotConfiguration.Empty).System;
 
     public static ulong CyclesPerSecond(string name) => Build(name).CyclesPerSecond;
 

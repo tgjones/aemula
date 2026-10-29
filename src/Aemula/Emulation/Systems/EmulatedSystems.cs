@@ -4,6 +4,7 @@ using Aemula.Emulation.Output;
 using Aemula.Emulation.Systems.AppleI;
 using Aemula.Emulation.Systems.AppleII;
 using Aemula.Emulation.Systems.Atari2600;
+using Aemula.Emulation.Systems.BbcMicro;
 using Aemula.Emulation.Systems.Nes;
 using Aemula.Emulation.Systems.SpaceInvaders;
 using Aemula.Emulation.Systems.ZX80;
@@ -27,8 +28,8 @@ public sealed record SystemDescriptor(
 }
 
 // Single source of truth for which emulated systems are wired up end-to-end.
-// BbcMicro and AcornSystem1 aren't listed - they're not yet complete enough to
-// boot from any of these entry points.
+// AcornSystem1 isn't listed - it's not yet complete enough to boot from any of
+// these entry points.
 //
 // Aemula.Console, Aemula.UI and Aemula.Benchmarks each need more than an
 // id/factory pair per system (a ROM-picker filter, a benchmark workload) -
@@ -48,6 +49,7 @@ public static class EmulatedSystems
             static slots => new AppleISystem(AppleISystemOptions.EquippedForBasic, slots)),
 
         new("atari2600", "Atari 2600", [], static _ => new Atari2600System()),
+        new("bbcmicro", "BBC Micro Model B", [], static _ => new BbcMicroSystem()),
         new("nes", "NES", [], static _ => new NesSystem()),
         new("spaceinvaders", "Space Invaders", [], static _ => new SpaceInvadersSystem()),
         new("zx80", "Sinclair ZX80", [], static _ => new ZX80System(TelevisionStandard.Pal)),

@@ -268,7 +268,7 @@ phase with thorough tests.
       6845's HS/VS through the on-board sync network, and push samples into
       `Television.Decode` as the other systems do (television signal
       propagation note). Colour is ignored at this stage.
-- [ ] Verification: `Aemula.Console` headless screenshot of the BASIC banner
+- [x] Verification: `Aemula.Console` headless screenshot of the BASIC banner
       and of a Mode 7 screen; frame-level comparison against jsbeeb
       screenshots (mono-converted). Check line/frame timing is exactly
       PAL 312 lines / 50 Hz field and that AFC locks.
