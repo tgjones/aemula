@@ -282,8 +282,9 @@ phase with thorough tests.
 - [x] `Sn76489Chip` and audio out (volume table, tone/noise LFSR, clock/32).
 - [x] Printer/user-port/ADC-connector pins left idle but wired so the OS's
       probing behaves; joystick fire buttons if cheap.
-- [ ] Register the system, console controls (RESET/BREAK, shift-lock LED,
-      caps lock LED, disc LED), and the debugger UI.
+- [x] Register the system, console controls (RESET/BREAK, shift-lock LED,
+      caps lock LED, disc LED), and the debugger UI. (The disc LED arrives
+      with the 8271 in Phase 8.)
 
 ### Phase 7 — Cassette
 

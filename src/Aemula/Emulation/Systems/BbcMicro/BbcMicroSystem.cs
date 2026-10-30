@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using Aemula.Debugging;
+using Aemula.Emulation.Systems.BbcMicro.Debugging;
 using Aemula.Emulation.Chips;
 using Aemula.Emulation.Chips.Mos6502;
 using Aemula.Emulation.Chips.Mos6522;
@@ -286,6 +288,8 @@ public sealed partial class BbcMicroSystem : EmulatedSystem
         StepRam();
         TickCompositeVideo();
     }
+
+    public override Debugger CreateDebugger() => new BbcMicroDebugger(this);
 
     // Reads and writes without side effects, for tests and the debugger.
     internal byte ReadByteDebug(ushort address)

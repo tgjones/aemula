@@ -3,6 +3,7 @@ using Aemula.Debugging;
 using Aemula.Emulation.Systems.AppleI.Debugging;
 using Aemula.Emulation.Systems.AppleII.Debugging;
 using Aemula.Emulation.Systems.Atari2600.Debugging;
+using Aemula.Emulation.Systems.BbcMicro.Debugging;
 using Aemula.Emulation.Systems.Nes.Debugging;
 using Aemula.Emulation.Systems.SpaceInvaders.Debugging;
 using Aemula.Emulation.Systems.ZX80.Debugging;
@@ -20,6 +21,7 @@ public static class DebuggerUIFactory
         AppleIDebugger d => new AppleIDebuggerUI(d),
         AppleIIDebugger d => new AppleIIDebuggerUI(d),
         Atari2600Debugger d => new Atari2600DebuggerUI(d),
+        BbcMicroDebugger d => new BbcMicroDebuggerUI(d),
         NesDebugger d => new NesDebuggerUI(d),
         SpaceInvadersDebugger d => new SpaceInvadersDebuggerUI(d),
         ZX80Debugger d => new ZX80DebuggerUI(d),

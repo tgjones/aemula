@@ -2,7 +2,7 @@
   "profiles": {
     "Aemula.UI": {
       "commandName": "Project",
-      "commandLineArgs": "appleii --debugger "
+      "commandLineArgs": "bbcmicro --debugger "
     }
   }
 }
