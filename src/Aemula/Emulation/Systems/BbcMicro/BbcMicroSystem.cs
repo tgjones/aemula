@@ -38,6 +38,8 @@ public sealed partial class BbcMicroSystem : EmulatedSystem
     public readonly Mos6522Chip SystemVia;
     public readonly Mos6522Chip UserVia;
 
+    private byte _systemViaPb = 0xFF;
+
     // IC2.
     public readonly Motorola6845Chip Crtc;
 
@@ -155,7 +157,9 @@ public sealed partial class BbcMicroSystem : EmulatedSystem
         // System VIA's port A, which it holds low except for PA7 and CA2
         // while a key is down.
         SystemVia.PA = 0x00;
-        SystemVia.PB = 0xFF;
+        // PB4 and PB5 are the analogue port's fire buttons (active low, see
+        // SetJoystickFire) and PB6 and PB7 the speech chip's lines, pulled up.
+        SystemVia.PB = _systemViaPb;
         SystemVia.Ca2 = false;
 
         // CB1 is the ADC's end-of-conversion line (pulled up) and CB2 the
@@ -306,5 +310,17 @@ public sealed partial class BbcMicroSystem : EmulatedSystem
         {
             WriteRam(address, value);
         }
+    }
+
+    /// <summary>
+    /// Presses or releases a joystick fire button on the analogue port. The
+    /// buttons pull System VIA PB4 (<paramref name="stick"/> 0) and PB5
+    /// (<paramref name="stick"/> 1) low.
+    /// </summary>
+    public void SetJoystickFire(int stick, bool pressed)
+    {
+        var mask = (byte)(0x10 << stick);
+        _systemViaPb = pressed ? (byte)(_systemViaPb & ~mask) : (byte)(_systemViaPb | mask);
+        SystemVia.PB = _systemViaPb;
     }
 }

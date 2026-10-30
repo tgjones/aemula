@@ -280,7 +280,7 @@ phase with thorough tests.
       to reset. Typing `PRINT "HI"` headlessly via `Aemula.Console --input`
       is the end-to-end test.
 - [x] `Sn76489Chip` and audio out (volume table, tone/noise LFSR, clock/32).
-- [ ] Printer/user-port/ADC-connector pins left idle but wired so the OS's
+- [x] Printer/user-port/ADC-connector pins left idle but wired so the OS's
       probing behaves; joystick fire buttons if cheap.
 - [ ] Register the system, console controls (RESET/BREAK, shift-lock LED,
       caps lock LED, disc LED), and the debugger UI.
