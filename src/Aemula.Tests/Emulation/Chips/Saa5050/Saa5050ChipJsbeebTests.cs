@@ -63,18 +63,26 @@ public class Saa5050ChipJsbeebTests
                     break;
 
                 case "line":
-                    chip!.Lose = true;
-
-                    for (var cell = 0; cell < codes.Length; cell++)
+                    // A cell is shown two character clocks after its code is
+                    // taken, and LOSE follows each code a clock later; two
+                    // clocks with LOSE low show the last cells and end the line.
+                    for (var clock = 0; clock < codes.Length + 2; clock++)
                     {
+                        chip!.Data = clock < codes.Length ? codes[clock] : (byte)' ';
+                        chip.F1 = true;
+                        chip.F1 = false;
+                        chip.Lose = clock < codes.Length;
+
+                        if (clock < 2)
+                        {
+                            continue;
+                        }
+
+                        var cell = clock - 2;
                         var expected = parts[cell + 1];
                         var dots = int.Parse(expected[..3], NumberStyles.HexNumber);
                         var foreground = int.Parse(expected[3..4], NumberStyles.HexNumber);
                         var background = int.Parse(expected[4..5], NumberStyles.HexNumber);
-
-                        chip.Data = codes[cell];
-                        chip.F1 = true;
-                        chip.F1 = false;
 
                         for (var dot = 0; dot < 12; dot++)
                         {
@@ -96,7 +104,6 @@ public class Saa5050ChipJsbeebTests
                         cellsChecked++;
                     }
 
-                    chip.Lose = false;
                     scan++;
                     break;
             }

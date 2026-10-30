@@ -259,4 +259,43 @@ public class Motorola6845ChipTests
         // Row 1's address is 12, so character 14 is its third cell.
         await Assert.That(cursorClocks).IsEquivalentTo(new[] { (1, 2), (1, 3), (1, 4) });
     }
+
+    [Test]
+    [Arguments(0)]
+    [Arguments(1)]
+    [Arguments(2)]
+    [Arguments(3)]
+    public async Task CursorFollowsTheCharacterOneClockLaterDelayedByItsSkew(int skew)
+    {
+        // Like display enable, the cursor belongs to the character the last
+        // clock ended, so it shows while MA is already one past the cursor
+        // address, and R8 bits 6-7 delay it a character more each. A skew of 3
+        // turns it off.
+        byte[] registers = [19, 12, 15, 0x32, 5, 3, 4, 5, (byte)(skew << 6), 7, 0x02, 0x04, 0x00, 0x00, 0x00, 12 + 2];
+        var crtc = Programmed(registers);
+
+        var cursorAddresses = new System.Collections.Generic.HashSet<int>();
+        var cursorClocks = 0;
+
+        for (var clock = 0; clock < 20 * 8 * 6; clock++)
+        {
+            if (crtc.Cursor)
+            {
+                cursorAddresses.Add(crtc.MA);
+                cursorClocks++;
+            }
+
+            Motorola6845Bus.Tick(crtc);
+        }
+
+        if (skew == 3)
+        {
+            await Assert.That(cursorClocks).IsEqualTo(0);
+        }
+        else
+        {
+            await Assert.That(cursorAddresses).IsEquivalentTo(new[] { 12 + 2 + 1 + skew });
+            await Assert.That(cursorClocks).IsEqualTo(3);
+        }
+    }
 }

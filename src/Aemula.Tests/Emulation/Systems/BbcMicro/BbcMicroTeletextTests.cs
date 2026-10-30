@@ -99,4 +99,29 @@ public class BbcMicroTeletextTests
         await Assert.That(blank).IsEqualTo(0);
         await Assert.That(row).IsBetween(36, 44);
     }
+
+    [Test]
+    public async Task TheDisplayedWindowEndsAtTheRowsLastCell()
+    {
+        var system = BootToPrompt();
+
+        // Graphics white and 39 solid mosaics on the first row, and solid
+        // blocks on the second, which is what the chip is given straight after
+        // the first row's last cell. LOSE has to blank them for the row to
+        // stay 39 cells long.
+        FillScreen(system, 0x97, 0x7F, 80);
+
+        var longest = 0;
+        var run = 0;
+
+        for (var tick = 0; tick < 1_280_000; tick++)
+        {
+            system.Tick();
+
+            run = system.VideoUla.Red || system.VideoUla.Green || system.VideoUla.Blue ? run + 1 : 0;
+            longest = Math.Max(longest, run);
+        }
+
+        await Assert.That(longest).IsEqualTo(39 * 16);
+    }
 }

@@ -10,7 +10,7 @@
 //   scenario <name> <clocks> <R0..R17 written, comma separated, "-" for not written>
 //   e <clock> <ra> <flags>   outputs changed at the start of that clock
 //   m <clock> <ma>           MA sampled at every event and every 11th clock
-// flags: 1 DISPEN, 2 HS, 4 VS, 8 cursor. The state before clock 0 is the first
+// flags: 1 DISPEN, 2 HS, 4 VS, 8 cursor (the 6845's pin, see below). The state before clock 0 is the first
 // event. The chip is started cleanly: counters at zero and display enabled, as
 // after a reset.
 import { writeFileSync } from "node:fs";
@@ -32,6 +32,10 @@ const scenarios = [
     { name: "small-interlace-video", clocks: 20000, regs: [19, 12, 15, 0x32, 5, 3, 4, 5, 0x03, 3, 0x42, 0x03, 0x00, 0x10, 0x00, 0x15] },
     { name: "small-skew1", clocks: 5000, regs: [19, 12, 15, 0x32, 5, 3, 4, 5, 0x10, 3, 0x42, 0x03, 0x00, 0x10, 0x00, 0x15] },
     { name: "small-skew2", clocks: 5000, regs: [19, 12, 15, 0x32, 5, 3, 4, 5, 0x20, 3, 0x42, 0x03, 0x00, 0x10, 0x00, 0x15] },
+    // Steady cursor delayed by R8's cursor skew, or turned off by a skew of 3.
+    { name: "small-cursor-skew1", clocks: 5000, regs: [19, 12, 15, 0x32, 5, 3, 4, 5, 0x40, 3, 0x02, 0x03, 0x00, 0x10, 0x00, 0x15] },
+    { name: "small-cursor-skew2", clocks: 5000, regs: [19, 12, 15, 0x32, 5, 3, 4, 5, 0x90, 3, 0x02, 0x03, 0x00, 0x10, 0x00, 0x15] },
+    { name: "small-cursor-skew3", clocks: 5000, regs: [19, 12, 15, 0x32, 5, 3, 4, 5, 0xc0, 3, 0x02, 0x03, 0x00, 0x10, 0x00, 0x15] },
     { name: "small-display-off", clocks: 5000, regs: [19, 12, 15, 0x32, 5, 3, 4, 5, 0x30, 3, 0x42, 0x03, 0x00, 0x10, 0x00, 0x15] },
     // R6 > R4: vertical displayed never ends, so there are no frame counts.
     { name: "small-r6-gt-r4", clocks: 5000, regs: [19, 12, 15, 0x32, 5, 3, 9, 5, 0x00, 3, 0x42, 0x03, 0x00, 0x10, 0x00, 0x15] },
@@ -67,13 +71,22 @@ for (const s of scenarios) {
 
     const mask = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 4);
     let lastKey = "";
+    // The cursor compares made before each clock, the latest first. jsbeeb makes
+    // the compare as it draws the character at addr, in the same clock as its
+    // display enable takes effect, and folds R8's cursor skew into its ULA
+    // cursor sequence (cursorDrawIndex). Recorded as the 6845's pin, in the
+    // phase of DISPEN, that is the compare of the clock before, delayed by the
+    // skew.
+    const cursorHistory = [0, 0, 0];
+    const cursorSkew = s.regs[8] >> 6;
 
     for (let clock = 0; clock < s.clocks; clock++) {
         const regs = video.regs;
         const disp = (video.dispEnabled & mask) === mask ? 1 : 0;
         const hs = video.inHSync ? 2 : 0;
         const vs = video.inVSync ? 4 : 0;
-        const cursor =
+        const cursor = cursorSkew < 3 ? cursorHistory[cursorSkew] : 0;
+        const cursorHit =
             video.addr === video.cursorPos &&
             video.cursorOn &&
             !video.cursorOff &&
@@ -91,6 +104,8 @@ for (const s of scenarios) {
             lastKey = key;
         }
         if (changed || clock % 11 === 0) lines.push(`m ${clock.toString(16)} ${video.addr.toString(16)}`);
+        cursorHistory.unshift(cursorHit);
+        cursorHistory.pop();
         video.polltime(1);
     }
 }

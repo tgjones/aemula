@@ -6,33 +6,46 @@ namespace Aemula.Tests.Emulation.Chips.Saa5050;
 public class Saa5050ChipTests
 {
     // Shows one scan line of cells, as the 12 half-dots of each as colours
-    // (R=1, G=2, B=4). Row address bit 0 low, the first line of the first row.
+    // (R=1, G=2, B=4). A cell is shown two character clocks after its code is
+    // taken, and LOSE follows each code a clock later, as the BBC Micro's latch
+    // gives it; the two clocks after the last code show the last cells and,
+    // with LOSE low, end the line.
     private static int[][] Line(Saa5050Chip chip, params byte[] codes)
     {
-        chip.Lose = true;
         var tr6 = false;
         var cells = new int[codes.Length][];
 
-        for (var cell = 0; cell < codes.Length; cell++)
+        for (var clock = 0; clock < codes.Length + 2; clock++)
         {
-            chip.Data = codes[cell];
+            chip.Data = clock < codes.Length ? codes[clock] : (byte)' ';
             chip.F1 = true;
             chip.F1 = false;
-            cells[cell] = new int[12];
+            chip.Lose = clock < codes.Length;
+
+            if (clock < 2)
+            {
+                continue;
+            }
+
+            var cell = cells[clock - 2] = new int[12];
 
             for (var dot = 0; dot < 12; dot++)
             {
                 if (dot > 0)
                 {
                     chip.Tr6 = !tr6;
-                tr6 = !tr6;
+                    tr6 = !tr6;
                 }
 
-                cells[cell][dot] = (chip.Red ? 1 : 0) | (chip.Green ? 2 : 0) | (chip.Blue ? 4 : 0);
+                cell[dot] = (chip.Red ? 1 : 0) | (chip.Green ? 2 : 0) | (chip.Blue ? 4 : 0);
             }
+
+            // The twelfth edge, which leaves TR6 where it started for the
+            // next line.
+            chip.Tr6 = !tr6;
+            tr6 = !tr6;
         }
 
-        chip.Lose = false;
         return cells;
     }
 
@@ -46,8 +59,7 @@ public class Saa5050ChipTests
 
         for (var i = 0; i < line >> 1; i++)
         {
-            chip.Lose = true;
-            chip.Lose = false;
+            Line(chip, (byte)' ');
         }
 
         return chip;
@@ -179,10 +191,8 @@ public class Saa5050ChipTests
         // Flash is hidden for the first 16 of every 64 fields.
         chip.Dew = true;
         chip.Dew = false;
-        chip.Lose = true;
-        chip.Lose = false;
-        chip.Lose = true;
-        chip.Lose = false;
+        Line(chip, (byte)' ');
+        Line(chip, (byte)' ');
         var hidden = Line(chip, 8, (byte)'!');
         await Assert.That(hidden[1][6]).IsEqualTo(0);
 
@@ -192,10 +202,8 @@ public class Saa5050ChipTests
             chip.Dew = false;
         }
 
-        chip.Lose = true;
-        chip.Lose = false;
-        chip.Lose = true;
-        chip.Lose = false;
+        Line(chip, (byte)' ');
+        Line(chip, (byte)' ');
         var shown = Line(chip, 8, (byte)'!');
         await Assert.That(shown[1][6]).IsEqualTo(7);
     }

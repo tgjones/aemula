@@ -17,8 +17,13 @@ public sealed partial class BbcMicroSystem
     //
     // IC37's third gate inverts the video ULA's 1MHz clock (pin 4) into _N352,
     // which clocks both the latch (IC15) and the chip's F1 input (pin 20) on its
-    // rising edge. The chip sees the latch's outputs from before the edge, so
-    // a character reaches the screen one character time after it was fetched.
+    // rising edge. The chip takes the latch's outputs from before the edge, and
+    // shows a cell two of its character clocks after it takes the code, so a
+    // character reaches the screen three character times after the video ULA
+    // would have shown it in a bitmap mode. LOSE comes straight from the latch,
+    // so it changes at the edge after the one that took its code to the chip,
+    // in time for the chip to decode that code; R8's display skew of one puts
+    // the 6845's DISPEN that one character late to match.
     //
     // The chip's dot clock TR6 (pin 19) is made by a ring of IC40's gates and
     // IC37's with resistors and capacitors setting their delays (R94, R102,
@@ -27,12 +32,6 @@ public sealed partial class BbcMicroSystem
     // wave that starts again at each rising edge of _N352 and has 12 edges in
     // the 1us until the next, which the 16MHz tick cannot space evenly, so
     // they fall on three of every four ticks.
-    //
-    // The chip draws a cell from every code it is given, so outside the
-    // displayed area it would draw the screen memory that follows the row.
-    // The skew in R8 makes DISPEN rise just before the edge that starts the
-    // first character's cell, so the cell is visible if DISPEN was high at
-    // the edge that started it.
     private bool _n352;
     private bool _n352Now;
     private int _teletextInputs = -1;
@@ -40,7 +39,6 @@ public sealed partial class BbcMicroSystem
     private int _teletextCrtcBits;
     private bool _tr6;
     private int _teletextTicks;
-    private bool _teletextVisible;
 
     private void StepTeletext()
     {
@@ -102,7 +100,6 @@ public sealed partial class BbcMicroSystem
             Teletext.Lose = _ic15.Q0;
 
             _teletextTicks = 0;
-            _teletextVisible = Crtc.DispEn;
         }
         else
         {
@@ -123,8 +120,8 @@ public sealed partial class BbcMicroSystem
 
         _n352 = n352;
 
-        VideoUla.RedInput = _teletextVisible && Teletext.Red;
-        VideoUla.GreenInput = _teletextVisible && Teletext.Green;
-        VideoUla.BlueInput = _teletextVisible && Teletext.Blue;
+        VideoUla.RedInput = Teletext.Red;
+        VideoUla.GreenInput = Teletext.Green;
+        VideoUla.BlueInput = Teletext.Blue;
     }
 }

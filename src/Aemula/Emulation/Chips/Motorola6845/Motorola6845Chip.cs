@@ -11,10 +11,16 @@
 /// (RS low) selects a data register (RS high).
 ///
 /// Timing model: the chip advances one character on the falling edge of
-/// <see cref="Clk"/>. The output pins always show the state the counters have
-/// just moved to, so <see cref="MA"/> is the address of the character that is
-/// about to be fetched. A selected read is presented on <see cref="DB"/> when
-/// <see cref="E"/> rises and a selected write is latched when it falls.
+/// <see cref="Clk"/>. <see cref="MA"/> and <see cref="RA"/> show the state the
+/// counters have just moved to, so they address the character that is about to
+/// be fetched. Display enable, the syncs and the cursor are one character
+/// behind them: they belong to the character the clock edge has just ended,
+/// whose data the memory has delivered by then. That is what a system sees
+/// when it latches the video data together with these outputs just after the
+/// clock edge, before the real chip's outputs (a hundred nanoseconds or so
+/// behind the edge) have changed. A selected read is presented on
+/// <see cref="DB"/> when <see cref="E"/> rises and a selected write is latched
+/// when it falls.
 ///
 /// The counter behaviour follows the quirks of the real HD6845SP rather than
 /// the idealised datasheet: the last character of a scanline never displays,
@@ -23,6 +29,10 @@
 /// vertical adjust is entered and left a character after the compare, the
 /// vertical-displayed compare notices a change in the middle of a line, and a
 /// vertical sync can start at any character of a row once per row.
+///
+/// R8 bits 4-5 delay display enable and bits 6-7 the cursor by zero, one or
+/// two characters (skew), so that both stay in step with a system that takes
+/// longer to turn a character into dots; a skew of 3 turns the output off.
 ///
 /// With R8 bit 0 set the chip runs the half-line sync (interlace sync) on even
 /// fields and inserts a dummy scanline after vertical adjust on odd ones; with
@@ -109,6 +119,10 @@ public sealed class Motorola6845Chip
     private bool _cursorOn;
     private bool _cursorOff;
     private bool _cursorOnThisFrame;
+
+    // The cursor compare of the last three characters, the latest in bit 0,
+    // which the cursor skew picks from.
+    private int _cursorHistory;
 
     public Motorola6845Chip()
     {
@@ -291,16 +305,17 @@ public sealed class Motorola6845Chip
 
     /// <summary>
     /// Cursor (output), active high on the cursor's character and raster
-    /// lines, while blink allows it and the character is in the displayed area.
+    /// lines, while blink allows it and the character is in the displayed area,
+    /// delayed by the cursor skew in R8 bits 6-7.
     /// </summary>
-    public bool Cursor =>
-        _address == CursorAddress
-        && _cursorOn
-        && !_cursorOff
-        && _cursorOnThisFrame
-        && _horizontalDisplay
-        && _verticalDisplay
-        && _horizontalCounter < _registers[HorizontalDisplayed];
+    public bool Cursor
+    {
+        get
+        {
+            var skew = _registers[ModeControl] >> 6;
+            return skew < 3 && ((_cursorHistory >> skew) & 1) != 0;
+        }
+    }
 
     private ushort CursorAddress => (ushort)(((_registers[CursorHigh] << 8) | _registers[CursorLow]) & 0x3FFF);
 
@@ -376,6 +391,7 @@ public sealed class Motorola6845Chip
 
         _cursorOn = false;
         _cursorOff = false;
+        _cursorHistory = 0;
 
         _horizontalDisplay = true;
         _skewDisplay = true;
@@ -449,6 +465,17 @@ public sealed class Motorola6845Chip
         {
             ClockVsync(vsyncPositionHit);
         }
+
+        // The cursor compare is made on the character this clock ends, in the
+        // same step as the display enable above.
+        var cursorHit = _address == CursorAddress
+            && _cursorOn
+            && !_cursorOff
+            && _cursorOnThisFrame
+            && _horizontalDisplay
+            && _verticalDisplay
+            && _horizontalCounter < _registers[HorizontalDisplayed];
+        _cursorHistory = ((_cursorHistory << 1) | (cursorHit ? 1 : 0)) & 7;
 
         // The address counter always increments, inside the display area or not.
         _address = (ushort)((_address + 1) & 0x3FFF);

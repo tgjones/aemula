@@ -8,9 +8,16 @@ namespace Aemula.Emulation.Chips.Saa5050;
 ///
 /// It is given one character code at a time, as the 6845 steps along a row of
 /// the screen (<see cref="Data"/>, taken on a rising edge of <see cref="F1"/>),
-/// and turns each into six dots of a 10-row cell. The rows it shows are twice the 6845's
-/// raster count: the 6845's row address bit 0 (inverted, as <see cref="Crs"/>)
-/// chooses which of two interlaced scan lines of the 20-line cell is drawn,
+/// and turns each into six dots of a 10-row cell. A code passes through two
+/// stages of the chip before its cell is shown: the edge after the one that
+/// takes it decodes it, and the edge after that loads the cell into the output
+/// shift register. So a cell is shown two character clocks after its code was
+/// taken, which is why the BBC Micro's Mode 7 delays the 6845's cursor by two
+/// characters (and the video ULA by one more) to land the cursor on its cell.
+///
+/// The rows it shows are twice the 6845's raster count: the 6845's row address
+/// bit 0 (inverted, as <see cref="Crs"/>) chooses which of two interlaced scan
+/// lines of the 20-line cell is drawn,
 /// and the dots of the odd lines are the smoothed ("rounded") ones, which join
 /// diagonal steps of a letter with half-dots.
 ///
@@ -24,8 +31,10 @@ namespace Aemula.Emulation.Chips.Saa5050;
 /// from the cell after it ("set-after": colours, flash, size, graphics
 /// style). A control code's cell is drawn as a space, or with the last mosaic
 /// character while graphics are held. DEW (the 6845's vertical sync) falling
-/// starts a new field; LOSE (display enable) falling ends a scan line, at
-/// which point the colours and attributes return to white on black.
+/// starts a new field. LOSE (display enable) is sampled as a code is decoded:
+/// a cell decoded while it is low is blank, and the first code decoded after
+/// it falls ends the scan line, at which point the colours and attributes
+/// return to white on black.
 /// </summary>
 public sealed class Saa5050Chip
 {
@@ -153,9 +162,18 @@ public sealed class Saa5050Chip
     private int _flashTime;
 
     private bool _lose;
+    private bool _decodedLose;
     private bool _dew;
 
-    // The cell latched by ClockCharacter.
+    // The code taken at the last F1 edge, waiting to be decoded.
+    private int _inputCode = 0x20;
+
+    // The cell decoded at the last F1 edge, waiting to be shown.
+    private int _nextRow;
+    private int _nextForeground;
+    private int _nextBackground;
+
+    // The cell in the output shift register.
     private int _cellRow;
     private int _cellForeground;
     private int _cellBackground;
@@ -213,40 +231,32 @@ public sealed class Saa5050Chip
     }
 
     /// <summary>
-    /// Load output signal enable (LOSE, pin 26): the 6845's display enable. Its
-    /// falling edge is the end of a scan line.
+    /// Load output signal enable (LOSE, pin 26): the 6845's display enable,
+    /// sampled as each code is decoded. Its falling edge is the end of a scan
+    /// line.
     /// </summary>
-    public bool Lose
+    public bool Lose { set => _lose = value; }
+
+    private void EndScanline()
     {
-        set
+        _foreground = 7;
+        _background = 0;
+        _holdGraphics = false;
+        _heldCharacter = 0x20;
+        _nextGlyphs = _heldGlyphs = NormalGlyphs;
+        _flash = false;
+        _separated = false;
+        _graphics = false;
+        _conceal = false;
+        _doubleHeight = false;
+
+        if (++_scanline == 10)
         {
-            var wasHigh = _lose;
-            _lose = value;
-
-            if (!wasHigh || value)
-            {
-                return;
-            }
-
-            _foreground = 7;
-            _background = 0;
-            _holdGraphics = false;
-            _heldCharacter = 0x20;
-            _nextGlyphs = _heldGlyphs = NormalGlyphs;
-            _flash = false;
-            _separated = false;
-            _graphics = false;
-            _conceal = false;
-            _doubleHeight = false;
-
-            if (++_scanline == 10)
-            {
-                _scanline = 0;
-                _secondHalfOfDouble = _secondHalfOfDouble ? false : _wasDoubleHeight;
-            }
-
-            _wasDoubleHeight = false;
+            _scanline = 0;
+            _secondHalfOfDouble = _secondHalfOfDouble ? false : _wasDoubleHeight;
         }
+
+        _wasDoubleHeight = false;
     }
 
     /// <summary>
@@ -267,9 +277,9 @@ public sealed class Saa5050Chip
     private bool FlashHidden => _flashTime < 16;
 
     /// <summary>
-    /// The character clock (F1, pin 20): the character code on
-    /// <see cref="Data"/> is taken as the next cell on its rising edge, and its
-    /// first half-dot shown.
+    /// The character clock (F1, pin 20). Its rising edge shows the first
+    /// half-dot of the cell decoded at the edge before, decodes the code taken
+    /// at the edge before, and takes the code on <see cref="Data"/>.
     /// </summary>
     public bool F1
     {
@@ -305,7 +315,24 @@ public sealed class Saa5050Chip
 
     private void ClockCharacter()
     {
-        var code = Data & 0x7F;
+        _cellRow = _nextRow;
+        _cellForeground = _nextForeground;
+        _cellBackground = _nextBackground;
+        _dot = 0;
+        UpdateOutputs();
+
+        Decode(_inputCode);
+        _inputCode = Data & 0x7F;
+    }
+
+    private void Decode(int code)
+    {
+        if (_decodedLose && !_lose)
+        {
+            EndScanline();
+        }
+
+        _decodedLose = _lose;
 
         _previousDoubleHeight = _doubleHeight;
         _previousForeground = _foreground;
@@ -367,11 +394,19 @@ public sealed class Saa5050Chip
             || (flashThisCell && FlashHidden)
             || (_secondHalfOfDouble && !_doubleHeight);
 
-        _cellRow = blank ? 0 : _currentGlyphs[((code - 0x20) * GlyphRows) + scanline];
-        _cellForeground = _previousForeground;
-        _cellBackground = _background;
-        _dot = 0;
-        UpdateOutputs();
+        // Outside the window LOSE opens, the output shift register is not
+        // loaded and the cell is black.
+        if (!_lose)
+        {
+            _nextRow = 0;
+            _nextForeground = 0;
+            _nextBackground = 0;
+            return;
+        }
+
+        _nextRow = blank ? 0 : _currentGlyphs[((code - 0x20) * GlyphRows) + scanline];
+        _nextForeground = _previousForeground;
+        _nextBackground = _background;
     }
 
     private void ClockDot()
