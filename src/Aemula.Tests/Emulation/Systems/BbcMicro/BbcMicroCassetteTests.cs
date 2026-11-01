@@ -18,11 +18,12 @@ public class BbcMicroCassetteTests
     private const uint ShortResetPulseTicks = 100;
     private const int ScreenAddress = 0x7C00;
 
-    private static void Run(BbcMicroSystem system, int ticks)
+    private static void Run(BbcMicroSystem system, int ticks, Action? afterTick = null)
     {
         for (var tick = 0; tick < ticks; tick++)
         {
             system.Tick();
+            afterTick?.Invoke();
         }
     }
 
@@ -79,25 +80,25 @@ public class BbcMicroCassetteTests
 
     // Each key is held for three 50Hz frames and left for three, which the
     // OS's keyboard interrupt cannot miss.
-    private static void Type(BbcMicroSystem system, string text)
+    private static void Type(BbcMicroSystem system, string text, Action? afterTick = null)
     {
         foreach (var character in text)
         {
             var key = new KeyEvent { IsDown = true, Key = (Key)character, Character = character };
             system.OnKeyEvent(key);
-            Run(system, 960_000);
+            Run(system, 960_000, afterTick);
             system.OnKeyEvent(new KeyEvent { IsDown = false, Key = (Key)character, Character = character });
-            Run(system, 960_000);
+            Run(system, 960_000, afterTick);
         }
     }
 
     // Runs until the line the cursor is on is the BASIC prompt again, which
     // is how a finished SAVE or LOAD shows.
-    private static void RunUntilPrompt(BbcMicroSystem system, int budgetTicks)
+    private static void RunUntilPrompt(BbcMicroSystem system, int budgetTicks, Action? afterTick = null)
     {
         for (var ticks = 0; ticks < budgetTicks; ticks += 1_000_000)
         {
-            Run(system, 1_000_000);
+            Run(system, 1_000_000, afterTick);
 
             if (LastLine(system) == ">")
             {
@@ -178,69 +179,19 @@ public class BbcMicroCassetteTests
         await Assert.That(ProgramInMemory(system, program.Length)).IsEquivalentTo(program);
     }
 
-    private static ushort Crc(IEnumerable<byte> bytes)
-    {
-        ushort crc = 0;
-
-        foreach (var value in bytes)
-        {
-            crc ^= (ushort)(value << 8);
-
-            for (var bit = 0; bit < 8; bit++)
-            {
-                crc = (crc & 0x8000) != 0 ? (ushort)((crc << 1) ^ 0x1021) : (ushort)(crc << 1);
-            }
-        }
-
-        return crc;
-    }
+    private static string AssetPath(string name) =>
+        Path.Combine(AppContext.BaseDirectory, "Emulation", "Systems", "BbcMicro", "Assets", name);
 
     // A single-block cassette file holding the one-line BASIC program
-    // 10 PRINT "TAPE OK", as a UEF.
-    private static byte[] ProgramUef()
-    {
-        var program = Program();
-
-        var header = new List<byte>();
-        header.AddRange("T"u8.ToArray());
-        header.Add(0);
-        header.AddRange([0x00, 0x19, 0x00, 0x00]);
-        header.AddRange([0x23, 0x80, 0x00, 0x00]);
-        header.AddRange([0x00, 0x00]);
-        header.AddRange(BitConverter.GetBytes((ushort)program.Length));
-        header.Add(0x80);
-        header.AddRange([0x00, 0x00, 0x00, 0x00]);
-
-        var block = new List<byte> { 0x2A };
-        block.AddRange(header);
-        var headerCrc = Crc(header);
-        block.AddRange([(byte)(headerCrc >> 8), (byte)headerCrc]);
-        block.AddRange(program);
-        var dataCrc = Crc(program);
-        block.AddRange([(byte)(dataCrc >> 8), (byte)dataCrc]);
-
-        var file = new List<byte>(System.Text.Encoding.ASCII.GetBytes("UEF File!\0"));
-        file.AddRange([0x0A, 0x00]);
-
-        void Chunk(ushort id, byte[] data)
-        {
-            file.AddRange(BitConverter.GetBytes(id));
-            file.AddRange(BitConverter.GetBytes((uint)data.Length));
-            file.AddRange(data);
-        }
-
-        Chunk(0x0110, BitConverter.GetBytes((ushort)1_200));
-        Chunk(0x0100, block.ToArray());
-        Chunk(0x0110, BitConverter.GetBytes((ushort)480));
-        return file.ToArray();
-    }
+    // 10 PRINT "TAPE OK", written by tools/jsbeeb-harness/tape-load.mjs.
+    private static (float[] Samples, int SampleRate) ProgramUef() => UefReader.Read(File.OpenRead(AssetPath("tape-program.uef")));
 
     [Test]
     public async Task A_program_on_a_UEF_loads()
     {
         var system = BootToPrompt(out var deck);
 
-        var uef = UefReader.Read(new MemoryStream(ProgramUef()));
+        var uef = ProgramUef();
         deck.InsertTape(uef.Samples, uef.SampleRate);
 
         Type(system, "LOAD\"T\"\r");
@@ -249,5 +200,116 @@ public class BbcMicroCassetteTests
         RunUntilPrompt(system, 60_000_000);
 
         await Assert.That(ProgramInMemory(system, Program().Length)).IsEquivalentTo(Program());
+    }
+
+    [Test]
+    public async Task A_program_on_a_WAV_loads()
+    {
+        var system = BootToPrompt(out var deck);
+        var program = Program();
+        PokeProgram(system, program);
+
+        Type(system, "SAVE\"T\"\r");
+        deck.StartRecording();
+        Type(system, "\r");
+        RunUntilPrompt(system, 220_000_000);
+
+        var wavPath = Path.Combine(Path.GetTempPath(), $"bbc-tape-{Guid.NewGuid():N}.wav");
+
+        try
+        {
+            deck.SaveRecording(wavPath);
+
+            for (var index = 0; index < program.Length; index++)
+            {
+                system.WriteByteDebug((ushort)(Page + index), 0);
+            }
+
+            Type(system, "LOAD\"T\"\r");
+
+            deck.InsertTape(wavPath);
+            deck.Play();
+            RunUntilPrompt(system, 220_000_000);
+        }
+        finally
+        {
+            File.Delete(wavPath);
+        }
+
+        await Assert.That(ProgramInMemory(system, program.Length)).IsEquivalentTo(program);
+    }
+
+    // tools/jsbeeb-harness/tape-load.mjs loads the same UEF in jsbeeb and
+    // records the addresses first fetched during the LOAD, in order, that
+    // neither the boot nor *TAPE had already run. The tape's bits reach the
+    // ACIA at times that depend on where each emulator's tape clock starts,
+    // so polling loops repeat a different number of times and the traces
+    // cannot be compared fetch for fetch; the code that runs and the order it
+    // is first reached in must agree.
+    [Test]
+    public async Task Loading_a_UEF_runs_the_same_code_in_the_same_order_as_jsbeeb()
+    {
+        var wantedPcs = new List<ushort>();
+        var wantedProgram = "";
+
+        foreach (var line in File.ReadAllLines(AssetPath("jsbeeb-tape-load.txt")))
+        {
+            var parts = line.Split(' ', 2);
+
+            if (parts[0] == "p")
+            {
+                wantedPcs.Add(Convert.ToUInt16(parts[1], 16));
+            }
+            else if (parts[0] == "ram")
+            {
+                wantedProgram = parts[1];
+            }
+        }
+
+        var system = BootToPrompt(out var deck);
+
+        var seen = new HashSet<ushort>();
+        var fresh = new List<ushort>();
+        var recording = false;
+        var wasHigh = system.Cpu.Phi2;
+
+        void Observe()
+        {
+            var high = system.Cpu.Phi2;
+
+            if (high && !wasHigh && system.Cpu.Sync && seen.Add(system.Cpu.Address) && recording)
+            {
+                fresh.Add(system.Cpu.Address);
+            }
+
+            wasHigh = high;
+        }
+
+        // The fixture leaves out what *TAPE ran; run it under the observer so
+        // the same addresses count as already known.
+        Type(system, "*TAPE\r", Observe);
+        RunUntilPrompt(system, 20_000_000, Observe);
+
+        var uef = ProgramUef();
+        deck.InsertTape(uef.Samples, uef.SampleRate);
+        deck.Play();
+        recording = true;
+        Type(system, "LOAD\"T\"\r", Observe);
+        RunUntilPrompt(system, 60_000_000, Observe);
+
+        await Assert.That(Convert.ToHexString(ProgramInMemory(system, wantedProgram.Length / 2)).ToLowerInvariant())
+            .IsEqualTo(wantedProgram);
+
+        // Code the OS's boot ran in one emulator's idle loop but not the
+        // other's (the keyboard scan, say) can show up on one side only; keep
+        // the addresses both reached.
+        var common = fresh.Where(wantedPcs.Contains).ToList();
+        var expected = wantedPcs.Where(common.Contains).ToList();
+
+        await Assert.That(common.Count).IsGreaterThan(wantedPcs.Count * 9 / 10);
+
+        var firstDifference = Enumerable.Range(0, Math.Min(common.Count, expected.Count))
+            .FirstOrDefault(i => common[i] != expected[i], -1);
+        await Assert.That(firstDifference).IsEqualTo(-1);
     }
 }

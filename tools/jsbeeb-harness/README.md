@@ -62,3 +62,15 @@ reads for sampled 6845 addresses, rows and hardware scroll sizes; replayed by
 `teletext.mjs <file>` records what jsbeeb's SAA5050 shows for pages of character
 codes (`Saa5050ChipJsbeebTests`), and `teletext-glyphs.mjs <file.cs>` regenerates
 `Saa5050CharacterRom.cs` from jsbeeb's glyph data.
+
+## Tape load fixture
+
+```sh
+A=../../src/Aemula.Tests/Emulation/Systems/BbcMicro/Assets
+node tape-load.mjs $A/tape-program.uef $A/jsbeeb-tape-load.txt
+```
+
+Writes a one-block UEF holding a one-line BASIC program, loads it in jsbeeb with `*TAPE` and
+`LOAD"T"`, and records the addresses first fetched during the load, in order; replayed by
+`BbcMicroCassetteTests`. Fetch-for-fetch comparison is not possible because the tape's bits
+arrive at emulator-specific times, so polling loops repeat a different number of times.
