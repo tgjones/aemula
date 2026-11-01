@@ -6,12 +6,21 @@ namespace Aemula.Emulation.Chips;
 /// <see cref="Ttl74161Chip"/> except that clear is synchronous: it only takes
 /// effect on a rising clock edge, and takes priority over load and count.
 /// </summary>
-public sealed class Ttl74163Chip
+public struct Ttl74163Chip
 {
-    public bool A { private get; set; }
-    public bool B { private get; set; }
-    public bool C { private get; set; }
-    public bool D { private get; set; }
+    public Ttl74163Chip()
+    {
+    }
+
+    // The parallel inputs and the count, each held as a 4-bit value (A/Qa
+    // in bit 0) so a load or a count is one assignment rather than four.
+    private int _inputs;
+    private int _count;
+
+    public bool A { set => _inputs = value ? _inputs | 1 : _inputs & ~1; }
+    public bool B { set => _inputs = value ? _inputs | 2 : _inputs & ~2; }
+    public bool C { set => _inputs = value ? _inputs | 4 : _inputs & ~4; }
+    public bool D { set => _inputs = value ? _inputs | 8 : _inputs & ~8; }
 
     public bool Clr { private get; set; } = true;
     public bool Load { private get; set; } = true;
@@ -43,38 +52,27 @@ public sealed class Ttl74163Chip
 
             if (!Clr)
             {
-                Qa = false;
-                Qb = false;
-                Qc = false;
-                Qd = false;
+                _count = 0;
             }
             else if (!Load)
             {
-                Qa = A;
-                Qb = B;
-                Qc = C;
-                Qd = D;
+                _count = _inputs;
             }
             else if (Enp && Ent)
             {
-                var count = (byte)((Qa ? 1 : 0) | (Qb ? 2 : 0) | (Qc ? 4 : 0) | (Qd ? 8 : 0));
-                count = (byte)((count + 1) & 0xF);
-                Qa = (count & 1) != 0;
-                Qb = (count & 2) != 0;
-                Qc = (count & 4) != 0;
-                Qd = (count & 8) != 0;
+                _count = (_count + 1) & 0xF;
             }
         }
     }
 
-    public bool Qa { get; private set; }
-    public bool Qb { get; private set; }
-    public bool Qc { get; private set; }
-    public bool Qd { get; private set; }
+    public bool Qa => (_count & 1) != 0;
+    public bool Qb => (_count & 2) != 0;
+    public bool Qc => (_count & 4) != 0;
+    public bool Qd => (_count & 8) != 0;
 
     /// <summary>
     /// Ripple carry output. High when the count is at its maximum (1111) and
     /// <see cref="Ent"/> is asserted.
     /// </summary>
-    public bool Rco => Ent && Qa && Qb && Qc && Qd;
+    public bool Rco => Ent && _count == 0xF;
 }

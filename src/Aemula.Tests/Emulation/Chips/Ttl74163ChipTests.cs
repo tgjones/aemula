@@ -5,13 +5,13 @@ namespace Aemula.Tests.Emulation.Chips;
 
 public class Ttl74163ChipTests
 {
-    private static void Pulse(Ttl74163Chip chip)
+    private static void Pulse(ref Ttl74163Chip chip)
     {
         chip.Clk = true;
         chip.Clk = false;
     }
 
-    private static int Count(Ttl74163Chip chip) =>
+    private static int Count(in Ttl74163Chip chip) =>
         (chip.Qa ? 1 : 0) | (chip.Qb ? 2 : 0) | (chip.Qc ? 4 : 0) | (chip.Qd ? 8 : 0);
 
     [Test]
@@ -21,13 +21,13 @@ public class Ttl74163ChipTests
 
         for (var i = 0; i < 5; i++)
         {
-            Pulse(chip);
+            Pulse(ref chip);
         }
         await Assert.That(Count(chip)).IsEqualTo(5);
 
         for (var i = 0; i < 11; i++)
         {
-            Pulse(chip);
+            Pulse(ref chip);
         }
         await Assert.That(Count(chip)).IsEqualTo(0);
     }
@@ -36,13 +36,13 @@ public class Ttl74163ChipTests
     public async Task HoldsWhenEitherEnableLow()
     {
         var chip = new Ttl74163Chip { Enp = true, Ent = true };
-        Pulse(chip);
+        Pulse(ref chip);
 
         chip.Enp = false;
-        Pulse(chip);
+        Pulse(ref chip);
         chip.Enp = true;
         chip.Ent = false;
-        Pulse(chip);
+        Pulse(ref chip);
 
         await Assert.That(Count(chip)).IsEqualTo(1);
     }
@@ -51,13 +51,13 @@ public class Ttl74163ChipTests
     public async Task ClearIsSynchronous()
     {
         var chip = new Ttl74163Chip { Enp = true, Ent = true };
-        Pulse(chip);
-        Pulse(chip);
+        Pulse(ref chip);
+        Pulse(ref chip);
 
         chip.Clr = false;
         await Assert.That(Count(chip)).IsEqualTo(2);
 
-        Pulse(chip);
+        Pulse(ref chip);
         await Assert.That(Count(chip)).IsEqualTo(0);
     }
 
@@ -65,7 +65,7 @@ public class Ttl74163ChipTests
     public async Task ClearOverridesLoad()
     {
         var chip = new Ttl74163Chip { A = true, B = true, Load = false, Clr = false };
-        Pulse(chip);
+        Pulse(ref chip);
         await Assert.That(Count(chip)).IsEqualTo(0);
     }
 
@@ -77,7 +77,7 @@ public class Ttl74163ChipTests
         chip.Load = false;
         await Assert.That(Count(chip)).IsEqualTo(0);
 
-        Pulse(chip);
+        Pulse(ref chip);
         await Assert.That(Count(chip)).IsEqualTo(5);
     }
 
@@ -85,7 +85,7 @@ public class Ttl74163ChipTests
     public async Task RcoHighOnlyAtFifteenWithEntAsserted()
     {
         var chip = new Ttl74163Chip { A = true, B = true, C = true, D = true, Load = false, Ent = true };
-        Pulse(chip);
+        Pulse(ref chip);
         chip.Load = true;
 
         await Assert.That(chip.Rco).IsEqualTo(true);

@@ -60,7 +60,7 @@ public sealed partial class BbcMicroSystem : EmulatedSystem
     internal readonly SerialUlaChip SerialUla;
 
     // IC42 divides the 16MHz clock by 13 into the serial ULA's clock.
-    private readonly Ttl74163Chip _ic42;
+    private Ttl74163Chip _ic42;
 
     // IC51: the OS ROM socket. Its two programmed chip-select inputs are
     // wired to A15 and A14, so it answers at &C000-&FFFF only.
@@ -82,7 +82,7 @@ public sealed partial class BbcMicroSystem : EmulatedSystem
     private Ttl74138Chip _ic24;
     private Ttl7420Chip _ic25;
     private Ttl74139Chip _ic26;
-    private readonly Ttl74163Chip _ic76;
+    private Ttl74163Chip _ic76;
     private readonly Ttl74244Chip _ic96;
 
     // Interrupts, reset and the addressable latch.
