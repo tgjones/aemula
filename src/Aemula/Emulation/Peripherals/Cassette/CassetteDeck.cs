@@ -80,6 +80,13 @@ public sealed class CassetteDeck : IPeripheral
                 TapeBay,
                 image =>
                 {
+                    if (image.Name.EndsWith(".uef", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var uef = UefReader.Read(image.OpenRead());
+                        InsertTape(uef.Samples, uef.SampleRate);
+                        return;
+                    }
+
                     var wav = WavReader.Read(image.OpenRead());
                     InsertTape(wav.Samples, wav.SampleRate);
                 },
@@ -145,6 +152,14 @@ public sealed class CassetteDeck : IPeripheral
         }
     }
 
+    /// <summary>
+    /// The machine's remote-control socket, for a deck whose motor the machine
+    /// switches (the BBC Micro's relay): the reel only turns, and only records,
+    /// while it answers true. Null for a deck with no remote lead, which runs
+    /// whenever its transport button is down.
+    /// </summary>
+    public Func<bool>? MotorRelay { get; set; }
+
     // --- audio leads, pulled by the interface card once per interface cycle ---
 
     /// <summary>
@@ -154,6 +169,11 @@ public sealed class CassetteDeck : IPeripheral
     /// </summary>
     public float ReadPlayback()
     {
+        if (MotorRelay != null)
+        {
+            _player.IsRunning = _mode == TransportMode.Playing && MotorRelay();
+        }
+
         _playbackLevel = _player.NextSample();
         return _playbackLevel;
     }
@@ -169,7 +189,7 @@ public sealed class CassetteDeck : IPeripheral
     {
         var tapeOutHigh = level > 0f;
 
-        if (_mode == TransportMode.Recording)
+        if (_mode == TransportMode.Recording && (MotorRelay?.Invoke() ?? true))
         {
             _recorder.Level = tapeOutHigh;
             _recorder.Tick();
@@ -272,10 +292,10 @@ public sealed class CassetteDeck : IPeripheral
         "Tape",
         Required: false,
         [
-            new MediaFileFilter("Cassette audio", "wav"),
+            new MediaFileFilter("Cassette audio", "wav;uef"),
             new MediaFileFilter("All files", "*"),
         ],
-        "Select a cassette WAV");
+        "Select a cassette WAV or UEF");
 
     public void Reset()
     {

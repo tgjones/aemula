@@ -288,7 +288,7 @@ phase with thorough tests.
 
 ### Phase 7 — Cassette
 
-- [ ] `SerialUla` behavioural + `Mos6850Chip`; motor relay; cassette
+- [x] `SerialUla` behavioural + `Mos6850Chip`; motor relay; cassette
       input/output paths (analog front-end reduced to a tone/level
       discriminator). Reuse the tape-deck transport from the Apple I ACI and
       ZX80 tape work as far as it applies; image formats UEF and WAV.

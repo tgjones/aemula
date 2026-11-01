@@ -5,8 +5,10 @@ using Aemula.Emulation.Systems.BbcMicro.Debugging;
 using Aemula.Emulation.Chips;
 using Aemula.Emulation.Chips.Mos6502;
 using Aemula.Emulation.Chips.Mos6522;
+using Aemula.Emulation.Chips.Mos6850;
 using Aemula.Emulation.Chips.Motorola6845;
 using Aemula.Emulation.Chips.Saa5050;
+using Aemula.Emulation.Chips.SerialUla;
 using Aemula.Emulation.Chips.VideoUla;
 using Aemula.Emulation.Output;
 
@@ -22,9 +24,9 @@ namespace Aemula.Emulation.Systems.BbcMicro;
 /// the 1MHz bus, decodes addresses and latches the paged-ROM number is the
 /// board's own 74xx logic, evaluated net by net.
 ///
-/// What is not on the board's wires yet: the 6850 ACIA, serial ULA, 8271 FDC
-/// and µPD7002 ADC are absent, so their register
-/// ranges read as an open bus and their interrupt lines stay inactive.
+/// What is not on the board's wires yet: the 8271 FDC and µPD7002 ADC are
+/// absent, so their register ranges read as an open bus and their interrupt
+/// lines stay inactive.
 /// </summary>
 public sealed partial class BbcMicroSystem : EmulatedSystem
 {
@@ -50,6 +52,15 @@ public sealed partial class BbcMicroSystem : EmulatedSystem
 
     // IC5.
     internal readonly Saa5050Chip Teletext;
+
+    // IC4: the cassette and RS423 serial interface.
+    internal readonly Mos6850Chip Acia;
+
+    // IC7.
+    internal readonly SerialUlaChip SerialUla;
+
+    // IC42 divides the 16MHz clock by 13 into the serial ULA's clock.
+    private readonly Ttl74163Chip _ic42;
 
     // IC51: the OS ROM socket. Its two programmed chip-select inputs are
     // wired to A15 and A14, so it answers at &C000-&FFFF only.
@@ -116,6 +127,13 @@ public sealed partial class BbcMicroSystem : EmulatedSystem
         Crtc = new Motorola6845Chip();
         VideoUla = new VideoUlaChip();
         Teletext = new Saa5050Chip();
+        Acia = new Mos6850Chip();
+        SerialUla = new SerialUlaChip();
+
+        // IC42 loads 3 when its carry comes out (see TickSerial), so it
+        // counts 3 to 15: thirteen states.
+        _ic42 = new Ttl74163Chip { A = true, B = true, Enp = true, Ent = true };
+        PeripheralRequests = BuildCassettePeripheralRequests();
 
         _ic20 = new Ttl74139Chip();
         _ic21 = new Ttl7400Chip();
@@ -261,6 +279,8 @@ public sealed partial class BbcMicroSystem : EmulatedSystem
         VideoUla.Clk16MHz = true;
         VideoUla.Clk16MHz = false;
         _resetTimer.Tick();
+
+        TickSerial();
 
         Crtc.Clk = VideoUla.CrtcClock;
 

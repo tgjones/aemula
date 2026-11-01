@@ -110,6 +110,7 @@ public sealed partial class BbcMicroSystem
         | (_resetTimer.Out ? 4L : 0)
         | (SystemVia.Irq ? 16L : 0)
         | (UserVia.Irq ? 32L : 0)
+        | (Acia.Irq ? 128L : 0)
         | (_busRw ? 64L : 0)
         | ((long)(Cpu.Data & 0x0F) << 8)
         | ((long)(SystemVia.PortB & 0x0F) << 12)
@@ -176,7 +177,7 @@ public sealed partial class BbcMicroSystem
         var nmiAsserted = _ic27.Y1 == false || _ic27.Y3 == false;
 
         Cpu.Nmi = !nmiAsserted;
-        Cpu.Irq = SystemVia.Irq && UserVia.Irq;
+        Cpu.Irq = SystemVia.Irq && UserVia.Irq && Acia.Irq;
         Cpu.Res = resetBar;
         SystemVia.Res = resetBar;
         UserVia.Res = resetBar;
@@ -275,6 +276,7 @@ public sealed partial class BbcMicroSystem
             | (sysIrq ? 0x80 : 0)
             | (UserVia.Irq ? 0x100 : 0)
             | (resetBar ? 0x200 : 0)
+            | (Acia.Irq ? 0x40000 : 0)
             | ((data & 0x0F) << 10)
             | ((portB & 0x0F) << 14);
 

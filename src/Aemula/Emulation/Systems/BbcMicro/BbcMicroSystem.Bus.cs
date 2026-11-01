@@ -2,15 +2,6 @@ namespace Aemula.Emulation.Systems.BbcMicro;
 
 public sealed partial class BbcMicroSystem
 {
-    // The 6850 ACIA (IC4) is not modelled yet. The OS's interrupt handler
-    // reads its status register first, to see whether it raised the
-    // interrupt, so an open bus (which would return the instruction's own
-    // address byte, &FE, with bit 7 set) sends it into an endless loop of
-    // servicing an ACIA interrupt that never clears. Its status as left by
-    // a master reset - transmit data register empty, nothing else - is what
-    // an idle ACIA would answer.
-    private const byte AciaStatusAfterReset = 0x02;
-
     // The decoded selects, active low (the "Bar" suffix) except where noted.
     // Net names are the netlist's.
     private bool _twoMHzE;
@@ -25,6 +16,7 @@ public sealed partial class BbcMicroSystem
     private bool _intonBar;
     private bool _crtcBar;
     private bool _aciaBar;
+    private bool _serprocBar = true;
     private bool _intoffBar;
     private bool _romOeBar;
 
@@ -131,6 +123,7 @@ public sealed partial class BbcMicroSystem
         _ic26.B2 = Address(4);
         _crtcBar = _ic26.Y2_0;
         _aciaBar = _ic26.Y2_1;
+        _serprocBar = _ic26.Y2_2;
         _intoffBar = _ic26.Y2_3;
 
         // IC23: any 1MHz-bus device at all.
@@ -278,6 +271,16 @@ public sealed partial class BbcMicroSystem
         Crtc.RW = _busRw;
         Crtc.E = true;
 
+        Acia.Cs0 = true;
+        Acia.Cs1 = true;
+        Acia.Cs2Bar = _aciaBar;
+        Acia.RS = (address & 1) != 0;
+        Acia.RW = _busRw;
+        Acia.E = true;
+
+        SerialUla.CS = _serprocBar;
+        SerialUla.E = true;
+
         if (!_busRw)
         {
             return;
@@ -297,7 +300,7 @@ public sealed partial class BbcMicroSystem
         }
         else if (!_aciaBar)
         {
-            Cpu.Data = AciaStatusAfterReset;
+            Cpu.Data = Acia.DB;
         }
     }
 
@@ -313,5 +316,13 @@ public sealed partial class BbcMicroSystem
 
         Crtc.DB = data;
         Crtc.E = false;
+
+        Acia.DB = data;
+        Acia.E = false;
+
+        SerialUla.Data = data;
+        SerialUla.E = false;
+
+        PropagateSerial();
     }
 }
