@@ -29,6 +29,10 @@ public sealed partial class BbcMicroSystem
     private readonly bool[] _socketEnableBar = new bool[4];
 
     private int _decodeBusKey = -1;
+    private int _decodePhi1 = -1;
+
+    // IC24's first output, which the PHI1-qualified half of IC26 decodes.
+    private bool _sheila00Bar;
 
     // Evaluates the address decode for the address and R/W as the board sees
     // them, with the CPU's clock in the given phase.
@@ -42,27 +46,59 @@ public sealed partial class BbcMicroSystem
     {
         // The decode is a pure function of the address, R/W, PHI1 and the
         // paged-ROM latch's low two bits, none of which change on most ticks,
-        // so it is worked out again only when one does.
+        // so it is worked out again only when one does. PHI1 changes twice a
+        // CPU cycle while the address mostly stays put, and only a few gates
+        // see it, so a change of PHI1 alone re-evaluates just those.
         var key = _busAddress
             | (_busRw ? 0x10000 : 0)
-            | (phi1 ? 0x20000 : 0)
             | (_ic76.Qa ? 0x40000 : 0)
             | (_ic76.Qb ? 0x80000 : 0);
 
-        if (key == _decodeBusKey)
+        var phase = phi1 ? 1 : 0;
+
+        if (key != _decodeBusKey)
+        {
+            _decodeBusKey = key;
+            DecodeAddress();
+        }
+        else if (phase == _decodePhi1)
         {
             return;
         }
 
-        _decodeBusKey = key;
-
-        var address = _busAddress;
-
-        bool Address(int bit) => (address & (1 << bit)) != 0;
+        _decodePhi1 = phase;
 
         // IC37's fifth inverter makes 2MHZE from PHI1.
         _ic37.A5 = phi1;
         _twoMHzE = _ic37.Y5;
+
+        // IC26, second half: &FE00-&FE1F in four 8-byte blocks, only while
+        // the CPU's clock is in PHI2 (IC29's first OR gate).
+        _ic29.A1 = phi1;
+        _ic29.B1 = _sheila00Bar;
+        _ic26.G2 = _ic29.Y1;
+        _ic26.A2 = (_busAddress & 0x08) != 0;
+        _ic26.B2 = (_busAddress & 0x10) != 0;
+        _crtcBar = _ic26.Y2_0;
+        _aciaBar = _ic26.Y2_1;
+        _serprocBar = _ic26.Y2_2;
+        _intoffBar = _ic26.Y2_3;
+
+        // IC25: the ROMs' output enable. It is withheld in FRED, JIM and
+        // SHEILA, and outside PHI2.
+        _ic25.A1 = _twoMHzE;
+        _ic25.B1 = _sheilaBar;
+        _ic25.C1 = _jimBar;
+        _ic25.D1 = _fredBar;
+        _romOeBar = _ic25.Y1;
+    }
+
+    // The part of the address decode that does not depend on PHI1.
+    private void DecodeAddress()
+    {
+        var address = _busAddress;
+
+        bool Address(int bit) => (address & (1 << bit)) != 0;
 
         // IC21: the second and third gates give the "&8000-&BFFF" strobe that
         // enables the sideways ROM sockets' decoder through S21.
@@ -99,7 +135,7 @@ public sealed partial class BbcMicroSystem
         _ic24.G1 = Address(9);
         _ic24.G2A = Address(8);
         _ic24.G2B = ioPageBar;
-        var sheila00Bar = _ic24.Y0;
+        _sheila00Bar = _ic24.Y0;
         var sheila20Bar = _ic24.Y1;
         _viaABar = _ic24.Y2;
         _viaBBar = _ic24.Y3;
@@ -114,36 +150,16 @@ public sealed partial class BbcMicroSystem
         _romselBar = _ic26.Y1_1;
         _intonBar = _ic26.Y1_2;
 
-        // Second half: &FE00-&FE1F in four 8-byte blocks, only while the CPU's
-        // clock is in PHI2 (IC29's first OR gate).
-        _ic29.A1 = phi1;
-        _ic29.B1 = sheila00Bar;
-        _ic26.G2 = _ic29.Y1;
-        _ic26.A2 = Address(3);
-        _ic26.B2 = Address(4);
-        _crtcBar = _ic26.Y2_0;
-        _aciaBar = _ic26.Y2_1;
-        _serprocBar = _ic26.Y2_2;
-        _intoffBar = _ic26.Y2_3;
-
         // IC23: any 1MHz-bus device at all.
         _ic23.A = true;
         _ic23.B = _fredBar;
         _ic23.C = true;
         _ic23.D = _jimBar;
-        _ic23.E = sheila00Bar;
+        _ic23.E = _sheila00Bar;
         _ic23.F = _adcBar;
         _ic23.G = _viaBBar;
         _ic23.H = _viaABar;
         _oneMHzDeviceSelected = _ic23.Y;
-
-        // IC25: the ROMs' output enable. It is withheld in FRED, JIM and
-        // SHEILA, and outside PHI2.
-        _ic25.A1 = _twoMHzE;
-        _ic25.B1 = _sheilaBar;
-        _ic25.C1 = _jimBar;
-        _ic25.D1 = _fredBar;
-        _romOeBar = _ic25.Y1;
 
         // IC20, second half: the ROM number latch's low two bits pick one of
         // the four sockets.

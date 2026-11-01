@@ -282,8 +282,24 @@ public sealed partial class BbcMicroSystem
 
         if (peripheralKey != _peripheralKey)
         {
+            // N130 and PHI1 are only IC76's and IC97's clocks, and they change
+            // on every CPU cycle. When nothing else has, every other input
+            // below is as it was, so only the clocks need driving. IC97's Q is
+            // part of the key, so if the edge moves it the next pass
+            // re-evaluates what it feeds; IC76's outputs feed only the address
+            // decode.
+            var clocksOnly = ((peripheralKey ^ _peripheralKey) & ~0x3) == 0;
             _peripheralKey = peripheralKey;
-            EvaluatePeripherals(n130, phi1, resetBar, data, portB);
+
+            if (clocksOnly)
+            {
+                _ic76.Clk = n130;
+                _ic97.Clk1 = phi1;
+            }
+            else
+            {
+                EvaluatePeripherals(n130, phi1, resetBar, data, portB);
+            }
         }
 
         // The CPU's clock input is IC29's fourth OR gate.
